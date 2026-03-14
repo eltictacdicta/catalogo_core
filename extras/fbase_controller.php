@@ -171,7 +171,7 @@ class fbase_controller extends fs_controller
             if ($valor != '') {
                 $valor = mb_strtolower($valor, 'UTF8');
                 $sql = "SELECT DISTINCT " . $columna . " FROM " . $tabla . " WHERE lower(" . $columna2 . ") = "
-                    . $this->empresa->var2str($valor) . " ORDER BY " . $columna . " ASC;";
+                    . $this->var2str($valor) . " ORDER BY " . $columna . " ASC;";
             }
 
             $data = $this->db->select($sql);

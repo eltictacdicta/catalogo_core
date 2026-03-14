@@ -1,7 +1,5 @@
-{% extends 'master/MenuTemplate.html.twig' %}
+{{ include('header.html.twig') }}
 
-{% block javascript %}
-{{ parent() }}
 <script type="text/javascript">
 function eliminar_divisa(cod) {
     bootbox.confirm({
@@ -15,9 +13,7 @@ function eliminar_divisa(cod) {
     });
 }
 </script>
-{% endblock %}
 
-{% block body %}
 <div class="container-fluid" style="margin-bottom: 10px;">
     <div class="row">
         <div class="col-xs-12">
@@ -175,4 +171,5 @@ function eliminar_divisa(cod) {
         {% endif %}
     {% endfor %}
 </div>
-{% endblock %}
+
+{{ include('footer.html.twig') }}

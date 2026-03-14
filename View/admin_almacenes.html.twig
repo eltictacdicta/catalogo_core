@@ -1,7 +1,5 @@
-{% extends 'master/MenuTemplate.html.twig' %}
+{{ include('header.html.twig') }}
 
-{% block javascript %}
-{{ parent() }}
 <script type="text/javascript">
 function delete_almacen(url) {
     bootbox.confirm({
@@ -23,9 +21,7 @@ $(document).ready(function() {
     });
 });
 </script>
-{% endblock %}
 
-{% block body %}
 <div class="container-fluid">
     <div class="row">
         <div class="col-sm-12">
@@ -315,4 +311,5 @@ $(document).ready(function() {
         </div>
     </div>
 </div>
-{% endblock %}
+
+{{ include('footer.html.twig') }}
