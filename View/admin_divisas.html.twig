@@ -1,0 +1,178 @@
+{% extends 'master/MenuTemplate.html.twig' %}
+
+{% block javascript %}
+{{ parent() }}
+<script type="text/javascript">
+function eliminar_divisa(cod) {
+    bootbox.confirm({
+        message: '¿Realmente desea eliminar la divisa ' + cod + '?',
+        title: '<b>Atención</b>',
+        callback: function(result) {
+            if (result) {
+                window.location.href = '{{ fsc.url() }}&delete=' + cod;
+            }
+        }
+    });
+}
+</script>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid" style="margin-bottom: 10px;">
+    <div class="row">
+        <div class="col-xs-12">
+            <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="Recargar la página">
+                <span class="glyphicon glyphicon-refresh"></span>
+            </a>
+            <div class="btn-group">
+                {% for ext in fsc.extensions %}
+                    {% if ext.type == 'button' %}
+                    <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                    {% elseif ext.type == 'modal' %}
+                    <a href="#" class="btn btn-xs btn-default" onclick="fs_modal('{{ ext.text|base64_encode }}','index.php?page={{ ext.from }}{{ ext.params }}')">{{ ext.text }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<ul class="nav nav-tabs" role="tablist">
+    <li role="presentation" class="active">
+        <a href="#divisas" aria-controls="divisas" role="tab" data-toggle="tab">
+            <i class="fa fa-money" aria-hidden="true"></i>&nbsp; {{ 'currencies'|trans }}
+        </a>
+    </li>
+    <li role="presentation">
+        <a href="#configuracion" aria-controls="configuracion" role="tab" data-toggle="tab">
+            <span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>&nbsp; {{ 'configuration'|trans }}
+        </a>
+    </li>
+    {% for ext in fsc.extensions %}
+        {% if ext.type == 'tab' %}
+        <li role="presentation">
+            <a href="#ext_{{ ext.name }}" aria-controls="ext_{{ ext.name }}" role="tab" data-toggle="tab">{{ ext.text }}</a>
+        </li>
+        {% endif %}
+    {% endfor %}
+</ul>
+
+<div class="tab-content">
+    <div role="tabpanel" class="tab-pane active" id="divisas">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th class="text-left" width="120">{{ 'code'|trans }}</th>
+                        <th class="text-left" width="120">{{ 'symbol'|trans }}</th>
+                        <th class="text-left">{{ 'description'|trans }}</th>
+                        <th class="text-left" width="120">
+                            <a href="https://es.wikipedia.org/wiki/ISO_4217" target="_blank">{{ 'iso-code'|trans }}</a>
+                        </th>
+                        <th class="text-left">{{ 'conversion-rate'|trans }} (1€ = X)</th>
+                        <th class="text-left">{{ 'conversion-rate'|trans }} ({{ 'purchases'|trans }})</th>
+                        <th class="text-right" width="120">{{ 'actions'|trans }}</th>
+                    </tr>
+                </thead>
+                {% for divisa in fsc.divisas %}
+                <form action="{{ fsc.url() }}" method="post" class="form">
+                    {{ csrf_field() }}
+                    <tr{% if divisa.coddivisa == fsc.empresa.coddivisa %} class="warning"{% endif %}>
+                        <td>
+                            <input type="hidden" name="coddivisa" value="{{ divisa.coddivisa }}"/>
+                            <div class="form-control">{{ divisa.coddivisa }}</div>
+                        </td>
+                        <td><input class="form-control" type="text" name="simbolo" value="{{ divisa.simbolo }}" autocomplete="off"/></td>
+                        <td><input class="form-control" type="text" name="descripcion" value="{{ divisa.descripcion }}" autocomplete="off"/></td>
+                        <td><input class="form-control" type="text" name="codiso" value="{{ divisa.codiso }}" autocomplete="off"/></td>
+                        <td><input class="form-control" type="text" name="tasaconv" value="{{ divisa.tasaconv }}" autocomplete="off"/></td>
+                        <td><input class="form-control" type="text" name="tasaconv_compra" value="{{ divisa.tasaconv_compra }}" autocomplete="off"/></td>
+                        <td class="text-right">
+                            <div class="btn-group">
+                                {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                    {% if divisa.coddivisa == fsc.empresa.coddivisa %}
+                                    <a href="#" class="btn btn-sm btn-warning" title="{{ 'locked'|trans }}" onclick="bootbox.alert({message: '{{ 'cannot-delete-default-currency'|trans }}',title: '<b>{{ 'warning'|trans }}</b>'});">
+                                        <span class="glyphicon glyphicon-lock"></span>
+                                    </a>
+                                    {% else %}
+                                    <a href="#" class="btn btn-sm btn-danger" title="{{ 'delete'|trans }}" onclick="eliminar_divisa('{{ divisa.coddivisa }}')">
+                                        <span class="glyphicon glyphicon-trash"></span>
+                                    </a>
+                                    {% endif %}
+                                {% endif %}
+                                <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();" title="{{ 'save'|trans }}">
+                                    <span class="glyphicon glyphicon-floppy-disk"></span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </form>
+                {% endfor %}
+                <form action="{{ fsc.url() }}" method="post" class="form">
+                    {{ csrf_field() }}
+                    <tr class="info">
+                        <td><input class="form-control" type="text" name="coddivisa" maxlength="3" autocomplete="off" placeholder="{{ 'new'|trans }}"/></td>
+                        <td><input class="form-control" type="text" name="simbolo" autocomplete="off" placeholder="$"/></td>
+                        <td><input class="form-control" type="text" name="descripcion" autocomplete="off" placeholder="{{ 'new-currency'|trans }}..."/></td>
+                        <td><input class="form-control" type="text" name="codiso" autocomplete="off"/></td>
+                        <td><input class="form-control" type="text" name="tasaconv" value="1" autocomplete="off"/></td>
+                        <td><input class="form-control" type="text" name="tasaconv_compra" value="1" autocomplete="off"/></td>
+                        <td class="text-right">
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();" title="{{ 'new'|trans }}">
+                                    <span class="glyphicon glyphicon-plus-sign"></span>
+                                    <span class="hidden-sm">&nbsp;{{ 'new'|trans }}</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </form>
+            </table>
+        </div>
+    </div>
+    
+    <div role="tabpanel" class="tab-pane" id="configuracion">
+        <br/>
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-sm-6">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title">{{ 'default-currency'|trans }}</h3>
+                        </div>
+                        <div class="panel-body">
+                            {{ 'select-default-currency-from-company-settings'|trans }}
+                            <br/><br/>
+                            <a href="index.php?page=admin_empresa#facturacion" class="btn btn-sm btn-default">
+                                <span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>&nbsp; {{ 'choose-currency'|trans }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title">{{ 'currency-options'|trans }}</h3>
+                        </div>
+                        <div class="panel-body">
+                            {{ 'change-decimals-separator-from-control-panel'|trans }}
+                            <br/><br/>
+                            <a href="index.php?page=admin_home#avanzado" class="btn btn-sm btn-default">
+                                <span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>&nbsp; {{ 'control-panel'|trans }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% for ext in fsc.extensions %}
+        {% if ext.type == 'tab' %}
+        <div role="tabpanel" class="tab-pane" id="ext_{{ ext.name }}">
+            <iframe src="index.php?page={{ ext.from }}{{ ext.params }}" width="100%" height="2000" frameborder="0"></iframe>
+        </div>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}

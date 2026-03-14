@@ -1,0 +1,318 @@
+{% extends 'master/MenuTemplate.html.twig' %}
+
+{% block javascript %}
+{{ parent() }}
+<script type="text/javascript">
+function delete_almacen(url) {
+    bootbox.confirm({
+        message: '¿Realmente desea eliminar este almacén?',
+        title: '<b>Atención</b>',
+        callback: function(result) {
+            if (result) {
+                window.location.href = url;
+            }
+        }
+    });
+}
+
+$(document).ready(function() {
+    $("#b_nuevo_almacen").click(function(event) {
+        event.preventDefault();
+        $("#modal_nuevo_almacen").modal('show');
+        document.f_nuevo_almacen.scodalmacen.focus();
+    });
+});
+</script>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="btn-group">
+                {% for ext in fsc.extensions %}
+                    {% if ext.type == 'button' %}
+                    <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-building" aria-hidden="true"></i>&nbsp; {{ 'warehouses'|trans }}
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <a id="b_nuevo_almacen" class="btn btn-xs btn-success" href="#">
+                        <span class="glyphicon glyphicon-plus"></span>
+                        <span class="hidden-xs">&nbsp;{{ 'new'|trans }}</span>
+                    </a>
+                </h1>
+                <p class="help-block">
+                    {{ 'warehouse-list-help'|trans }}
+                    <a href="index.php?page=admin_empresa#facturacion">{{ 'company-settings'|trans }}</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    {% for almacen in fsc.almacenes %}
+    <div class="row">
+        <div class="col-sm-12">
+            <form class="form" role="form" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <input type="hidden" name="scodalmacen" value="{{ almacen.codalmacen }}"/>
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'code'|trans }}: {{ almacen.codalmacen }}</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="row">
+                            <div class="col-sm-2">
+                                <div class="form-group">
+                                    {{ 'name'|trans }}:
+                                    <input class="form-control" type="text" name="snombre" value="{{ almacen.nombre }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-2">
+                                <div class="form-group">
+                                    <a href="{{ fsc.pais.url() }}">{{ 'country'|trans }}</a>
+                                    <select name="scodpais" class="form-control">
+                                    {% for pais in fsc.pais.all() %}
+                                        <option value="{{ pais.codpais }}"{% if pais.codpais == almacen.codpais or pais.codpais == fsc.empresa.codpais %} selected{% endif %}>{{ pais.nombre }}</option>
+                                    {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-sm-2">
+                                <div class="form-group">
+                                    {{ 'province'|trans }}:
+                                    <input class="form-control" type="text" name="sprovincia" value="{{ almacen.provincia }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-2">
+                                <div class="form-group">
+                                    {{ 'city'|trans }}:
+                                    <input class="form-control" type="text" name="spoblacion" value="{{ almacen.poblacion }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-4">
+                                <div class="form-group">
+                                    {{ 'address'|trans }}:
+                                    <input class="form-control" type="text" name="sdireccion" value="{{ almacen.direccion }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'postal-code'|trans }}:
+                                    <input class="form-control" type="text" name="scodpostal" value="{{ almacen.codpostal }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'phone'|trans }}:
+                                    <input class="form-control" type="text" name="stelefono" value="{{ almacen.telefono }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'fax'|trans }}:
+                                    <input class="form-control" type="text" name="sfax" value="{{ almacen.fax }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'contact'|trans }}:
+                                    <input class="form-control" type="text" name="scontacto" value="{{ almacen.contacto }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-footer text-right">
+                        {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                            {% if almacen.codalmacen == fsc.empresa.codalmacen %}
+                            <a class="btn btn-sm btn-warning pull-left" onclick="bootbox.alert({message: '{{ 'cannot-delete-default-warehouse'|trans }}',title: '<b>{{ 'warning'|trans }}</b>'});">
+                                <span class="glyphicon glyphicon-lock"></span>&nbsp; {{ 'delete'|trans }}
+                            </a>
+                            {% else %}
+                            <a class="btn btn-sm btn-danger pull-left" onclick="delete_almacen('{{ fsc.url() }}&delete={{ almacen.codalmacen }}')">
+                                <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
+                            </a>
+                            {% endif %}
+                        {% endif %}
+                        <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                            <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="alert alert-danger">{{ 'no-warehouses-found'|trans }}</div>
+        </div>
+    </div>
+    {% endfor %}
+    
+    <div class="row">
+        <div class="col-sm-12">
+            <form class="form" role="form" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <div class="panel panel-warning">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">
+                            <span class="glyphicon glyphicon-wrench"></span>&nbsp; {{ 'advanced-settings'|trans }}
+                        </h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="row">
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'allow-negative-stock'|trans }}:
+                                    <select name="stock_negativo" class="form-control">
+                                        <option value="1"{% if config2.stock_negativo == 1 %} selected{% endif %}>{{ 'yes'|trans }}</option>
+                                        <option value="0"{% if config2.stock_negativo == 0 %} selected{% endif %}>{{ 'no'|trans }}</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'allow-sales-without-stock'|trans }}:
+                                    <select name="ventas_sin_stock" class="form-control">
+                                        <option value="1"{% if config2.ventas_sin_stock == 1 %} selected{% endif %}>{{ 'yes'|trans }}</option>
+                                        <option value="0"{% if config2.ventas_sin_stock == 0 %} selected{% endif %}>{{ 'no'|trans }}</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'cost-price'|trans }}:
+                                    <select name="cost_is_average" class="form-control">
+                                        <option value="1"{% if config2.cost_is_average == 1 %} selected{% endif %}>{{ 'calculated'|trans }}</option>
+                                        <option value="0"{% if config2.cost_is_average == 0 %} selected{% endif %}>{{ 'manual'|trans }}</option>
+                                    </select>
+                                    <p class="help-block">
+                                        <b>{{ 'calculated'|trans }}:</b> {{ 'cost-calculated-help'|trans }}
+                                        <br/>
+                                        <b>{{ 'manual'|trans }}:</b> {{ 'cost-manual-help'|trans }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="form-group">
+                                    {{ 'when-buying-add-with'|trans }}:
+                                    <select name="precio_compra" class="form-control">
+                                        <option value="coste"{% if config2.precio_compra == 'coste' %} selected{% endif %}>{{ 'purchase-price'|trans }}</option>
+                                        <option value="pvp"{% if config2.precio_compra == 'pvp' %} selected{% endif %}>{{ 'sale-price'|trans }}</option>
+                                    </select>
+                                    <p class="help-block">
+                                        {{ 'purchase-price-help'|trans }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-footer text-right">
+                        <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                            <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# Modal para nuevo almacén #}
+<div class="modal" id="modal_nuevo_almacen">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form name="f_nuevo_almacen" action="{{ fsc.url() }}" method="post" class="form-horizontal" role="form">
+                {{ csrf_field() }}
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    <h4 class="modal-title">
+                        <i class="fa fa-building" aria-hidden="true"></i>&nbsp; {{ 'new-warehouse'|trans }}
+                    </h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'code'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="scodalmacen" required maxlength="4" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'name'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="snombre" required autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">
+                            <a href="{{ fsc.pais.url() }}">{{ 'country'|trans }}</a>:
+                        </label>
+                        <div class="col-sm-10">
+                            <select name="scodpais" class="form-control">
+                            {% for pais in fsc.pais.all() %}
+                                <option value="{{ pais.codpais }}"{% if pais.is_default() %} selected{% endif %}>{{ pais.nombre }}</option>
+                            {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'province'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input id="ac_provincia" class="form-control" type="text" name="sprovincia" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'city'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="spoblacion" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'address'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="sdireccion" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'postal-code'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="scodpostal" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'phone'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="stelefono" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'fax'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="sfax" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="col-sm-2 control-label">{{ 'contact'|trans }}:</label>
+                        <div class="col-sm-10">
+                            <input class="form-control" type="text" name="scontacto" autocomplete="off"/>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-primary" type="submit">
+                        <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
