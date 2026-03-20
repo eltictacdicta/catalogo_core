@@ -68,7 +68,7 @@ class fbase_controller extends fs_controller
                 $nombre .= ' (' . $cli->razonsocial . ')';
             }
 
-            $json[] = array('value' => $cli->nombre, 'data' => $cli->codcliente, 'full' => $cli);
+            $json[] = array('value' => $nombre, 'data' => $cli->codcliente);
         }
 
         header('Content-Type: application/json');
@@ -94,7 +94,7 @@ class fbase_controller extends fs_controller
                 $nombre .= ' (' . $prov->razonsocial . ')';
             }
 
-            $json[] = array('value' => $nombre, 'data' => $prov->codproveedor, 'full' => $prov);
+            $json[] = array('value' => $nombre, 'data' => $prov->codproveedor);
         }
 
         header('Content-Type: application/json');
