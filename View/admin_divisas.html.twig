@@ -166,7 +166,7 @@ function eliminar_divisa(cod) {
     {% for ext in fsc.extensions %}
         {% if ext.type == 'tab' %}
         <div role="tabpanel" class="tab-pane" id="ext_{{ ext.name }}">
-            <iframe src="index.php?page={{ ext.from }}{{ ext.params }}" width="100%" height="2000" frameborder="0"></iframe>
+            <iframe src="index.php?page={{ ext.from }}{{ ext.params }}" width="100%" height="2000" frameborder="0" title="Contenido de la extensión {{ ext.name }}"></iframe>
         </div>
         {% endif %}
     {% endfor %}

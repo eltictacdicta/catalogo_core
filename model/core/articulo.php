@@ -277,9 +277,10 @@ class articulo extends \fs_model
         /**
          * La tabla articulos tiene varias claves ajenas, por eso debemos forzar la comprobación de esas tablas.
          */
-        new \fabricante();
-        new \familia();
-        new \impuesto();
+        $fabricante = new \fabricante();
+        $familia = new \familia();
+        $impuesto = new \impuesto();
+        // Las instancias se crean para forzar la comprobación de las tablas de claves ajenas
 
         return '';
     }
