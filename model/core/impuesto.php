@@ -26,6 +26,8 @@ namespace FSFramework\model;
  */
 class impuesto extends \fs_model
 {
+    private const SQL_SELECT_ALL = 'SELECT * FROM ';
+    private const PK_WHERE = ' WHERE codimpuesto = ';
 
     /**
      * Clave primaria. varchar(10).
@@ -91,7 +93,7 @@ class impuesto extends \fs_model
      */
     public function is_default()
     {
-        return ( $this->codimpuesto == $this->default_items->codimpuesto() );
+        return $this->codimpuesto == $this->default_items->codimpuesto();
     }
 
     /**
@@ -101,7 +103,7 @@ class impuesto extends \fs_model
      */
     public function get($cod)
     {
-        $data = $this->db->select("SELECT * FROM " . $this->table_name . " WHERE codimpuesto = " . $this->var2str($cod) . ";");
+        $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . self::PK_WHERE . $this->var2str($cod) . ";");
         if ($data) {
             return new \impuesto($data[0]);
         }
@@ -111,7 +113,7 @@ class impuesto extends \fs_model
 
     public function get_by_iva($iva)
     {
-        $data = $this->db->select("SELECT * FROM " . $this->table_name . " WHERE iva = " . $this->var2str(floatval($iva)) . ";");
+        $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " WHERE iva = " . $this->var2str(floatval($iva)) . ";");
         if ($data) {
             return new \impuesto($data[0]);
         }
@@ -125,8 +127,8 @@ class impuesto extends \fs_model
             return FALSE;
         }
 
-        return $this->db->select("SELECT * FROM " . $this->table_name
-                . " WHERE codimpuesto = " . $this->var2str($this->codimpuesto) . ";");
+        return $this->db->select(self::SQL_SELECT_ALL . $this->table_name
+                . self::PK_WHERE . $this->var2str($this->codimpuesto) . ";");
     }
 
     public function test()
@@ -158,7 +160,7 @@ class impuesto extends \fs_model
                     . ", descripcion = " . $this->var2str($this->descripcion)
                     . ", iva = " . $this->var2str($this->iva)
                     . ", recargo = " . $this->var2str($this->recargo)
-                    . "  WHERE codimpuesto = " . $this->var2str($this->codimpuesto) . ";";
+                    . self::PK_WHERE . $this->var2str($this->codimpuesto) . ";";
             } else {
                 $sql = "INSERT INTO " . $this->table_name . " (codimpuesto,codsubcuentarep,codsubcuentasop,
                      descripcion,iva,recargo) VALUES (" . $this->var2str($this->codimpuesto)
@@ -178,7 +180,7 @@ class impuesto extends \fs_model
     public function delete()
     {
         $this->clean_cache();
-        return $this->db->exec("DELETE FROM " . $this->table_name . " WHERE codimpuesto = " . $this->var2str($this->codimpuesto) . ";");
+        return $this->db->exec("DELETE FROM " . $this->table_name . self::PK_WHERE . $this->var2str($this->codimpuesto) . ";");
     }
 
     private function clean_cache()
@@ -196,7 +198,7 @@ class impuesto extends \fs_model
         $impuestolist = $this->cache->get_array('m_impuesto_all');
         if (!$impuestolist) {
             /// si no encontramos la lista en caché, leemos de la base de datos
-            $data = $this->db->select("SELECT * FROM " . $this->table_name . " ORDER BY iva DESC;");
+            $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " ORDER BY iva DESC;");
             if ($data) {
                 foreach ($data as $i) {
                     $impuestolist[] = new \impuesto($i);

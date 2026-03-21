@@ -25,6 +25,9 @@ namespace FSFramework\model;
  */
 class familia extends \fs_model
 {
+    private const SQL_SELECT_ALL = 'SELECT * FROM ';
+    private const SQL_UPDATE = 'UPDATE ';
+    private const PK_WHERE = ' WHERE codfamilia = ';
 
     /**
      * Clave primaria.
@@ -108,7 +111,7 @@ class familia extends \fs_model
 
     public function get($cod)
     {
-        $data = $this->db->select("SELECT * FROM " . $this->table_name . " WHERE codfamilia = " . $this->var2str($cod) . ";");
+        $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . self::PK_WHERE . $this->var2str($cod) . ";");
         if ($data) {
             return new \familia($data[0]);
         }
@@ -132,7 +135,7 @@ class familia extends \fs_model
             return FALSE;
         }
 
-        return $this->db->select("SELECT * FROM " . $this->table_name . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";");
+        return $this->db->select(self::SQL_SELECT_ALL . $this->table_name . self::PK_WHERE . $this->var2str($this->codfamilia) . ";");
     }
 
     /**
@@ -167,9 +170,9 @@ class familia extends \fs_model
             $this->clean_cache();
 
             if ($this->exists()) {
-                $sql = "UPDATE " . $this->table_name . " SET descripcion = " . $this->var2str($this->descripcion) .
+                $sql = self::SQL_UPDATE . $this->table_name . " SET descripcion = " . $this->var2str($this->descripcion) .
                     ", madre = " . $this->var2str($this->madre) .
-                    "  WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";";
+                    self::PK_WHERE . $this->var2str($this->codfamilia) . ";";
             } else {
                 $sql = "INSERT INTO " . $this->table_name . " (codfamilia,descripcion,madre) VALUES " .
                     "(" . $this->var2str($this->codfamilia) .
@@ -191,8 +194,8 @@ class familia extends \fs_model
     public function delete()
     {
         $this->clean_cache();
-        $sql = "DELETE FROM " . $this->table_name . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";"
-            . " UPDATE " . $this->table_name . " SET madre = " . $this->var2str($this->madre)
+        $sql = "DELETE FROM " . $this->table_name . self::PK_WHERE . $this->var2str($this->codfamilia) . ";"
+            . " " . self::SQL_UPDATE . $this->table_name . " SET madre = " . $this->var2str($this->madre)
             . " WHERE madre = " . $this->var2str($this->codfamilia) . ";";
 
         return $this->db->exec($sql);
@@ -217,7 +220,7 @@ class familia extends \fs_model
         $famlist = $this->cache->get_array('m_familia_all');
         if (!$famlist) {
             /// si la lista no está en caché, leemos de la base de datos
-            $data = $this->db->select("SELECT * FROM " . $this->table_name . " ORDER BY lower(descripcion) ASC;");
+            $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " ORDER BY lower(descripcion) ASC;");
             if ($data) {
                 foreach ($data as $d) {
                     if (is_null($d['madre'])) {
@@ -275,10 +278,10 @@ class familia extends \fs_model
 
     public function madres()
     {
-        $famlist = $this->all_from("SELECT * FROM " . $this->table_name . " WHERE madre IS NULL ORDER BY lower(descripcion) ASC;");
+        $famlist = $this->all_from(self::SQL_SELECT_ALL . $this->table_name . " WHERE madre IS NULL ORDER BY lower(descripcion) ASC;");
         if (empty($famlist)) {
             /// si la lista está vacía, ponemos madre a NULL en todas por si el usuario ha estado jugando
-            $this->db->exec("UPDATE " . $this->table_name . " SET madre = NULL;");
+            $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET madre = NULL;");
         }
 
         return $famlist;
@@ -290,13 +293,14 @@ class familia extends \fs_model
             $codmadre = $this->codfamilia;
         }
 
-        return $this->all_from("SELECT * FROM " . $this->table_name . " WHERE madre = " . $this->var2str($codmadre) . " ORDER BY descripcion ASC;");
+        return $this->all_from(self::SQL_SELECT_ALL . $this->table_name . " WHERE madre = " . $this->var2str($codmadre) . " ORDER BY descripcion ASC;");
     }
 
     public function search($query)
     {
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
-        return $this->all_from("SELECT * FROM " . $this->table_name . " WHERE lower(descripcion) LIKE '%" . $query . "%' ORDER BY descripcion ASC;");
+        $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $query);
+        return $this->all_from(self::SQL_SELECT_ALL . $this->table_name . " WHERE lower(descripcion) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '\\' ORDER BY descripcion ASC;");
     }
 
     /**
@@ -305,12 +309,12 @@ class familia extends \fs_model
     public function fix_db()
     {
         /// comprobamos que las familias con madre, su madre exista.
-        $data = $this->db->select("SELECT * FROM " . $this->table_name . " WHERE madre IS NOT NULL;");
+        $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " WHERE madre IS NOT NULL;");
         foreach ($data as $d) {
             $fam = $this->get($d['madre']);
             if (!$fam || $fam->codfamilia == $fam->madre) {
                 /// si la madre no existe, o es la propia familia, desvinculamos
-                $this->db->exec("UPDATE " . $this->table_name . " SET madre = null WHERE codfamilia = "
+                $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET madre = null" . self::PK_WHERE
                     . $this->var2str($d['codfamilia']) . ";");
             }
         }

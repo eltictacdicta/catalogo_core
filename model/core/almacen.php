@@ -123,24 +123,29 @@ class almacen extends fs_model
     {
         parent::__construct('almacenes');
         if ($data) {
-            $this->codalmacen = $data['codalmacen'];
-            $this->nombre = $data['nombre'];
-            $this->direccion = isset($data['direccion']) ? $data['direccion'] : '';
-            $this->codpostal = isset($data['codpostal']) ? $data['codpostal'] : '';
-            $this->poblacion = isset($data['poblacion']) ? $data['poblacion'] : '';
-            $this->provincia = isset($data['provincia']) ? $data['provincia'] : '';
-            $this->codpais = isset($data['codpais']) ? $data['codpais'] : '';
-            $this->apartado = isset($data['apartado']) ? $data['apartado'] : '';
-            $this->telefono = isset($data['telefono']) ? $data['telefono'] : '';
-            $this->fax = isset($data['fax']) ? $data['fax'] : '';
-            $this->contacto = isset($data['contacto']) ? $data['contacto'] : '';
-            $this->observaciones = isset($data['observaciones']) ? $data['observaciones'] : '';
-            $this->idprovincia = isset($data['idprovincia']) ? $data['idprovincia'] : NULL;
-            $this->porpvp = isset($data['porpvp']) ? floatval($data['porpvp']) : 0;
-            $this->tipovaloracion = isset($data['tipovaloracion']) ? $data['tipovaloracion'] : '';
+            $this->loadFromData($data);
         } else {
             $this->clear();
         }
+    }
+
+    private function loadFromData(array $data): void
+    {
+        $this->codalmacen = $data['codalmacen'];
+        $this->nombre = $data['nombre'];
+        $this->direccion = $data['direccion'] ?? '';
+        $this->codpostal = $data['codpostal'] ?? '';
+        $this->poblacion = $data['poblacion'] ?? '';
+        $this->provincia = $data['provincia'] ?? '';
+        $this->codpais = $data['codpais'] ?? '';
+        $this->apartado = $data['apartado'] ?? '';
+        $this->telefono = $data['telefono'] ?? '';
+        $this->fax = $data['fax'] ?? '';
+        $this->contacto = $data['contacto'] ?? '';
+        $this->observaciones = $data['observaciones'] ?? '';
+        $this->idprovincia = $data['idprovincia'] ?? NULL;
+        $this->porpvp = isset($data['porpvp']) ? floatval($data['porpvp']) : 0;
+        $this->tipovaloracion = $data['tipovaloracion'] ?? '';
     }
 
     protected function install()
@@ -165,7 +170,7 @@ class almacen extends fs_model
      */
     public function is_default()
     {
-        return ( $this->codalmacen == $this->default_items->codalmacen() );
+        return $this->codalmacen == $this->default_items->codalmacen();
     }
 
     public function get($cod)
@@ -211,52 +216,54 @@ class almacen extends fs_model
 
     public function save()
     {
-        if ($this->test()) {
-            if ($this->exists()) {
-                $sql = "UPDATE " . $this->table_name . " SET nombre = " . $this->var2str($this->nombre) .
-                    ", direccion = " . $this->var2str($this->direccion) .
-                    ", codpostal = " . $this->var2str($this->codpostal) .
-                    ", poblacion = " . $this->var2str($this->poblacion) .
-                    ", provincia = " . $this->var2str($this->provincia) .
-                    ", codpais = " . $this->var2str($this->codpais) .
-                    ", apartado = " . $this->var2str($this->apartado) .
-                    ", telefono = " . $this->var2str($this->telefono) .
-                    ", fax = " . $this->var2str($this->fax) .
-                    ", contacto = " . $this->var2str($this->contacto) .
-                    ", observaciones = " . $this->var2str($this->observaciones) .
-                    ", idprovincia = " . $this->var2str($this->idprovincia) .
-                    ", porpvp = " . $this->var2str($this->porpvp) .
-                    ", tipovaloracion = " . $this->var2str($this->tipovaloracion) .
-                    " WHERE codalmacen = " . $this->var2str($this->codalmacen) . ";";
-                return $this->db->exec($sql);
-            } else {
-                $sql = "INSERT INTO " . $this->table_name . " (codalmacen,nombre,direccion,codpostal," .
-                    "poblacion,provincia,codpais,apartado,telefono,fax,contacto,observaciones," .
-                    "idprovincia,porpvp,tipovaloracion) VALUES (" .
-                    $this->var2str($this->codalmacen) . "," .
-                    $this->var2str($this->nombre) . "," .
-                    $this->var2str($this->direccion) . "," .
-                    $this->var2str($this->codpostal) . "," .
-                    $this->var2str($this->poblacion) . "," .
-                    $this->var2str($this->provincia) . "," .
-                    $this->var2str($this->codpais) . "," .
-                    $this->var2str($this->apartado) . "," .
-                    $this->var2str($this->telefono) . "," .
-                    $this->var2str($this->fax) . "," .
-                    $this->var2str($this->contacto) . "," .
-                    $this->var2str($this->observaciones) . "," .
-                    $this->var2str($this->idprovincia) . "," .
-                    $this->var2str($this->porpvp) . "," .
-                    $this->var2str($this->tipovaloracion) . ");";
-                if ($this->db->exec($sql)) {
-                    return TRUE;
-                } else {
-                    return FALSE;
-                }
-            }
-        } else {
+        if (!$this->test()) {
             return FALSE;
         }
+
+        return $this->exists() ? $this->executeUpdate() : $this->executeInsert();
+    }
+
+    private function executeUpdate(): bool
+    {
+        $sql = "UPDATE " . $this->table_name . " SET nombre = " . $this->var2str($this->nombre) .
+            ", direccion = " . $this->var2str($this->direccion) .
+            ", codpostal = " . $this->var2str($this->codpostal) .
+            ", poblacion = " . $this->var2str($this->poblacion) .
+            ", provincia = " . $this->var2str($this->provincia) .
+            ", codpais = " . $this->var2str($this->codpais) .
+            ", apartado = " . $this->var2str($this->apartado) .
+            ", telefono = " . $this->var2str($this->telefono) .
+            ", fax = " . $this->var2str($this->fax) .
+            ", contacto = " . $this->var2str($this->contacto) .
+            ", observaciones = " . $this->var2str($this->observaciones) .
+            ", idprovincia = " . $this->var2str($this->idprovincia) .
+            ", porpvp = " . $this->var2str($this->porpvp) .
+            ", tipovaloracion = " . $this->var2str($this->tipovaloracion) .
+            " WHERE codalmacen = " . $this->var2str($this->codalmacen) . ";";
+        return $this->db->exec($sql);
+    }
+
+    private function executeInsert(): bool
+    {
+        $sql = "INSERT INTO " . $this->table_name . " (codalmacen,nombre,direccion,codpostal," .
+            "poblacion,provincia,codpais,apartado,telefono,fax,contacto,observaciones," .
+            "idprovincia,porpvp,tipovaloracion) VALUES (" .
+            $this->var2str($this->codalmacen) . "," .
+            $this->var2str($this->nombre) . "," .
+            $this->var2str($this->direccion) . "," .
+            $this->var2str($this->codpostal) . "," .
+            $this->var2str($this->poblacion) . "," .
+            $this->var2str($this->provincia) . "," .
+            $this->var2str($this->codpais) . "," .
+            $this->var2str($this->apartado) . "," .
+            $this->var2str($this->telefono) . "," .
+            $this->var2str($this->fax) . "," .
+            $this->var2str($this->contacto) . "," .
+            $this->var2str($this->observaciones) . "," .
+            $this->var2str($this->idprovincia) . "," .
+            $this->var2str($this->porpvp) . "," .
+            $this->var2str($this->tipovaloracion) . ");";
+        return $this->db->exec($sql);
     }
 
     public function delete()

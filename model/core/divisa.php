@@ -79,7 +79,7 @@ class divisa extends fs_model
      */
     public function is_default()
     {
-        return ($this->coddivisa == $this->default_items->coddivisa());
+        return $this->coddivisa == $this->default_items->coddivisa();
     }
 
     public function get($cod)

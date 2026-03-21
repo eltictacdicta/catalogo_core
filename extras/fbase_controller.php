@@ -24,6 +24,8 @@
  */
 class fbase_controller extends fs_controller
 {
+    private const MSG_FACTURA_BORRADA = 'La factura se ha borrado.';
+    private const MSG_FACTURA_NO_BORRADA = '¡Imposible borrar la factura!';
 
     /**
      * TRUE si el usuario tiene permisos para eliminar en la página.
@@ -217,7 +219,7 @@ class fbase_controller extends fs_controller
      */
     public function fbase_calc_due($descuentos)
     {
-        return (1 - $this->fbase_calc_desc_due($descuentos) / 100);
+        return 1 - $this->fbase_calc_desc_due($descuentos) / 100;
     }
 
     /**
@@ -298,82 +300,132 @@ class fbase_controller extends fs_controller
      */
     protected function fbase_facturar_albaran_cliente($albaranes, $fecha = '', $codpago = '')
     {
-        $continuar = TRUE;
-
-        $factura = new factura_cliente();
-        $factura->codagente = empty($albaranes[0]->codagente) ? $this->user->codagente : $albaranes[0]->codagente;
-        $factura->codalmacen = $albaranes[0]->codalmacen;
-        $factura->coddivisa = $albaranes[0]->coddivisa;
-        $factura->tasaconv = $albaranes[0]->tasaconv;
-
-        /// comprobamos si se ha cambiado la forma de pago
-        if ($codpago) {
-            $factura->codpago = $codpago;
-        } else {
-            $factura->codpago = $albaranes[0]->codpago;
-        }
-
-        $factura->codserie = $albaranes[0]->codserie;
-        $factura->irpf = $albaranes[0]->irpf;
-        if (count($albaranes) == 1) {
-            $factura->observaciones = $albaranes[0]->observaciones;
-        }
-        $factura->apartado = $albaranes[0]->apartado;
-        $factura->cifnif = $albaranes[0]->cifnif;
-        $factura->ciudad = $albaranes[0]->ciudad;
-        $factura->codcliente = $albaranes[0]->codcliente;
-        $factura->coddir = $albaranes[0]->coddir;
-        $factura->codpais = $albaranes[0]->codpais;
-        $factura->codpostal = $albaranes[0]->codpostal;
-        $factura->direccion = $albaranes[0]->direccion;
-        $factura->nombrecliente = $albaranes[0]->nombrecliente;
-        $factura->provincia = $albaranes[0]->provincia;
-
-        $factura->envio_apellidos = $albaranes[0]->envio_apellidos;
-        $factura->envio_ciudad = $albaranes[0]->envio_ciudad;
-        $factura->envio_codigo = $albaranes[0]->envio_codigo;
-        $factura->envio_codpostal = $albaranes[0]->envio_codpostal;
-        $factura->envio_codtrans = $albaranes[0]->envio_codtrans;
-        $factura->envio_direccion = $albaranes[0]->envio_direccion;
-        $factura->envio_nombre = $albaranes[0]->envio_nombre;
-        $factura->envio_provincia = $albaranes[0]->envio_provincia;
-
-        $factura->dtopor1 = $albaranes[0]->dtopor1;
-        $factura->dtopor2 = $albaranes[0]->dtopor2;
-        $factura->dtopor3 = $albaranes[0]->dtopor3;
-        $factura->dtopor4 = $albaranes[0]->dtopor4;
-        $factura->dtopor5 = $albaranes[0]->dtopor5;
-
-        /// obtenemos los datos actuales del cliente, por si ha habido cambios
-        $cliente_model = new cliente();
-        $cliente = $cliente_model->get($albaranes[0]->codcliente);
-        if ($cliente) {
-            foreach ($cliente->get_direcciones() as $dir) {
-                /**
-                 * Si la dirección es de facturación y ha sido modificada posteriormente
-                 * al albarán, la usamos para la factura, porque está más actualizada.
-                 */
-                if ($dir->domfacturacion && strtotime($dir->fecha) > strtotime($albaranes[0]->fecha)) {
-                    $factura->apartado = $dir->apartado;
-                    $factura->cifnif = $cliente->cifnif;
-                    $factura->ciudad = $dir->ciudad;
-                    $factura->codcliente = $cliente->codcliente;
-                    $factura->coddir = $dir->id;
-                    $factura->codpais = $dir->codpais;
-                    $factura->codpostal = $dir->codpostal;
-                    $factura->direccion = $dir->direccion;
-                    $factura->nombrecliente = $cliente->razonsocial;
-                    $factura->provincia = $dir->provincia;
-                    break;
-                }
-            }
-        }
+        $factura = $this->buildFacturaClienteHeader($albaranes, $codpago);
+        $cliente = $this->applyClienteDireccionFacturacion($factura, $albaranes);
 
         if ($fecha == '') {
             $fecha = $albaranes[0]->fecha;
         }
 
-        /// asignamos el ejercicio que corresponde a la fecha elegida
+        $ejercicio = $this->applyFacturaClienteEjercicioYPago($factura, $fecha, $cliente);
+
+        if (!fs_generar_numero2($factura)) {
+            $factura->numero2 = $albaranes[0]->numero2;
+        }
+
+        if (!$this->validateFacturaEjercicio($ejercicio, $factura)) {
+            return FALSE;
+        }
+
+        if (!$factura->save()) {
+            $this->new_error_msg("¡Imposible guardar la factura!");
+            return FALSE;
+        }
+
+        if (!$this->saveFacturaClienteLines($factura, $albaranes)) {
+            $this->rollbackFacturaOnFailure($factura);
+            return FALSE;
+        }
+
+        if (!$this->finalizeFacturaClienteTotales($factura, $albaranes)) {
+            $this->rollbackFacturaOnFailure($factura);
+            return FALSE;
+        }
+
+        $this->fbase_generar_asiento($factura);
+        fs_documento_post_save($factura);
+
+        return TRUE;
+    }
+
+    private function buildFacturaClienteHeader(array $albaranes, string $codpago): factura_cliente
+    {
+        if (empty($albaranes)) {
+            throw new \RuntimeException('No se puede crear una factura sin albaranes.');
+        }
+
+        $factura = new factura_cliente();
+        $alb = $albaranes[0];
+
+        $factura->codagente = empty($alb->codagente) ? $this->user->codagente : $alb->codagente;
+        $factura->codalmacen = $alb->codalmacen;
+        $factura->coddivisa = $alb->coddivisa;
+        $factura->tasaconv = $alb->tasaconv;
+        $factura->codpago = $codpago ?: $alb->codpago;
+        $factura->codserie = $alb->codserie;
+        $factura->irpf = $alb->irpf;
+
+        if (count($albaranes) == 1) {
+            $factura->observaciones = $alb->observaciones;
+        }
+
+        $factura->apartado = $alb->apartado;
+        $factura->cifnif = $alb->cifnif;
+        $factura->ciudad = $alb->ciudad;
+        $factura->codcliente = $alb->codcliente;
+        $factura->coddir = $alb->coddir;
+        $factura->codpais = $alb->codpais;
+        $factura->codpostal = $alb->codpostal;
+        $factura->direccion = $alb->direccion;
+        $factura->nombrecliente = $alb->nombrecliente;
+        $factura->provincia = $alb->provincia;
+
+        $factura->envio_apellidos = $alb->envio_apellidos;
+        $factura->envio_ciudad = $alb->envio_ciudad;
+        $factura->envio_codigo = $alb->envio_codigo;
+        $factura->envio_codpostal = $alb->envio_codpostal;
+        $factura->envio_codtrans = $alb->envio_codtrans;
+        $factura->envio_direccion = $alb->envio_direccion;
+        $factura->envio_nombre = $alb->envio_nombre;
+        $factura->envio_provincia = $alb->envio_provincia;
+
+        $factura->dtopor1 = $alb->dtopor1;
+        $factura->dtopor2 = $alb->dtopor2;
+        $factura->dtopor3 = $alb->dtopor3;
+        $factura->dtopor4 = $alb->dtopor4;
+        $factura->dtopor5 = $alb->dtopor5;
+
+        return $factura;
+    }
+
+    /**
+     * Actualiza la dirección de facturación si el cliente tiene una más reciente.
+     *
+     * @return object|null El cliente encontrado, o null
+     */
+    private function applyClienteDireccionFacturacion(object $factura, array $albaranes): ?object
+    {
+        $cliente_model = new cliente();
+        $cliente = $cliente_model->get($albaranes[0]->codcliente);
+
+        if (!$cliente) {
+            return null;
+        }
+
+        foreach ($cliente->get_direcciones() as $dir) {
+            if ($dir->domfacturacion && strtotime($dir->fecha) > strtotime($albaranes[0]->fecha)) {
+                $factura->apartado = $dir->apartado;
+                $factura->cifnif = $cliente->cifnif;
+                $factura->ciudad = $dir->ciudad;
+                $factura->codcliente = $cliente->codcliente;
+                $factura->coddir = $dir->id;
+                $factura->codpais = $dir->codpais;
+                $factura->codpostal = $dir->codpostal;
+                $factura->direccion = $dir->direccion;
+                $factura->nombrecliente = $cliente->razonsocial;
+                $factura->provincia = $dir->provincia;
+                break;
+            }
+        }
+
+        return $cliente;
+    }
+
+    /**
+     * @return object|null El ejercicio asignado, o null si no se encontró
+     */
+    private function applyFacturaClienteEjercicioYPago(object $factura, string $fecha, ?object $cliente): ?object
+    {
         $ejercicio_model = new ejercicio();
         $ejercicio = $ejercicio_model->get_by_fecha($fecha);
         if ($ejercicio) {
@@ -381,7 +433,6 @@ class fbase_controller extends fs_controller
             $factura->set_fecha_hora($fecha, $factura->hora);
         }
 
-        /// comprobamos la forma de pago para saber si hay que marcar la factura como pagada
         $forma_pago_model = new forma_pago();
         $forma_pago = $forma_pago_model->get($factura->codpago);
         if ($forma_pago) {
@@ -389,108 +440,78 @@ class fbase_controller extends fs_controller
                 $factura->pagada = TRUE;
             }
 
-            if ($cliente) {
-                $factura->vencimiento = $forma_pago->calcular_vencimiento($factura->fecha, $cliente->diaspago);
-            } else {
-                $factura->vencimiento = $forma_pago->calcular_vencimiento($factura->fecha);
+            $factura->vencimiento = $cliente
+                ? $forma_pago->calcular_vencimiento($factura->fecha, $cliente->diaspago)
+                : $forma_pago->calcular_vencimiento($factura->fecha);
+        }
+
+        return $ejercicio;
+    }
+
+    private function saveFacturaClienteLines(object $factura, array $albaranes): bool
+    {
+        foreach ($albaranes as $alb) {
+            foreach ($alb->get_lineas() as $l) {
+                $n = new linea_factura_cliente();
+                $n->idalbaran = $alb->idalbaran;
+                $n->idlineaalbaran = $l->idlinea;
+                $n->idfactura = $factura->idfactura;
+                $n->cantidad = $l->cantidad;
+                $n->codimpuesto = $l->codimpuesto;
+                $n->descripcion = $l->descripcion;
+                $n->dtopor = $l->dtopor;
+                $n->dtopor2 = $l->dtopor2;
+                $n->dtopor3 = $l->dtopor3;
+                $n->dtopor4 = $l->dtopor4;
+                $n->irpf = $l->irpf;
+                $n->iva = $l->iva;
+                $n->pvpsindto = $l->pvpsindto;
+                $n->pvptotal = $l->pvptotal;
+                $n->pvpunitario = $l->pvpunitario;
+                $n->recargo = $l->recargo;
+                $n->referencia = $l->referencia;
+                $n->codcombinacion = $l->codcombinacion;
+                $n->mostrar_cantidad = $l->mostrar_cantidad;
+                $n->mostrar_precio = $l->mostrar_precio;
+
+                if (!$n->save()) {
+                    $this->new_error_msg("¡Imposible guardar la línea el artículo " . $n->referencia . "! ");
+                    return false;
+                }
             }
         }
 
-        /// función auxiliar para implementar en los plugins que lo necesiten
-        if (!fs_generar_numero2($factura)) {
-            $factura->numero2 = $albaranes[0]->numero2;
+        return true;
+    }
+
+    private function finalizeFacturaClienteTotales(object $factura, array $albaranes): bool
+    {
+        $due_totales = $this->fbase_calc_due([$factura->dtopor1, $factura->dtopor2, $factura->dtopor3, $factura->dtopor4, $factura->dtopor5]);
+        foreach ($this->fbase_get_subtotales_documento($factura->get_lineas(), $due_totales) as $subt) {
+            $factura->netosindto += $subt['netosindto'];
+            $factura->neto += $subt['neto'];
+            $factura->totaliva += $subt['iva'];
+            $factura->totalirpf += $subt['irpf'];
+            $factura->totalrecargo += $subt['recargo'];
         }
 
-        $regularizacion = new regularizacion_iva();
-
-        if (!$ejercicio) {
-            $this->new_error_msg("Ejercicio no encontrado o está cerrado.");
-        } else if (!$ejercicio->abierto()) {
-            $this->new_error_msg('El ejercicio ' . $ejercicio->codejercicio . ' está cerrado.');
-        } else if ($regularizacion->get_fecha_inside($factura->fecha)) {
-            /*
-             * comprobamos que la fecha de la factura no esté dentro de un periodo de
-             * IVA regularizado.
-             */
-            $this->new_error_msg('El ' . FS_IVA . ' de ese periodo ya ha sido regularizado. No se pueden añadir más facturas en esa fecha.');
-        } else if ($factura->save()) {
-            foreach ($albaranes as $alb) {
-                foreach ($alb->get_lineas() as $l) {
-                    $n = new linea_factura_cliente();
-                    $n->idalbaran = $alb->idalbaran;
-                    $n->idlineaalbaran = $l->idlinea;
-                    $n->idfactura = $factura->idfactura;
-                    $n->cantidad = $l->cantidad;
-                    $n->codimpuesto = $l->codimpuesto;
-                    $n->descripcion = $l->descripcion;
-                    $n->dtopor = $l->dtopor;
-                    $n->dtopor2 = $l->dtopor2;
-                    $n->dtopor3 = $l->dtopor3;
-                    $n->dtopor4 = $l->dtopor4;
-                    $n->irpf = $l->irpf;
-                    $n->iva = $l->iva;
-                    $n->pvpsindto = $l->pvpsindto;
-                    $n->pvptotal = $l->pvptotal;
-                    $n->pvpunitario = $l->pvpunitario;
-                    $n->recargo = $l->recargo;
-                    $n->referencia = $l->referencia;
-                    $n->codcombinacion = $l->codcombinacion;
-                    $n->mostrar_cantidad = $l->mostrar_cantidad;
-                    $n->mostrar_precio = $l->mostrar_precio;
-
-                    if (!$n->save()) {
-                        $continuar = FALSE;
-                        $this->new_error_msg("¡Imposible guardar la línea el artículo " . $n->referencia . "! ");
-                        break;
-                    }
-                }
-            }
-
-            if ($continuar) {
-                /// obtenemos los subtotales por impuesto
-                $due_totales = $this->fbase_calc_due([$factura->dtopor1, $factura->dtopor2, $factura->dtopor3, $factura->dtopor4, $factura->dtopor5]);
-                foreach ($this->fbase_get_subtotales_documento($factura->get_lineas(), $due_totales) as $subt) {
-                    $factura->netosindto += $subt['netosindto'];
-                    $factura->neto += $subt['neto'];
-                    $factura->totaliva += $subt['iva'];
-                    $factura->totalirpf += $subt['irpf'];
-                    $factura->totalrecargo += $subt['recargo'];
-                }
-
-                $factura->total = round($factura->neto + $factura->totaliva - $factura->totalirpf + $factura->totalrecargo, FS_NF0);
-                $factura->save();
-
-                foreach ($albaranes as $alb) {
-                    $alb->idfactura = $factura->idfactura;
-                    $alb->ptefactura = FALSE;
-
-                    if (!$alb->save()) {
-                        $this->new_error_msg("¡Imposible vincular el " . FS_ALBARAN . " con la nueva factura!");
-                        $continuar = FALSE;
-                        break;
-                    }
-                }
-
-                if ($continuar) {
-                    $this->fbase_generar_asiento($factura);
-
-                    /// Función de ejecución de tareas post guardado correcto de la factura
-                    fs_documento_post_save($factura);
-                } else if ($factura->delete()) {
-                    $this->new_error_msg("La factura se ha borrado.");
-                } else {
-                    $this->new_error_msg("¡Imposible borrar la factura!");
-                }
-            } else if ($factura->delete()) {
-                $this->new_error_msg("La factura se ha borrado.");
-            } else {
-                $this->new_error_msg("¡Imposible borrar la factura!");
-            }
-        } else {
-            $this->new_error_msg("¡Imposible guardar la factura!");
+        $factura->total = round($factura->neto + $factura->totaliva - $factura->totalirpf + $factura->totalrecargo, FS_NF0);
+        if (!$factura->save()) {
+            $this->new_error_msg("¡Imposible guardar los totales de la factura!");
+            return false;
         }
 
-        return $continuar;
+        foreach ($albaranes as $alb) {
+            $alb->idfactura = $factura->idfactura;
+            $alb->ptefactura = FALSE;
+
+            if (!$alb->save()) {
+                $this->new_error_msg("¡Imposible vincular el " . FS_ALBARAN . " con la nueva factura!");
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -500,34 +521,80 @@ class fbase_controller extends fs_controller
      */
     protected function fbase_facturar_albaran_proveedor($albaranes, $fecha = '')
     {
-        $continuar = TRUE;
+        $factura = $this->buildFacturaProveedorHeader($albaranes);
 
-        $factura = new factura_proveedor();
-        $factura->codagente = empty($albaranes[0]->codagente) ? $this->user->codagente : $albaranes[0]->codagente;
-        $factura->codalmacen = $albaranes[0]->codalmacen;
-        $factura->coddivisa = $albaranes[0]->coddivisa;
-        $factura->tasaconv = $albaranes[0]->tasaconv;
-        $factura->codpago = $albaranes[0]->codpago;
-        $factura->codserie = $albaranes[0]->codserie;
-        $factura->irpf = $albaranes[0]->irpf;
-        if (count($albaranes) == 1) {
-            $factura->observaciones = $albaranes[0]->observaciones;
+        if ($fecha == '') {
+            $fecha = $albaranes[0]->fecha;
         }
 
-        /// obtenemos los datos actualizados del proveedor
+        $ejercicio = $this->applyFacturaProveedorEjercicioYPago($factura, $fecha);
+
+        if (!fs_generar_numproveedor($factura)) {
+            $factura->numproveedor = $albaranes[0]->numproveedor;
+        }
+
+        if (!$this->validateFacturaEjercicio($ejercicio, $factura)) {
+            return FALSE;
+        }
+
+        if (!$factura->save()) {
+            $this->new_error_msg("¡Imposible guardar la factura!");
+            return FALSE;
+        }
+
+        if (!$this->saveFacturaProveedorLines($factura, $albaranes)) {
+            $this->rollbackFacturaOnFailure($factura);
+            return FALSE;
+        }
+
+        if (!$this->finalizeFacturaProveedorTotales($factura, $albaranes)) {
+            $this->rollbackFacturaOnFailure($factura);
+            return FALSE;
+        }
+
+        $this->fbase_generar_asiento($factura);
+        fs_documento_post_save($factura);
+
+        return TRUE;
+    }
+
+    private function buildFacturaProveedorHeader(array $albaranes): factura_proveedor
+    {
+        if (empty($albaranes)) {
+            throw new \RuntimeException('No se puede crear una factura sin albaranes.');
+        }
+
+        $factura = new factura_proveedor();
+        $alb = $albaranes[0];
+
+        $factura->codagente = empty($alb->codagente) ? $this->user->codagente : $alb->codagente;
+        $factura->codalmacen = $alb->codalmacen;
+        $factura->coddivisa = $alb->coddivisa;
+        $factura->tasaconv = $alb->tasaconv;
+        $factura->codpago = $alb->codpago;
+        $factura->codserie = $alb->codserie;
+        $factura->irpf = $alb->irpf;
+
+        if (count($albaranes) == 1) {
+            $factura->observaciones = $alb->observaciones;
+        }
+
         $proveedor_model = new proveedor();
-        $proveedor = $proveedor_model->get($albaranes[0]->codproveedor);
+        $proveedor = $proveedor_model->get($alb->codproveedor);
         if ($proveedor) {
             $factura->cifnif = $proveedor->cifnif;
             $factura->codproveedor = $proveedor->codproveedor;
             $factura->nombre = $proveedor->razonsocial;
         }
 
-        if ($fecha == '') {
-            $fecha = $albaranes[0]->fecha;
-        }
+        return $factura;
+    }
 
-        /// asignamos el ejercicio que corresponde a la fecha elegida
+    /**
+     * @return object|null El ejercicio asignado, o null si no se encontró
+     */
+    private function applyFacturaProveedorEjercicioYPago(object $factura, string $fecha): ?object
+    {
         $ejercicio_model = new ejercicio();
         $ejercicio = $ejercicio_model->get_by_fecha($fecha);
         if ($ejercicio) {
@@ -535,101 +602,105 @@ class fbase_controller extends fs_controller
             $factura->set_fecha_hora($fecha, $factura->hora);
         }
 
-        /// comprobamos la forma de pago para saber si hay que marcar la factura como pagada
         $forma_pago_model = new forma_pago();
         $forma_pago = $forma_pago_model->get($factura->codpago);
         if ($forma_pago && $forma_pago->genrecibos == 'Pagados') {
             $factura->pagada = TRUE;
         }
 
-        /// función auxiliar para implementar en los plugins que lo necesiten
-        if (!fs_generar_numproveedor($factura)) {
-            $factura->numproveedor = $albaranes[0]->numproveedor;
+        return $ejercicio;
+    }
+
+    private function saveFacturaProveedorLines(object $factura, array $albaranes): bool
+    {
+        foreach ($albaranes as $alb) {
+            foreach ($alb->get_lineas() as $l) {
+                $n = new linea_factura_proveedor();
+                $n->idalbaran = $alb->idalbaran;
+                $n->idlineaalbaran = $l->idlinea;
+                $n->idfactura = $factura->idfactura;
+                $n->cantidad = $l->cantidad;
+                $n->codimpuesto = $l->codimpuesto;
+                $n->descripcion = $l->descripcion;
+                $n->dtopor = $l->dtopor;
+                $n->irpf = $l->irpf;
+                $n->iva = $l->iva;
+                $n->pvpsindto = $l->pvpsindto;
+                $n->pvptotal = $l->pvptotal;
+                $n->pvpunitario = $l->pvpunitario;
+                $n->recargo = $l->recargo;
+                $n->referencia = $l->referencia;
+                $n->codcombinacion = $l->codcombinacion;
+
+                if (!$n->save()) {
+                    $this->new_error_msg("¡Imposible guardar la línea el artículo " . $n->referencia . "! ");
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private function finalizeFacturaProveedorTotales(object $factura, array $albaranes): bool
+    {
+        foreach ($this->fbase_get_subtotales_documento($factura->get_lineas()) as $subt) {
+            $factura->neto += $subt['neto'];
+            $factura->totaliva += $subt['iva'];
+            $factura->totalirpf += $subt['irpf'];
+            $factura->totalrecargo += $subt['recargo'];
+        }
+
+        $factura->total = round($factura->neto + $factura->totaliva - $factura->totalirpf + $factura->totalrecargo, FS_NF0);
+        if (!$factura->save()) {
+            $this->new_error_msg("¡Imposible guardar los totales de la factura!");
+            return false;
+        }
+
+        foreach ($albaranes as $alb) {
+            $alb->idfactura = $factura->idfactura;
+            $alb->ptefactura = FALSE;
+
+            if (!$alb->save()) {
+                $this->new_error_msg("¡Imposible vincular el " . FS_ALBARAN . " con la nueva factura!");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Valida que el ejercicio exista, esté abierto y no haya regularización de IVA.
+     */
+    private function validateFacturaEjercicio(?object $ejercicio, object $factura): bool
+    {
+        if (!$ejercicio) {
+            $this->new_error_msg("Ejercicio no encontrado o está cerrado.");
+            return false;
+        }
+
+        if (!$ejercicio->abierto()) {
+            $this->new_error_msg('El ejercicio ' . $ejercicio->codejercicio . ' está cerrado.');
+            return false;
         }
 
         $regularizacion = new regularizacion_iva();
-
-        if (!$ejercicio) {
-            $this->new_error_msg("Ejercicio no encontrado o está cerrado.");
-        } else if (!$ejercicio->abierto()) {
-            $this->new_error_msg('El ejercicio ' . $ejercicio->codejercicio . ' está cerrado.');
-        } else if ($regularizacion->get_fecha_inside($factura->fecha)) {
-            /*
-             * comprobamos que la fecha de la factura no esté dentro de un periodo de
-             * IVA regularizado.
-             */
+        if ($regularizacion->get_fecha_inside($factura->fecha)) {
             $this->new_error_msg('El ' . FS_IVA . ' de ese periodo ya ha sido regularizado. No se pueden añadir más facturas en esa fecha.');
-        } else if ($factura->save()) {
-            foreach ($albaranes as $alb) {
-                foreach ($alb->get_lineas() as $l) {
-                    $n = new linea_factura_proveedor();
-                    $n->idalbaran = $alb->idalbaran;
-                    $n->idlineaalbaran = $l->idlinea;
-                    $n->idfactura = $factura->idfactura;
-                    $n->cantidad = $l->cantidad;
-                    $n->codimpuesto = $l->codimpuesto;
-                    $n->descripcion = $l->descripcion;
-                    $n->dtopor = $l->dtopor;
-                    $n->irpf = $l->irpf;
-                    $n->iva = $l->iva;
-                    $n->pvpsindto = $l->pvpsindto;
-                    $n->pvptotal = $l->pvptotal;
-                    $n->pvpunitario = $l->pvpunitario;
-                    $n->recargo = $l->recargo;
-                    $n->referencia = $l->referencia;
-                    $n->codcombinacion = $l->codcombinacion;
-
-                    if (!$n->save()) {
-                        $continuar = FALSE;
-                        $this->new_error_msg("¡Imposible guardar la línea el artículo " . $n->referencia . "! ");
-                        break;
-                    }
-                }
-            }
-
-            if ($continuar) {
-                /// obtenemos los subtotales por impuesto
-                foreach ($this->fbase_get_subtotales_documento($factura->get_lineas()) as $subt) {
-                    $factura->neto += $subt['neto'];
-                    $factura->totaliva += $subt['iva'];
-                    $factura->totalirpf += $subt['irpf'];
-                    $factura->totalrecargo += $subt['recargo'];
-                }
-
-                $factura->total = round($factura->neto + $factura->totaliva - $factura->totalirpf + $factura->totalrecargo, FS_NF0);
-                $factura->save();
-
-                foreach ($albaranes as $alb) {
-                    $alb->idfactura = $factura->idfactura;
-                    $alb->ptefactura = FALSE;
-
-                    if (!$alb->save()) {
-                        $this->new_error_msg("¡Imposible vincular el " . FS_ALBARAN . " con la nueva factura!");
-                        $continuar = FALSE;
-                        break;
-                    }
-                }
-
-                if ($continuar) {
-                    $this->fbase_generar_asiento($factura);
-
-                    /// Función de ejecución de tareas post guardado correcto de la factura
-                    fs_documento_post_save($factura);
-                } else if ($factura->delete()) {
-                    $this->new_error_msg("La factura se ha borrado.");
-                } else {
-                    $this->new_error_msg("¡Imposible borrar la factura!");
-                }
-            } else if ($factura->delete()) {
-                $this->new_error_msg("La factura se ha borrado.");
-            } else {
-                $this->new_error_msg("¡Imposible borrar la factura!");
-            }
-        } else {
-            $this->new_error_msg("¡Imposible guardar la factura!");
+            return false;
         }
 
-        return $continuar;
+        return true;
+    }
+
+    private function rollbackFacturaOnFailure(object $factura): void
+    {
+        if ($factura->delete()) {
+            $this->new_error_msg(self::MSG_FACTURA_BORRADA);
+        } else {
+            $this->new_error_msg(self::MSG_FACTURA_NO_BORRADA);
+        }
     }
 
     /**

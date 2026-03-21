@@ -25,6 +25,8 @@ namespace FSFramework\model;
  */
 class fabricante extends \fs_model
 {
+    private const SQL_SELECT_ALL = 'SELECT * FROM ';
+    private const PK_WHERE = ' WHERE codfabricante = ';
 
     /**
      * Clave primaria.
@@ -91,7 +93,7 @@ class fabricante extends \fs_model
 
     public function get($cod)
     {
-        $data = $this->db->select("SELECT * FROM " . $this->table_name . " WHERE codfabricante = " . $this->var2str($cod) . ";");
+        $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . self::PK_WHERE . $this->var2str($cod) . ";");
         if ($data) {
             return new \fabricante($data[0]);
         }
@@ -115,7 +117,7 @@ class fabricante extends \fs_model
             return FALSE;
         }
 
-        return $this->db->select("SELECT * FROM " . $this->table_name . " WHERE codfabricante = " . $this->var2str($this->codfabricante) . ";");
+        return $this->db->select(self::SQL_SELECT_ALL . $this->table_name . self::PK_WHERE . $this->var2str($this->codfabricante) . ";");
     }
 
     /**
@@ -149,7 +151,7 @@ class fabricante extends \fs_model
 
             if ($this->exists()) {
                 $sql = "UPDATE " . $this->table_name . " SET nombre = " . $this->var2str($this->nombre) .
-                    " WHERE codfabricante = " . $this->var2str($this->codfabricante) . ";";
+                    self::PK_WHERE . $this->var2str($this->codfabricante) . ";";
             } else {
                 $sql = "INSERT INTO " . $this->table_name . " (codfabricante,nombre) VALUES " .
                     "(" . $this->var2str($this->codfabricante) .
@@ -170,7 +172,7 @@ class fabricante extends \fs_model
     {
         $this->clean_cache();
 
-        $sql = "DELETE FROM " . $this->table_name . " WHERE codfabricante = " . $this->var2str($this->codfabricante) . ";";
+        $sql = "DELETE FROM " . $this->table_name . self::PK_WHERE . $this->var2str($this->codfabricante) . ";";
         return $this->db->exec($sql);
     }
 
@@ -190,7 +192,7 @@ class fabricante extends \fs_model
         $fablist = $this->cache->get_array('m_fabricante_all');
         if (!$fablist) {
             /// si la lista no está en caché, leemos de la base de datos
-            $data = $this->db->select("SELECT * FROM " . $this->table_name . " ORDER BY nombre ASC;");
+            $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " ORDER BY nombre ASC;");
             if ($data) {
                 foreach ($data as $d) {
                     $fablist[] = new \fabricante($d);
@@ -208,7 +210,8 @@ class fabricante extends \fs_model
     {
         $fablist = [];
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
-        $data = $this->db->select("SELECT * FROM " . $this->table_name . " WHERE lower(nombre) LIKE '%" . $query . "%' ORDER BY nombre ASC;");
+        $escaped = str_replace(['|', '%', '_'], ['||', '|%', '|_'], $query);
+        $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " WHERE lower(nombre) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|' ORDER BY nombre ASC;");
         if ($data) {
             foreach ($data as $f) {
                 $fablist[] = new \fabricante($f);

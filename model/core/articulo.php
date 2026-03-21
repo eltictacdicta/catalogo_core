@@ -181,6 +181,16 @@ class articulo extends \fs_model
     private $iva;
     private $imagen;
     private $exists;
+
+    private const IMAGES_PATH = 'images/articulos/';
+    private const IMG_SUFFIX_PNG = '-1.png';
+    private const IMG_SUFFIX_JPG = '-1.jpg';
+    private const ORDER_BY_REF = ' ORDER BY lower(referencia) ASC';
+    private const ERR_STOCK_UPDATE = '¡Error al actualizar el stock del artículo!';
+    private const SQL_SELECT_ALL = 'SELECT * FROM ';
+    private const SQL_UPDATE = 'UPDATE ';
+    private const PK_REFERENCIA = ' WHERE referencia = ';
+
     private static $impuestos;
     private static $search_tags;
     private static $cleaned_cache;
@@ -376,7 +386,7 @@ class articulo extends \fs_model
      */
     public function get($ref)
     {
-        $data = $this->db->select("SELECT " . self::$column_list . " FROM " . $this->table_name . " WHERE referencia = " . $this->var2str($ref) . ";");
+        $data = $this->db->select("SELECT " . self::$column_list . " FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($ref) . ";");
         if ($data) {
             return new \articulo($data[0]);
         }
@@ -592,10 +602,10 @@ class articulo extends \fs_model
      */
     public function imagen_url()
     {
-        if (file_exists(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.png')) {
-            return 'images/articulos/' . $this->image_ref() . '-1.png';
-        } else if (file_exists(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.jpg')) {
-            return 'images/articulos/' . $this->image_ref() . '-1.jpg';
+        if (file_exists(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_PNG)) {
+            return self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_PNG;
+        } else if (file_exists(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_JPG)) {
+            return self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_JPG;
         }
 
         return FALSE;
@@ -610,21 +620,21 @@ class articulo extends \fs_model
     {
         $this->imagen = NULL;
 
-        if (file_exists(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.png')) {
-            unlink(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.png');
-        } else if (file_exists('images/articulos/' . $this->image_ref() . '-1.jpg')) {
-            unlink(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.jpg');
+        if (file_exists(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_PNG)) {
+            unlink(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_PNG);
+        } else if (file_exists(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_JPG)) {
+            unlink(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_JPG);
         }
 
         if ($img) {
-            if (!file_exists(FS_MYDOCS . 'images/articulos')) {
-                @mkdir(FS_MYDOCS . 'images/articulos', 0777, TRUE);
+            if (!file_exists(FS_MYDOCS . rtrim(self::IMAGES_PATH, '/'))) {
+                @mkdir(FS_MYDOCS . rtrim(self::IMAGES_PATH, '/'), 0777, TRUE);
             }
 
             if ($png) {
-                $f = @fopen(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.png', 'a');
+                $f = @fopen(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_PNG, 'a');
             } else {
-                $f = @fopen(FS_MYDOCS . 'images/articulos/' . $this->image_ref() . '-1.jpg', 'a');
+                $f = @fopen(FS_MYDOCS . self::IMAGES_PATH . $this->image_ref() . self::IMG_SUFFIX_JPG, 'a');
             }
 
             if ($f) {
@@ -668,15 +678,15 @@ class articulo extends \fs_model
             return false;
         }
 
-        $sql = "UPDATE " . $this->table_name . " SET referencia = " . $this->var2str($ref)
-            . " WHERE referencia = " . $this->var2str($this->referencia) . ";";
+        $sql = self::SQL_UPDATE . $this->table_name . " SET referencia = " . $this->var2str($ref)
+            . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
         if ($this->db->exec($sql)) {
             /// renombramos la imagen, si la hay
-            $img_path = FS_MYDOCS . 'images/articulos/';
-            if (file_exists($img_path . $this->image_ref() . '-1.png')) {
-                rename($img_path . $this->image_ref() . '-1.png', $img_path . $this->image_ref($ref) . '-1.png');
-            } elseif (file_exists($img_path . $this->image_ref() . '-1.jpg')) {
-                rename($img_path . $this->image_ref() . '-1.jpg', $img_path . $this->image_ref($ref) . '-1.jpg');
+            $img_path = FS_MYDOCS . self::IMAGES_PATH;
+            if (file_exists($img_path . $this->image_ref() . self::IMG_SUFFIX_PNG)) {
+                rename($img_path . $this->image_ref() . self::IMG_SUFFIX_PNG, $img_path . $this->image_ref($ref) . self::IMG_SUFFIX_PNG);
+            } elseif (file_exists($img_path . $this->image_ref() . self::IMG_SUFFIX_JPG)) {
+                rename($img_path . $this->image_ref() . self::IMG_SUFFIX_JPG, $img_path . $this->image_ref($ref) . self::IMG_SUFFIX_JPG);
             }
 
             $this->referencia = $ref;
@@ -727,52 +737,25 @@ class articulo extends \fs_model
      */
     public function set_stock($codalmacen, $cantidad = 1)
     {
-        $result = FALSE;
-
         if ($this->nostock) {
-            $result = TRUE;
-        } else {
-            $stock = new \stock();
-            $encontrado = FALSE;
-            $stocks = $stock->all_from_articulo($this->referencia);
-            foreach ($stocks as $k => $value) {
-                if ($value->codalmacen == $codalmacen) {
-                    $stocks[$k]->set_cantidad($cantidad);
-                    $result = $stocks[$k]->save();
-                    $encontrado = TRUE;
-                    break;
-                }
-            }
-            if (!$encontrado) {
-                $stock->referencia = $this->referencia;
-                $stock->codalmacen = $codalmacen;
-                $stock->set_cantidad($cantidad);
-                $result = $stock->save();
-            }
-
-            if ($result) {
-                /// $result es TRUE
-                /// este código está muy optimizado para guardar solamente los cambios
-
-                $nuevo_stock = $stock->total_from_articulo($this->referencia);
-                if ($this->stockfis != $nuevo_stock) {
-                    $this->stockfis = $nuevo_stock;
-
-                    if ($this->exists) {
-                        $this->clean_cache();
-                        $result = $this->db->exec("UPDATE " . $this->table_name
-                            . " SET stockfis = " . $this->var2str($this->stockfis)
-                            . " WHERE referencia = " . $this->var2str($this->referencia) . ";");
-                    } else if (!$this->save()) {
-                        $this->new_error_msg("¡Error al actualizar el stock del artículo!");
-                    }
-                }
-            } else {
-                $this->new_error_msg("Error al guardar el stock");
-            }
+            return true;
         }
 
-        return $result;
+        $stock = new \stock();
+        $result = $this->updateOrCreateStockRow($stock, $codalmacen, $cantidad, false);
+
+        if (!$result) {
+            $this->new_error_msg("Error al guardar el stock");
+            return false;
+        }
+
+        $nuevo_stock = $stock->total_from_articulo($this->referencia);
+        if ($this->stockfis != $nuevo_stock) {
+            $this->stockfis = $nuevo_stock;
+            return $this->persistStockFields(false);
+        }
+
+        return true;
     }
 
     /**
@@ -786,79 +769,104 @@ class articulo extends \fs_model
      */
     public function sum_stock($codalmacen, $cantidad = 1, $recalcula_coste = FALSE, $codcombinacion = NULL)
     {
-        $result = FALSE;
-
         if ($recalcula_coste) {
             $this->costemedio = $this->get_costemedio();
         }
 
         if ($this->nostock) {
-            $result = TRUE;
+            return $this->handleNoStockCostUpdate($recalcula_coste);
+        }
 
-            if ($recalcula_coste) {
-                /// este código está muy optimizado para guardar solamente los cambios
-                if ($this->exists) {
-                    $this->clean_cache();
-                    $result = $this->db->exec("UPDATE " . $this->table_name
-                        . " SET costemedio = " . $this->var2str($this->costemedio)
-                        . " WHERE referencia = " . $this->var2str($this->referencia) . ";");
-                } else if (!$this->save()) {
-                    $this->new_error_msg("¡Error al actualizar el stock del artículo!");
-                    $result = FALSE;
-                }
+        $stock = new \stock();
+        $result = $this->updateOrCreateStockRow($stock, $codalmacen, $cantidad, true);
+
+        if (!$result) {
+            $this->new_error_msg("¡Error al guardar el stock!");
+            return false;
+        }
+
+        return $this->persistArticleStockAndCost($stock, $codcombinacion, $cantidad);
+    }
+
+    private function handleNoStockCostUpdate(bool $recalcula_coste): bool
+    {
+        if (!$recalcula_coste) {
+            return true;
+        }
+
+        if ($this->exists) {
+            $this->clean_cache();
+            return $this->db->exec(self::SQL_UPDATE . $this->table_name
+                . " SET costemedio = " . $this->var2str($this->costemedio)
+                . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";");
+        }
+
+        if (!$this->save()) {
+            $this->new_error_msg(self::ERR_STOCK_UPDATE);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return boolean
+     */
+    private function updateOrCreateStockRow(\stock $stock, string $codalmacen, float $cantidad, bool $isSum): bool
+    {
+        $stocks = $stock->all_from_articulo($this->referencia);
+        foreach ($stocks as $k => $value) {
+            if ($value->codalmacen == $codalmacen) {
+                $isSum ? $stocks[$k]->sum_cantidad($cantidad) : $stocks[$k]->set_cantidad($cantidad);
+                return $stocks[$k]->save();
             }
-        } else {
-            $stock = new \stock();
-            $encontrado = FALSE;
-            $stocks = $stock->all_from_articulo($this->referencia);
-            foreach ($stocks as $k => $value) {
-                if ($value->codalmacen == $codalmacen) {
-                    $stocks[$k]->sum_cantidad($cantidad);
-                    $result = $stocks[$k]->save();
-                    $encontrado = TRUE;
-                    break;
-                }
-            }
-            if (!$encontrado) {
-                $stock->referencia = $this->referencia;
-                $stock->codalmacen = $codalmacen;
-                $stock->set_cantidad($cantidad);
-                $result = $stock->save();
-            }
+        }
 
-            if ($result) {
-                /// este código está muy optimizado para guardar solamente los cambios
+        $stock->referencia = $this->referencia;
+        $stock->codalmacen = $codalmacen;
+        $stock->set_cantidad($cantidad);
+        return $stock->save();
+    }
 
-                $nuevo_stock = $stock->total_from_articulo($this->referencia);
-                if ($this->stockfis != $nuevo_stock) {
-                    $this->stockfis = $nuevo_stock;
+    private function persistArticleStockAndCost(\stock $stock, ?string $codcombinacion, float $cantidad): bool
+    {
+        $nuevo_stock = $stock->total_from_articulo($this->referencia);
+        if ($this->stockfis == $nuevo_stock) {
+            return true;
+        }
 
-                    if ($this->exists) {
-                        $this->clean_cache();
-                        $result = $this->db->exec("UPDATE " . $this->table_name
-                            . "  SET stockfis = " . $this->var2str($this->stockfis)
-                            . ", costemedio = " . $this->var2str($this->costemedio)
-                            . "  WHERE referencia = " . $this->var2str($this->referencia) . ";");
-                    } else if (!$this->save()) {
-                        $this->new_error_msg("¡Error al actualizar el stock del artículo!");
-                        $result = FALSE;
-                    }
+        $this->stockfis = $nuevo_stock;
+        $result = $this->persistStockFields(true);
 
-                    /// ¿Alguna combinación?
-                    if ($codcombinacion && $result) {
-                        $com0 = new \articulo_combinacion();
-                        foreach ($com0->all_from_codigo($codcombinacion) as $combi) {
-                            $combi->stockfis += $cantidad;
-                            $combi->save();
-                        }
-                    }
-                }
-            } else {
-                $this->new_error_msg("¡Error al guardar el stock!");
+        if ($codcombinacion && $result) {
+            $com0 = new \articulo_combinacion();
+            foreach ($com0->all_from_codigo($codcombinacion) as $combi) {
+                $combi->stockfis += $cantidad;
+                $combi->save();
             }
         }
 
         return $result;
+    }
+
+    private function persistStockFields(bool $includeCost): bool
+    {
+        if ($this->exists) {
+            $this->clean_cache();
+            $sql = self::SQL_UPDATE . $this->table_name . " SET stockfis = " . $this->var2str($this->stockfis);
+            if ($includeCost) {
+                $sql .= ", costemedio = " . $this->var2str($this->costemedio);
+            }
+            $sql .= self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+            return $this->db->exec($sql);
+        }
+
+        if (!$this->save()) {
+            $this->new_error_msg(self::ERR_STOCK_UPDATE);
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -870,7 +878,7 @@ class articulo extends \fs_model
     public function exists()
     {
         if (!$this->exists) {
-            if ($this->db->select("SELECT referencia FROM " . $this->table_name . " WHERE referencia = " . $this->var2str($this->referencia) . ";")) {
+            if ($this->db->select("SELECT referencia FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";")) {
                 $this->exists = TRUE;
             }
         }
@@ -884,37 +892,53 @@ class articulo extends \fs_model
      */
     public function test()
     {
-        $status = FALSE;
-
-        $this->descripcion = $this->no_html($this->descripcion);
-        $this->codbarras = $this->no_html($this->codbarras);
-        $this->observaciones = $this->no_html($this->observaciones);
-
-        if ($this->equivalencia == '') {
-            $this->equivalencia = NULL;
-        }
-
-        if ($this->nostock) {
-            $this->controlstock = TRUE;
-            $this->stockfis = 0.0;
-            $this->stockmax = 0.0;
-            $this->stockmin = 0.0;
-        }
+        $this->sanitizeFields();
+        $this->applyStockRules();
 
         if ($this->bloqueado) {
             $this->publico = FALSE;
         }
 
-        if (is_null($this->referencia) || strlen($this->referencia) < 1 || strlen($this->referencia) > 18) {
-            $this->new_error_msg("Referencia de artículo no válida: " . $this->referencia . ". Debe tener entre 1 y 18 caracteres.");
-        } else if (isset($this->equivalencia) && strlen($this->equivalencia) > 25) {
-            $this->new_error_msg("Código de equivalencia del artículos no válido: " . $this->equivalencia .
-                ". Debe tener entre 1 y 25 caracteres.");
-        } else {
-            $status = TRUE;
+        return $this->validateReferenciaAndEquivalencia();
+    }
+
+    private function sanitizeFields(): void
+    {
+        $this->descripcion = $this->no_html($this->descripcion);
+        $this->codbarras = $this->no_html($this->codbarras);
+        $this->observaciones = $this->no_html($this->observaciones);
+
+        if ($this->equivalencia === '') {
+            $this->equivalencia = NULL;
+        }
+    }
+
+    private function applyStockRules(): void
+    {
+        if (!$this->nostock) {
+            return;
         }
 
-        return $status;
+        $this->controlstock = TRUE;
+        $this->stockfis = 0.0;
+        $this->stockmax = 0.0;
+        $this->stockmin = 0.0;
+    }
+
+    private function validateReferenciaAndEquivalencia(): bool
+    {
+        if (is_null($this->referencia) || strlen($this->referencia) < 1 || strlen($this->referencia) > 18) {
+            $this->new_error_msg("Referencia de artículo no válida: " . $this->referencia . ". Debe tener entre 1 y 18 caracteres.");
+            return false;
+        }
+
+        if (isset($this->equivalencia) && strlen($this->equivalencia) > 25) {
+            $this->new_error_msg("Código de equivalencia del artículos no válido: " . $this->equivalencia .
+                ". Debe tener entre 1 y 25 caracteres.");
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -923,82 +947,91 @@ class articulo extends \fs_model
      */
     public function save()
     {
-        if ($this->test()) {
-            $this->clean_cache();
+        if (!$this->test()) {
+            return FALSE;
+        }
 
-            if ($this->exists()) {
-                $sql = "UPDATE " . $this->table_name . " SET descripcion = " . $this->var2str($this->descripcion) .
-                    ", codfamilia = " . $this->var2str($this->codfamilia) .
-                    ", codfabricante = " . $this->var2str($this->codfabricante) .
-                    ", pvp = " . $this->var2str($this->pvp) .
-                    ", factualizado = " . $this->var2str($this->factualizado) .
-                    ", costemedio = " . $this->var2str($this->costemedio) .
-                    ", preciocoste = " . $this->var2str($this->preciocoste) .
-                    ", codimpuesto = " . $this->var2str($this->codimpuesto) .
-                    ", stockfis = " . $this->var2str($this->stockfis) .
-                    ", stockmin = " . $this->var2str($this->stockmin) .
-                    ", stockmax = " . $this->var2str($this->stockmax) .
-                    ", controlstock = " . $this->var2str($this->controlstock) .
-                    ", nostock = " . $this->var2str($this->nostock) .
-                    ", bloqueado = " . $this->var2str($this->bloqueado) .
-                    ", sevende = " . $this->var2str($this->sevende) .
-                    ", publico = " . $this->var2str($this->publico) .
-                    ", secompra = " . $this->var2str($this->secompra) .
-                    ", equivalencia = " . $this->var2str($this->equivalencia) .
-                    ", partnumber = " . $this->var2str($this->partnumber) .
-                    ", codbarras = " . $this->var2str($this->codbarras) .
-                    ", observaciones = " . $this->var2str($this->observaciones) .
-                    ", tipo = " . $this->var2str($this->tipo) .
-                    ", imagen = " . $this->var2str($this->imagen) .
-                    ", codsubcuentacom = " . $this->var2str($this->codsubcuentacom) .
-                    ", codsubcuentairpfcom = " . $this->var2str($this->codsubcuentairpfcom) .
-                    ", trazabilidad = " . $this->var2str($this->trazabilidad) .
-                    "  WHERE referencia = " . $this->var2str($this->referencia) . ";";
+        $this->clean_cache();
+        $sql = $this->exists() ? $this->buildUpdateSql() : $this->buildInsertSql();
 
-                if ($this->nostock && $this->stockfis != 0) {
-                    $this->stockfis = 0.0;
-                    $sql .= "DELETE FROM stocks WHERE referencia = " . $this->var2str($this->referencia) . ";";
-                    $sql .= "UPDATE " . $this->table_name . " SET stockfis = " . $this->var2str($this->stockfis) .
-                        " WHERE referencia = " . $this->var2str($this->referencia) . ";";
-                }
-            } else {
-                $sql = "INSERT INTO " . $this->table_name . " (" . self::$column_list . ") VALUES (" .
-                    $this->var2str($this->referencia) . "," .
-                    $this->var2str($this->codfamilia) . "," .
-                    $this->var2str($this->codfabricante) . "," .
-                    $this->var2str($this->descripcion) . "," .
-                    $this->var2str($this->pvp) . "," .
-                    $this->var2str($this->factualizado) . "," .
-                    $this->var2str($this->costemedio) . "," .
-                    $this->var2str($this->preciocoste) . "," .
-                    $this->var2str($this->codimpuesto) . "," .
-                    $this->var2str($this->stockfis) . "," .
-                    $this->var2str($this->stockmin) . "," .
-                    $this->var2str($this->stockmax) . "," .
-                    $this->var2str($this->controlstock) . "," .
-                    $this->var2str($this->nostock) . "," .
-                    $this->var2str($this->bloqueado) . "," .
-                    $this->var2str($this->secompra) . "," .
-                    $this->var2str($this->sevende) . "," .
-                    $this->var2str($this->equivalencia) . "," .
-                    $this->var2str($this->codbarras) . "," .
-                    $this->var2str($this->observaciones) . "," .
-                    $this->var2str($this->imagen) . "," .
-                    $this->var2str($this->publico) . "," .
-                    $this->var2str($this->tipo) . "," .
-                    $this->var2str($this->partnumber) . "," .
-                    $this->var2str($this->codsubcuentacom) . "," .
-                    $this->var2str($this->codsubcuentairpfcom) . "," .
-                    $this->var2str($this->trazabilidad) . ");";
-            }
-
-            if ($this->db->exec($sql)) {
-                $this->exists = TRUE;
-                return TRUE;
-            }
+        if ($this->db->exec($sql)) {
+            $this->exists = TRUE;
+            return TRUE;
         }
 
         return FALSE;
+    }
+
+    private function buildUpdateSql(): string
+    {
+        $sql = self::SQL_UPDATE . $this->table_name . " SET descripcion = " . $this->var2str($this->descripcion) .
+            ", codfamilia = " . $this->var2str($this->codfamilia) .
+            ", codfabricante = " . $this->var2str($this->codfabricante) .
+            ", pvp = " . $this->var2str($this->pvp) .
+            ", factualizado = " . $this->var2str($this->factualizado) .
+            ", costemedio = " . $this->var2str($this->costemedio) .
+            ", preciocoste = " . $this->var2str($this->preciocoste) .
+            ", codimpuesto = " . $this->var2str($this->codimpuesto) .
+            ", stockfis = " . $this->var2str($this->stockfis) .
+            ", stockmin = " . $this->var2str($this->stockmin) .
+            ", stockmax = " . $this->var2str($this->stockmax) .
+            ", controlstock = " . $this->var2str($this->controlstock) .
+            ", nostock = " . $this->var2str($this->nostock) .
+            ", bloqueado = " . $this->var2str($this->bloqueado) .
+            ", sevende = " . $this->var2str($this->sevende) .
+            ", publico = " . $this->var2str($this->publico) .
+            ", secompra = " . $this->var2str($this->secompra) .
+            ", equivalencia = " . $this->var2str($this->equivalencia) .
+            ", partnumber = " . $this->var2str($this->partnumber) .
+            ", codbarras = " . $this->var2str($this->codbarras) .
+            ", observaciones = " . $this->var2str($this->observaciones) .
+            ", tipo = " . $this->var2str($this->tipo) .
+            ", imagen = " . $this->var2str($this->imagen) .
+            ", codsubcuentacom = " . $this->var2str($this->codsubcuentacom) .
+            ", codsubcuentairpfcom = " . $this->var2str($this->codsubcuentairpfcom) .
+            ", trazabilidad = " . $this->var2str($this->trazabilidad) .
+            self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+
+        if ($this->nostock && $this->stockfis != 0) {
+            $this->stockfis = 0.0;
+            $sql .= "DELETE FROM stocks" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+            $sql .= self::SQL_UPDATE . $this->table_name . " SET stockfis = " . $this->var2str($this->stockfis) .
+                self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+        }
+
+        return $sql;
+    }
+
+    private function buildInsertSql(): string
+    {
+        return "INSERT INTO " . $this->table_name . " (" . self::$column_list . ") VALUES (" .
+            $this->var2str($this->referencia) . "," .
+            $this->var2str($this->codfamilia) . "," .
+            $this->var2str($this->codfabricante) . "," .
+            $this->var2str($this->descripcion) . "," .
+            $this->var2str($this->pvp) . "," .
+            $this->var2str($this->factualizado) . "," .
+            $this->var2str($this->costemedio) . "," .
+            $this->var2str($this->preciocoste) . "," .
+            $this->var2str($this->codimpuesto) . "," .
+            $this->var2str($this->stockfis) . "," .
+            $this->var2str($this->stockmin) . "," .
+            $this->var2str($this->stockmax) . "," .
+            $this->var2str($this->controlstock) . "," .
+            $this->var2str($this->nostock) . "," .
+            $this->var2str($this->bloqueado) . "," .
+            $this->var2str($this->secompra) . "," .
+            $this->var2str($this->sevende) . "," .
+            $this->var2str($this->equivalencia) . "," .
+            $this->var2str($this->codbarras) . "," .
+            $this->var2str($this->observaciones) . "," .
+            $this->var2str($this->imagen) . "," .
+            $this->var2str($this->publico) . "," .
+            $this->var2str($this->tipo) . "," .
+            $this->var2str($this->partnumber) . "," .
+            $this->var2str($this->codsubcuentacom) . "," .
+            $this->var2str($this->codsubcuentairpfcom) . "," .
+            $this->var2str($this->trazabilidad) . ");";
     }
 
     /**
@@ -1009,8 +1042,8 @@ class articulo extends \fs_model
     {
         $this->clean_cache();
 
-        $sql = "DELETE FROM articulosprov WHERE referencia = " . $this->var2str($this->referencia) . ";";
-        $sql .= "DELETE FROM " . $this->table_name . " WHERE referencia = " . $this->var2str($this->referencia) . ";";
+        $sql = "DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+        $sql .= "DELETE FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
         if ($this->db->exec($sql)) {
             $this->set_imagen(FALSE);
             $this->exists = FALSE;
@@ -1103,92 +1136,102 @@ class articulo extends \fs_model
      */
     public function search($query = '', $offset = 0, $codfamilia = '', $con_stock = FALSE, $codfabricante = '', $bloqueados = FALSE)
     {
-        $artilist = array();
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
 
-        if ($query != '' && $offset == 0 && $codfamilia == '' && $codfabricante == '' && !$con_stock && !$bloqueados) {
-            /// intentamos obtener los datos de memcache
-            if ($this->new_search_tag($query)) {
-                $artilist = $this->cache->get_array('articulos_search_' . $query);
-            }
+        $artilist = $this->tryCacheSearch($query, $offset, $codfamilia, $codfabricante, $con_stock, $bloqueados);
+        if (!empty($artilist)) {
+            return $artilist;
         }
 
-        if (count($artilist) <= 1) {
-            $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name;
-            $separador = ' WHERE';
+        $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name;
+        $separador = ' WHERE';
 
-            if ($codfamilia != '') {
-                $sql .= $separador . " codfamilia = " . $this->var2str($codfamilia);
-                $separador = ' AND';
-            }
+        $this->buildSearchWhereClause($sql, $separador, $codfamilia, $codfabricante, $con_stock, $bloqueados);
+        $this->appendTextSearchConditions($sql, $separador, $query);
 
-            if ($codfabricante != '') {
-                $sql .= $separador . " codfabricante = " . $this->var2str($codfabricante);
-                $separador = ' AND';
-            }
-
-            if ($con_stock) {
-                $sql .= $separador . " stockfis > 0";
-                $separador = ' AND';
-            }
-
-            if ($bloqueados) {
-                $sql .= $separador . " bloqueado = TRUE";
-                $separador = ' AND';
-            } else {
-                $sql .= $separador . " bloqueado = FALSE";
-                $separador = ' AND';
-            }
-
-            if ($query == '') {
-                /// nada
-            } else if (is_numeric($query)) {
-                $sql .= $separador . " (referencia = " . $this->var2str($query)
-                    . " OR referencia LIKE '%" . $query . "%'"
-                    . " OR partnumber LIKE '%" . $query . "%'"
-                    . " OR equivalencia LIKE '%" . $query . "%'"
-                    . " OR descripcion LIKE '%" . $query . "%'"
-                    . " OR codbarras = " . $this->var2str($query) . ")";
-                $separador = ' AND';
-            } else {
-                /// ¿La búsqueda son varias palabras?
-                $palabras = explode(' ', $query);
-                if (count($palabras) > 1) {
-                    $sql .= $separador . " (lower(referencia) = " . $this->var2str($query)
-                        . " OR lower(referencia) LIKE '%" . $query . "%'"
-                        . " OR lower(partnumber) LIKE '%" . $query . "%'"
-                        . " OR lower(equivalencia) LIKE '%" . $query . "%'"
-                        . " OR (";
-
-                    foreach ($palabras as $i => $pal) {
-                        if ($i == 0) {
-                            $sql .= "lower(descripcion) LIKE '%" . $pal . "%'";
-                        } else {
-                            $sql .= " AND lower(descripcion) LIKE '%" . $pal . "%'";
-                        }
-                    }
-
-                    $sql .= "))";
-                } else {
-                    $sql .= $separador . " (lower(referencia) = " . $this->var2str($query)
-                        . " OR lower(referencia) LIKE '%" . $query . "%'"
-                        . " OR lower(partnumber) LIKE '%" . $query . "%'"
-                        . " OR lower(equivalencia) LIKE '%" . $query . "%'"
-                        . " OR lower(codbarras) = " . $this->var2str($query)
-                        . " OR lower(descripcion) LIKE '%" . $query . "%')";
-                }
-            }
-
-            if (strtolower(FS_DB_TYPE) == 'mysql') {
-                $sql .= " ORDER BY lower(referencia) ASC";
-            } else {
-                $sql .= " ORDER BY referencia ASC";
-            }
-
-            $artilist = $this->all_from($sql, $offset);
+        if (strtolower(FS_DB_TYPE) == 'mysql') {
+            $sql .= self::ORDER_BY_REF;
+        } else {
+            $sql .= " ORDER BY lower(referencia) ASC";
         }
 
-        return $artilist;
+        return $this->all_from($sql, $offset);
+    }
+
+    /**
+     * @return \articulo[]
+     */
+    private function tryCacheSearch(string $query, int $offset, string $codfamilia, string $codfabricante, bool $con_stock, bool $bloqueados): array
+    {
+        if ($query === '' || $offset !== 0 || $codfamilia !== '' || $codfabricante !== '' || $con_stock || $bloqueados) {
+            return [];
+        }
+
+        if ($this->new_search_tag($query)) {
+            return $this->cache->get_array('articulos_search_' . $query);
+        }
+
+        return [];
+    }
+
+    private function buildSearchWhereClause(string &$sql, string &$separador, string $codfamilia, string $codfabricante, bool $con_stock, bool $bloqueados): void
+    {
+        if ($codfamilia !== '') {
+            $sql .= $separador . " codfamilia = " . $this->var2str($codfamilia);
+            $separador = ' AND';
+        }
+
+        if ($codfabricante !== '') {
+            $sql .= $separador . " codfabricante = " . $this->var2str($codfabricante);
+            $separador = ' AND';
+        }
+
+        if ($con_stock) {
+            $sql .= $separador . " stockfis > 0";
+            $separador = ' AND';
+        }
+
+        $sql .= $separador . ($bloqueados ? " bloqueado = TRUE" : " bloqueado = FALSE");
+        $separador = ' AND';
+    }
+
+    private function appendTextSearchConditions(string &$sql, string $separador, string $query): void
+    {
+        if ($query === '') {
+            return;
+        }
+
+        $escaped = $this->escapeForLike($query);
+
+        if (is_numeric($query)) {
+            $sql .= $separador . " (referencia = " . $this->var2str($query)
+                . " OR referencia LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
+                . " OR partnumber LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
+                . " OR equivalencia LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
+                . " OR descripcion LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
+                . " OR codbarras = " . $this->var2str($query) . ")";
+            return;
+        }
+
+        $palabras = explode(' ', $query);
+        $baseConditions = " (lower(referencia) = " . $this->var2str($query)
+            . " OR lower(referencia) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
+            . " OR lower(partnumber) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
+            . " OR lower(equivalencia) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'";
+
+        if (count($palabras) > 1) {
+            $descParts = array_map(fn($pal) => "lower(descripcion) LIKE " . $this->var2str('%' . $this->escapeForLike($pal) . '%') . " ESCAPE '|'", $palabras);
+            $sql .= $separador . $baseConditions . " OR (" . implode(' AND ', $descParts) . "))";
+        } else {
+            $sql .= $separador . $baseConditions
+                . " OR lower(codbarras) = " . $this->var2str($query)
+                . " OR lower(descripcion) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|')";
+        }
+    }
+
+    private function escapeForLike(string $s): string
+    {
+        return str_replace(['|', '%', '_'], ['||', '|%', '|_'], $s);
     }
 
     private function all_from($sql, $offset = 0, $limit = FS_ITEM_LIMIT)
@@ -1217,7 +1260,7 @@ class articulo extends \fs_model
     {
         $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name
             . " WHERE codbarras = " . $this->var2str($cod)
-            . " ORDER BY lower(referencia) ASC";
+            . self::ORDER_BY_REF;
 
         return $this->all_from($sql, $offset, $limit);
     }
@@ -1233,7 +1276,7 @@ class articulo extends \fs_model
     public function all($offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name
-            . " ORDER BY lower(referencia) ASC";
+            . self::ORDER_BY_REF;
 
         return $this->all_from($sql, $offset, $limit);
     }
@@ -1249,7 +1292,7 @@ class articulo extends \fs_model
     public function all_publico($offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name
-            . " WHERE publico ORDER BY lower(referencia) ASC";
+            . " WHERE publico" . self::ORDER_BY_REF;
 
         return $this->all_from($sql, $offset, $limit);
     }
@@ -1266,7 +1309,7 @@ class articulo extends \fs_model
     public function all_from_familia($cod, $offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name . " WHERE codfamilia = "
-            . $this->var2str($cod) . " ORDER BY lower(referencia) ASC";
+            . $this->var2str($cod) . self::ORDER_BY_REF;
 
         return $this->all_from($sql, $offset, $limit);
     }
@@ -1282,8 +1325,8 @@ class articulo extends \fs_model
      */
     public function all_from_fabricante($cod, $offset = 0, $limit = FS_ITEM_LIMIT)
     {
-        $sql = "SELECT * FROM " . $this->table_name . " WHERE codfabricante = "
-            . $this->var2str($cod) . " ORDER BY lower(referencia) ASC";
+        $sql = self::SQL_SELECT_ALL . $this->table_name . " WHERE codfabricante = "
+            . $this->var2str($cod) . self::ORDER_BY_REF;
 
         return $this->all_from($sql, $offset, $limit);
     }
@@ -1315,15 +1358,15 @@ class articulo extends \fs_model
      */
     public function fix_db()
     {
-        $this->db->exec("UPDATE " . $this->table_name . " SET bloqueado = true WHERE bloqueado IS NULL;");
-        $this->db->exec("UPDATE " . $this->table_name . " SET nostock = false WHERE nostock IS NULL;");
+        $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET bloqueado = true WHERE bloqueado IS NULL;");
+        $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET nostock = false WHERE nostock IS NULL;");
 
         /// desvinculamos de fabricantes que no existan
-        $this->db->exec("UPDATE " . $this->table_name . " SET codfabricante = null WHERE codfabricante IS NOT NULL"
+        $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET codfabricante = null WHERE codfabricante IS NOT NULL"
             . " AND codfabricante NOT IN (SELECT codfabricante FROM fabricantes);");
 
         /// desvinculamos de familias que no existan
-        $this->db->exec("UPDATE " . $this->table_name . " SET codfamilia = null WHERE codfamilia IS NOT NULL"
+        $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET codfamilia = null WHERE codfamilia IS NOT NULL"
             . " AND codfamilia NOT IN (SELECT codfamilia FROM familias);");
     }
 }
