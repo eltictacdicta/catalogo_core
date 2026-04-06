@@ -213,7 +213,7 @@ class articulo extends \fs_model
             $this->tipo = $data['tipo'];
             $this->codfamilia = $data['codfamilia'];
             $this->codfabricante = $data['codfabricante'];
-            $this->descripcion = $this->no_html($data['descripcion']);
+            $this->descripcion = $this->hydrateStoredHtmlField($data['descripcion']);
             $this->pvp = floatval($data['pvp']);
             $this->factualizado = Date('d-m-Y', strtotime($data['factualizado']));
             $this->costemedio = floatval($data['costemedio']);
@@ -236,7 +236,7 @@ class articulo extends \fs_model
             $this->equivalencia = $data['equivalencia'];
             $this->partnumber = $data['partnumber'];
             $this->codbarras = $data['codbarras'];
-            $this->observaciones = $this->no_html($data['observaciones']);
+            $this->observaciones = $this->hydrateStoredHtmlField($data['observaciones']);
             $this->codsubcuentacom = $data['codsubcuentacom'];
             $this->codsubcuentairpfcom = $data['codsubcuentairpfcom'];
             $this->trazabilidad = $this->str2bool($data['trazabilidad']);
@@ -904,13 +904,32 @@ class articulo extends \fs_model
 
     private function sanitizeFields(): void
     {
-        $this->descripcion = $this->no_html($this->descripcion);
+        $this->descripcion = $this->sanitizeHtmlFieldForPersistence($this->descripcion);
         $this->codbarras = $this->no_html($this->codbarras);
-        $this->observaciones = $this->no_html($this->observaciones);
+        $this->observaciones = $this->sanitizeHtmlFieldForPersistence($this->observaciones);
 
         if ($this->equivalencia === '') {
             $this->equivalencia = NULL;
         }
+    }
+
+    /**
+     * Los textos persistidos pueden venir escapados con no_html(); fs_fix_html()
+     * los normaliza al hidratar descripcion y observaciones para uso interno.
+     */
+    private function hydrateStoredHtmlField(?string $value): string
+    {
+        return fs_fix_html((string) $value);
+    }
+
+    /**
+     * test() y save() deben seguir la misma ruta de saneamiento: primero
+     * normalizar entidades previas con fs_fix_html() y después escapar con
+     * no_html() para evitar XSS y dobles escapes al persistir.
+     */
+    private function sanitizeHtmlFieldForPersistence(?string $value): string
+    {
+        return $this->no_html($this->hydrateStoredHtmlField($value));
     }
 
     private function applyStockRules(): void
