@@ -83,7 +83,7 @@
         <nombre>tipocodbarras</nombre>
         <tipo>character varying(8)</tipo>
         <nulo>YES</nulo>
-        <defecto>'Code39'::character varying</defecto>
+        <defecto>Code39</defecto>
     </columna>
     <columna>
         <nombre>nostock</nombre>
