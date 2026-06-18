@@ -21,23 +21,23 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core\Controller;
 
-require_once FS_FOLDER . '/plugins/catalogo_core/model/core/divisa.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/pais.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
 use Symfony\Component\HttpFoundation\Request;
 
-class AdminDivisas extends PageController
+class AdminPaises extends PageController
 {
-    public array $divisas = [];
-    public ?\divisa $divisa = null;
+    public array $resultados = [];
+    public ?\pais $pais = null;
     public bool $allow_delete = false;
 
     public function __construct()
     {
-        parent::__construct('AdminDivisas');
-        $this->setTemplate('admin_divisas');
+        parent::__construct('AdminPaises');
+        $this->setTemplate('admin_paises');
         $this->allow_delete = $this->user->admin || $this->user->allow_delete_on($this->getPageData()['name']);
         $this->loadExtensions();
     }
@@ -45,25 +45,25 @@ class AdminDivisas extends PageController
     public function getPageData(): array
     {
         return [
-            'name' => 'admin_divisas',
-            'title' => 'Divisas',
+            'name' => 'admin_paises',
+            'title' => 'Paises',
             'menu' => 'admin',
             'showonmenu' => true,
-            'ordernum' => 130,
+            'ordernum' => 150,
         ];
     }
 
     public function privateCore(&$response, $user, $permissions): void
     {
-        $this->divisa = new \divisa();
+        $this->pais = new \pais();
 
-        if ($this->request->request->has('coddivisa')) {
-            $this->editarDivisa($this->request);
-        } elseif ($this->request->query->has('delete')) {
-            $this->eliminarDivisa($this->request);
+        if ($this->request->request->has('scodpais')) {
+            $this->editarPais($this->request);
+        } elseif ($this->request->request->has('delete')) {
+            $this->eliminarPais($this->request);
         }
 
-        $this->divisas = $this->divisa->all();
+        $this->resultados = $this->pais->all();
     }
 
     private function loadExtensions(): void
@@ -83,64 +83,62 @@ class AdminDivisas extends PageController
         }
     }
 
-    private function editarDivisa(Request $request): void
+    private function editarPais(Request $request): void
     {
         if (!$this->validateFormToken()) {
             $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
             return;
         }
 
-        $coddivisa = (string) $request->request->get('coddivisa', '');
-        $div0 = $this->divisa->get($coddivisa);
+        $codpais = (string) $request->request->get('scodpais', '');
+        $pais = $this->pais->get($codpais);
 
-        if (!$div0) {
-            $div0 = new \divisa();
-            $div0->coddivisa = $coddivisa;
+        if (!$pais) {
+            $pais = new \pais();
+            $pais->codpais = $codpais;
         }
 
-        $div0->simbolo = (string) $request->request->get('simbolo', '');
-        $div0->descripcion = (string) $request->request->get('descripcion', '');
-        $div0->codiso = (string) $request->request->get('codiso', '');
-        $div0->tasaconv = $request->request->getDigits('tasaconv') !== ''
-            ? (float) $request->request->get('tasaconv')
-            : 1.0;
-        $div0->tasaconv_compra = $request->request->getDigits('tasaconv_compra') !== ''
-            ? (float) $request->request->get('tasaconv_compra')
-            : $div0->tasaconv;
+        $pais->codiso = (string) $request->request->get('scodiso', '');
+        $pais->nombre = (string) $request->request->get('snombre', '');
 
-        if ($div0->save()) {
-            $this->new_message('Divisa ' . $div0->coddivisa . ' guardada correctamente.');
+        if ($pais->save()) {
+            $this->new_message('País ' . $pais->nombre . ' guardado correctamente.');
             return;
         }
 
-        $this->new_error_msg('Error al guardar la divisa.');
+        $this->new_error_msg('¡Imposible guardar el país!');
     }
 
-    private function eliminarDivisa(Request $request): void
+    private function eliminarPais(Request $request): void
     {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
         if (!$this->allow_delete) {
-            $this->new_error_msg('No tienes permiso para eliminar divisas.');
+            $this->new_error_msg('No tienes permiso para eliminar en esta página.');
             return;
         }
 
-        $coddivisa = (string) $request->query->get('delete', '');
-        $div0 = $this->divisa->get($coddivisa);
-
-        if (!$div0) {
-            $this->new_error_msg('Divisa no encontrada.');
+        if (defined('FS_DEMO') && FS_DEMO) {
+            $this->new_error_msg('En el modo demo no puedes eliminar países. Otro usuario podría necesitarlo.');
             return;
         }
 
-        if (!$this->user->admin) {
-            $this->new_error_msg('Sólo un administrador puede eliminar divisas.');
+        $codpais = (string) $request->request->get('delete', '');
+        $pais = $this->pais->get($codpais);
+
+        if (!$pais) {
+            $this->new_error_msg('¡País no encontrado!');
             return;
         }
 
-        if ($div0->delete()) {
-            $this->new_message('Divisa ' . $div0->coddivisa . ' eliminada correctamente.');
+        if ($pais->delete()) {
+            $this->new_message('País ' . $pais->nombre . ' eliminado correctamente.');
             return;
         }
 
-        $this->new_error_msg('Error al eliminar la divisa ' . $div0->coddivisa . '.');
+        $this->new_error_msg('¡Imposible eliminar el país!');
     }
 }

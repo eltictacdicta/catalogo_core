@@ -1,0 +1,125 @@
+{{ include('header.html.twig') }}
+
+<script type="text/javascript">
+function delete_pais(url, codpais) {
+    bootbox.confirm({
+        message: '¿Realmente desea eliminar este país?',
+        title: '<b>Atención</b>',
+        callback: function (result) {
+            if (result) {
+                // Crear formulario POST para eliminar
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+                
+                // Agregar campo delete
+                var deleteField = document.createElement('input');
+                deleteField.type = 'hidden';
+                deleteField.name = 'delete';
+                deleteField.value = codpais;
+                form.appendChild(deleteField);
+                
+                // Agregar token CSRF
+                var csrfField = document.createElement('input');
+                csrfField.type = 'hidden';
+                csrfField.name = 'form_token';
+                csrfField.value = document.querySelector('input[name="form_token"]').value;
+                form.appendChild(csrfField);
+                
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    });
+}
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-globe" aria-hidden="true"></i>&nbsp; {{ 'countries'|trans }}
+                    <span class="badge">{{ fsc.resultados|length }}</span>
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <span class="btn-group">
+                        {% for ext in fsc.extensions %}
+                            {% if ext.type == 'button' %}
+                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                </h1>
+                <p class="help-block">
+                    {{ 'default-country-is-company-country'|trans }}
+                    <a href="index.php?page=admin_empresa">{{ 'admin'|trans }} &gt; {{ 'company'|trans }}</a>.
+                </p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th class="text-left" width="190">
+                                <a href="http://es.wikipedia.org/wiki/ISO_3166-1#C.C3.B3digos_ISO_3166-1" target="_blank">{{ 'alpha-3-code'|trans }}</a>
+                            </th>
+                            <th class="text-left" width="190">
+                                <a href="http://es.wikipedia.org/wiki/ISO_3166-1#C.C3.B3digos_ISO_3166-1" target="_blank">{{ 'alpha-2-code'|trans }}</a>
+                            </th>
+                            <th class="text-left">{{ 'name'|trans }}</th>
+                            <th class="text-right" width="120">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    {% for pais in fsc.resultados %}
+                    <form action="{{ fsc.url() }}" method="post" class="form" role="form">
+                        {{ csrf_field() }}
+                        <tr{% if pais.codpais == fsc.empresa.codpais %} class="warning"{% endif %}>
+                            <td>
+                                <input type="hidden" name="scodpais" value="{{ pais.codpais }}"/>
+                                <div class="form-control">{{ pais.codpais }}</div>
+                            </td>
+                            <td><input class="form-control" type="text" name="scodiso" value="{{ pais.codiso }}" autocomplete="off"/></td>
+                            <td><input class="form-control" type="text" name="snombre" value="{{ pais.nombre }}" autocomplete="off"/></td>
+                            <td class="text-right">
+                                <div class="btn-group">
+                                    {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                        {% if pais.codpais == fsc.empresa.codpais %}
+                                        <a class="btn btn-sm btn-warning" onclick="bootbox.alert({message: '{{ 'cannot-delete-default-country'|trans }}', title: '<b>{{ 'warning'|trans }}</b>'});" title="{{ 'delete'|trans }}">
+                                            <span class="glyphicon glyphicon-lock"></span>
+                                        </a>
+                                        {% else %}
+                                        <a class="btn btn-sm btn-danger" onclick="delete_pais('{{ fsc.url() }}', '{{ pais.codpais|url_encode }}')" title="{{ 'delete'|trans }}">
+                                            <span class="glyphicon glyphicon-trash"></span>
+                                        </a>
+                                        {% endif %}
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-primary" type="submit" title="{{ 'save'|trans }}">
+                                        <span class="glyphicon glyphicon-floppy-disk"></span>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </form>
+                    {% endfor %}
+                    <form class="form" role="form" name="f_nuevo_pais" action="{{ fsc.url() }}" method="post">
+                        {{ csrf_field() }}
+                        <tr class="info">
+                            <td><input class="form-control" type="text" name="scodpais" maxlength="20" placeholder="{{ 'new-alpha-3-code'|trans }}" autocomplete="off"/></td>
+                            <td><input class="form-control" type="text" name="scodiso" placeholder="{{ 'alpha-2-code'|trans }}" autocomplete="off"/></td>
+                            <td><input class="form-control" type="text" name="snombre" placeholder="{{ 'new-country'|trans }}..." autocomplete="off"/></td>
+                            <td class="text-right">
+                                <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();" title="{{ 'new'|trans }}">
+                                    <span class="glyphicon glyphicon-plus-sign"></span>
+                                    <span class="hidden-sm">&nbsp;{{ 'new'|trans }}</span>
+                                </button>
+                            </td>
+                        </tr>
+                    </form>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ include('footer.html.twig') }}

@@ -1,0 +1,155 @@
+{{ include('header.html.twig') }}
+
+<script type="text/javascript">
+function delete_familia(url, codfamilia) {
+    bootbox.confirm({
+        message: '¿Realmente desea eliminar esta familia?',
+        title: '<b>Atención</b>',
+        callback: function (result) {
+            if (result) {
+                // Crear formulario POST para eliminar
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+                
+                // Agregar campo delete
+                var deleteField = document.createElement('input');
+                deleteField.type = 'hidden';
+                deleteField.name = 'delete';
+                deleteField.value = codfamilia;
+                form.appendChild(deleteField);
+                
+                // Agregar token CSRF
+                var csrfField = document.createElement('input');
+                csrfField.type = 'hidden';
+                csrfField.name = 'form_token';
+                csrfField.value = document.querySelector('input[name="form_token"]').value;
+                form.appendChild(csrfField);
+                
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    });
+}
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-folder-open" aria-hidden="true"></i>&nbsp;
+                    {% if fsc.familia.codfamilia %}
+                        {{ fsc.familia.descripcion }}
+                    {% else %}
+                        {{ 'family'|trans }}
+                    {% endif %}
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <span class="btn-group">
+                        {% for ext in fsc.extensions %}
+                            {% if ext.type == 'button' %}
+                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                </h1>
+            </div>
+        </div>
+    </div>
+
+    {% if fsc.familia.codfamilia %}
+    <div class="row">
+        <div class="col-sm-12">
+            <form class="form" role="form" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <input type="hidden" name="scodfamilia" value="{{ fsc.familia.codfamilia }}"/>
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'code'|trans }}: {{ fsc.familia.codfamilia }}</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <div class="form-group">
+                                    {{ 'description'|trans }}:
+                                    <input class="form-control" type="text" name="sdescripcion" value="{{ fsc.familia.descripcion }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="form-group">
+                                    {{ 'parent-family'|trans }}:
+                                    <select class="form-control" name="smadre">
+                                        <option value="">{{ 'none'|trans }}</option>
+                                        {% for madre in fsc.madres %}
+                                            {% if madre.codfamilia != fsc.familia.codfamilia %}
+                                            <option value="{{ madre.codfamilia }}" {% if fsc.familia.madre == madre.codfamilia %}selected{% endif %}>
+                                                {{ madre.descripcion }}
+                                            </option>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-footer text-right">
+                        {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                        <a class="btn btn-sm btn-danger pull-left" onclick="delete_familia('{{ fsc.url() }}', '{{ fsc.familia.codfamilia|url_encode }}')">
+                            <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
+                        </a>
+                        {% endif %}
+                        <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                            <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{{ 'articles'|trans }}</h3>
+                </div>
+                <div class="panel-body">
+                    {% if fsc.articulos|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th class="text-left">{{ 'reference'|trans }}</th>
+                                    <th class="text-left">{{ 'description'|trans }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for articulo in fsc.articulos %}
+                                <tr>
+                                    <td><a href="{{ articulo.url() }}">{{ articulo.referencia }}</a></td>
+                                    <td>{{ articulo.descripcion }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">{{ 'no-articles-found'|trans }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="alert alert-warning">{{ 'family-not-found'|trans }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{{ include('footer.html.twig') }}

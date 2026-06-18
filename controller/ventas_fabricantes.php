@@ -18,8 +18,8 @@ declare(strict_types=1);
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require_once FS_FOLDER . '/plugins/catalogo_core/Controller/AdminAlmacenes.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasFabricantes.php';
 
-class admin_almacenes extends \FSFramework\Plugins\catalogo_core\Controller\AdminAlmacenes
+class ventas_fabricantes extends \FSFramework\Plugins\catalogo_core\Controller\VentasFabricantes
 {
 }

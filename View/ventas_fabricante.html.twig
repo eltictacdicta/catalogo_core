@@ -1,0 +1,140 @@
+{{ include('header.html.twig') }}
+
+<script type="text/javascript">
+function delete_fabricante(url, codfabricante) {
+    bootbox.confirm({
+        message: '¿Realmente desea eliminar este fabricante?',
+        title: '<b>Atención</b>',
+        callback: function (result) {
+            if (result) {
+                // Crear formulario POST para eliminar
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+                
+                // Agregar campo delete
+                var deleteField = document.createElement('input');
+                deleteField.type = 'hidden';
+                deleteField.name = 'delete';
+                deleteField.value = codfabricante;
+                form.appendChild(deleteField);
+                
+                // Agregar token CSRF
+                var csrfField = document.createElement('input');
+                csrfField.type = 'hidden';
+                csrfField.name = 'form_token';
+                csrfField.value = document.querySelector('input[name="form_token"]').value;
+                form.appendChild(csrfField);
+                
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    });
+}
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-industry" aria-hidden="true"></i>&nbsp;
+                    {% if fsc.fabricante.codfabricante %}
+                        {{ fsc.fabricante.nombre }}
+                    {% else %}
+                        {{ 'manufacturer'|trans }}
+                    {% endif %}
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <span class="btn-group">
+                        {% for ext in fsc.extensions %}
+                            {% if ext.type == 'button' %}
+                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                </h1>
+            </div>
+        </div>
+    </div>
+
+    {% if fsc.fabricante.codfabricante %}
+    <div class="row">
+        <div class="col-sm-12">
+            <form class="form" role="form" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <input type="hidden" name="scodfabricante" value="{{ fsc.fabricante.codfabricante }}"/>
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'code'|trans }}: {{ fsc.fabricante.codfabricante }}</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <div class="form-group">
+                                    {{ 'name'|trans }}:
+                                    <input class="form-control" type="text" name="snombre" value="{{ fsc.fabricante.nombre }}" autocomplete="off"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-footer text-right">
+                        {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                        <a class="btn btn-sm btn-danger pull-left" onclick="delete_fabricante('{{ fsc.url() }}', '{{ fsc.fabricante.codfabricante|url_encode }}')">
+                            <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
+                        </a>
+                        {% endif %}
+                        <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                            <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{{ 'articles'|trans }}</h3>
+                </div>
+                <div class="panel-body">
+                    {% if fsc.articulos|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th class="text-left">{{ 'reference'|trans }}</th>
+                                    <th class="text-left">{{ 'description'|trans }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for articulo in fsc.articulos %}
+                                <tr>
+                                    <td><a href="{{ articulo.url() }}">{{ articulo.referencia }}</a></td>
+                                    <td>{{ articulo.descripcion }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">{{ 'no-articles-found'|trans }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="alert alert-warning">{{ 'manufacturer-not-found'|trans }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{{ include('footer.html.twig') }}

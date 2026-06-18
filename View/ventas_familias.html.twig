@@ -1,0 +1,145 @@
+{{ include('header.html.twig') }}
+
+<script type="text/javascript">
+function delete_familia(url, codfamilia) {
+    bootbox.confirm({
+        message: '¿Realmente desea eliminar esta familia?',
+        title: '<b>Atención</b>',
+        callback: function (result) {
+            if (result) {
+                // Crear formulario POST para eliminar
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+                
+                // Agregar campo delete
+                var deleteField = document.createElement('input');
+                deleteField.type = 'hidden';
+                deleteField.name = 'delete';
+                deleteField.value = codfamilia;
+                form.appendChild(deleteField);
+                
+                // Agregar token CSRF
+                var csrfField = document.createElement('input');
+                csrfField.type = 'hidden';
+                csrfField.name = 'form_token';
+                csrfField.value = document.querySelector('input[name="form_token"]').value;
+                form.appendChild(csrfField);
+                
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    });
+}
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-folder-open" aria-hidden="true"></i>&nbsp; {{ 'families'|trans }}
+                    <span class="badge">{{ fsc.resultados|length }}</span>
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <span class="btn-group">
+                        {% for ext in fsc.extensions %}
+                            {% if ext.type == 'button' %}
+                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                </h1>
+            </div>
+
+            <form class="form-inline" method="get" action="{{ fsc.url() }}">
+                <div class="form-group">
+                    <input type="text" name="search" class="form-control" placeholder="{{ 'search'|trans }}..." value="{{ fsc.request.query.get('search') }}" autocomplete="off"/>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <span class="glyphicon glyphicon-search"></span>
+                </button>
+                {% if fsc.request.query.get('search') %}
+                <a href="{{ fsc.url() }}" class="btn btn-default">{{ 'clear'|trans }}</a>
+                {% endif %}
+            </form>
+
+            <div class="table-responsive" style="margin-top: 15px;">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th class="text-left" width="120">{{ 'code'|trans }}</th>
+                            <th class="text-left">{{ 'description'|trans }}</th>
+                            <th class="text-left" width="150">{{ 'parent-family'|trans }}</th>
+                            <th class="text-right" width="120">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    {% for familia in fsc.resultados %}
+                    <form action="{{ fsc.url() }}" method="post" class="form" role="form">
+                        {{ csrf_field() }}
+                        <tr>
+                            <td>
+                                <input type="hidden" name="scodfamilia" value="{{ familia.codfamilia }}"/>
+                                <div class="form-control">{{ familia.codfamilia }}</div>
+                            </td>
+                            <td><input class="form-control" type="text" name="sdescripcion" value="{{ familia.descripcion }}" autocomplete="off"/></td>
+                            <td>
+                                <select class="form-control" name="smadre">
+                                    <option value="">{{ 'none'|trans }}</option>
+                                    {% for madre in fsc.madres %}
+                                        {% if madre.codfamilia != familia.codfamilia %}
+                                        <option value="{{ madre.codfamilia }}" {% if familia.madre == madre.codfamilia %}selected{% endif %}>
+                                            {{ madre.descripcion }}
+                                        </option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td class="text-right">
+                                <div class="btn-group">
+                                    {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                    <a class="btn btn-sm btn-danger" onclick="delete_familia('{{ fsc.url() }}', '{{ familia.codfamilia|url_encode }}')" title="{{ 'delete'|trans }}">
+                                        <span class="glyphicon glyphicon-trash"></span>
+                                    </a>
+                                    {% endif %}
+                                    <a class="btn btn-sm btn-default" href="{{ familia.url() }}" title="{{ 'show'|trans }}">
+                                        <span class="glyphicon glyphicon-eye-open"></span>
+                                    </a>
+                                    <button class="btn btn-sm btn-primary" type="submit" title="{{ 'save'|trans }}">
+                                        <span class="glyphicon glyphicon-floppy-disk"></span>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </form>
+                    {% endfor %}
+                    <form class="form" role="form" name="f_nueva_familia" action="{{ fsc.url() }}" method="post">
+                        {{ csrf_field() }}
+                        <tr class="info">
+                            <td><input class="form-control" type="text" name="scodfamilia" maxlength="8" placeholder="{{ 'new-code'|trans }}" autocomplete="off"/></td>
+                            <td><input class="form-control" type="text" name="sdescripcion" placeholder="{{ 'new-family'|trans }}..." autocomplete="off"/></td>
+                            <td>
+                                <select class="form-control" name="smadre">
+                                    <option value="">{{ 'none'|trans }}</option>
+                                    {% for madre in fsc.madres %}
+                                    <option value="{{ madre.codfamilia }}">{{ madre.descripcion }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td class="text-right">
+                                <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();" title="{{ 'new'|trans }}">
+                                    <span class="glyphicon glyphicon-plus-sign"></span>
+                                    <span class="hidden-sm">&nbsp;{{ 'new'|trans }}</span>
+                                </button>
+                            </td>
+                        </tr>
+                    </form>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ include('footer.html.twig') }}

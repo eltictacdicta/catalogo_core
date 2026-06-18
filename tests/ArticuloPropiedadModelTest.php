@@ -22,7 +22,10 @@ namespace Tests\CatalogoCore;
 
 use PHPUnit\Framework\TestCase;
 
-class FamiliaModelTest extends TestCase
+/**
+ * Tests for the articulo_propiedad adjacent model (CAM-03, CAM-04, CAM-09).
+ */
+class ArticuloPropiedadModelTest extends TestCase
 {
     protected function setUp(): void
     {
@@ -30,38 +33,39 @@ class FamiliaModelTest extends TestCase
         $plugins = [];
 
         require_once FS_FOLDER . '/base/fs_model.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo_propiedad.php';
     }
 
-    public function testConstructorHydratesFromArray(): void
+    public function testClassExists(): void
     {
-        $model = new \FSFramework\model\familia([
-            'codfamilia' => 'FAM001',
-            'descripcion' => 'Familia de prueba',
-            'madre' => null,
-            'nivel' => '1',
-        ]);
+        $this->assertTrue(class_exists('FSFramework\model\articulo_propiedad'));
+    }
 
-        $this->assertSame('FAM001', $model->codfamilia);
-        $this->assertSame('Familia de prueba', $model->descripcion);
-        $this->assertNull($model->madre);
-        $this->assertSame('1', $model->nivel);
+    public function testExtendsFsModel(): void
+    {
+        $model = new \FSFramework\model\articulo_propiedad(false);
+        $this->assertInstanceOf(\fs_model::class, $model);
     }
 
     public function testConstructorWithNullDefaultsProperties(): void
     {
-        $model = new \FSFramework\model\familia(false);
+        $model = new \FSFramework\model\articulo_propiedad(false);
 
-        $this->assertNull($model->codfamilia);
-        $this->assertSame('', $model->descripcion);
-        $this->assertNull($model->madre);
-        $this->assertSame('', $model->nivel);
+        $this->assertNull($model->name);
+        $this->assertNull($model->referencia);
+        $this->assertNull($model->text);
     }
 
-    public function testFamiliaIsInstantiable(): void
+    public function testConstructorHydratesFromArray(): void
     {
-        $model = new \FSFramework\model\familia(false);
+        $model = new \FSFramework\model\articulo_propiedad([
+            'name' => 'Material',
+            'referencia' => 'REF-001',
+            'text' => 'Aluminio',
+        ]);
 
-        $this->assertIsObject($model);
+        $this->assertSame('Material', $model->name);
+        $this->assertSame('REF-001', $model->referencia);
+        $this->assertSame('Aluminio', $model->text);
     }
 }

@@ -1,0 +1,203 @@
+{{ include('header.html.twig') }}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-cube" aria-hidden="true"></i>&nbsp; {{ 'articles'|trans }}
+                    <span class="badge">{{ fsc.resultados|length }}</span>
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <span class="btn-group">
+                        {% for ext in fsc.extensions %}
+                            {% if ext.type == 'button' %}
+                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                </h1>
+            </div>
+
+            <form class="form-inline" method="get" action="{{ fsc.url() }}">
+                <div class="form-group">
+                    <input type="text" name="search" class="form-control" placeholder="{{ 'search'|trans }}..." value="{{ fsc.request.query.get('search') }}" autocomplete="off"/>
+                </div>
+                <div class="form-group">
+                    <select name="codfamilia" class="form-control">
+                        <option value="">{{ 'family'|trans }}</option>
+                        {% for familia in fsc.familias %}
+                            <option value="{{ familia.codfamilia }}" {% if fsc.request.query.get('codfamilia') == familia.codfamilia %}selected{% endif %}>
+                                {{ familia.descripcion }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <select name="codfabricante" class="form-control">
+                        <option value="">{{ 'manufacturer'|trans }}</option>
+                        {% for fabricante in fsc.fabricantes %}
+                            <option value="{{ fabricante.codfabricante }}" {% if fsc.request.query.get('codfabricante') == fabricante.codfabricante %}selected{% endif %}>
+                                {{ fabricante.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="con_stock" value="TRUE" {% if fsc.request.query.get('con_stock') == 'TRUE' %}checked{% endif %}/>
+                        {{ 'with-stock'|trans }}
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="bloqueados" value="TRUE" {% if fsc.request.query.get('bloqueados') == 'TRUE' %}checked{% endif %}/>
+                        {{ 'blocked'|trans }}
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <span class="glyphicon glyphicon-search"></span>
+                </button>
+                {% if fsc.request.query.get('search') or fsc.request.query.get('codfamilia') or fsc.request.query.get('codfabricante') or fsc.request.query.get('con_stock') or fsc.request.query.get('bloqueados') %}
+                <a href="{{ fsc.url() }}" class="btn btn-default">{{ 'clear'|trans }}</a>
+                {% endif %}
+            </form>
+
+            <div class="table-responsive" style="margin-top: 15px;">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th class="text-left" width="120">{{ 'reference'|trans }}</th>
+                            <th class="text-left">{{ 'description'|trans }}</th>
+                            <th class="text-left" width="150">{{ 'family'|trans }}</th>
+                            <th class="text-left" width="150">{{ 'manufacturer'|trans }}</th>
+                            <th class="text-right" width="100">{{ 'price'|trans }}</th>
+                            <th class="text-right" width="80">{{ 'stock'|trans }}</th>
+                            <th class="text-right" width="120">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for articulo in fsc.resultados %}
+                        <tr>
+                            <td>
+                                <a href="{{ articulo.url() }}">{{ articulo.referencia }}</a>
+                            </td>
+                            <td>{{ articulo.descripcion(120) }}</td>
+                            <td>
+                                {% if articulo.codfamilia %}
+                                    {% set fam = articulo.get_familia() %}
+                                    {% if fam %}
+                                        {{ fam.descripcion }}
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if articulo.codfabricante %}
+                                    {% set fab = articulo.get_fabricante() %}
+                                    {% if fab %}
+                                        {{ fab.nombre }}
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="text-right">{{ articulo.pvp|number_format(2, ',', '.') }} €</td>
+                            <td class="text-right">{{ articulo.stockfis|number_format(2, ',', '.') }}</td>
+                            <td class="text-right">
+                                <div class="btn-group">
+                                    {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                    <a class="btn btn-sm btn-danger" href="{{ articulo.url() }}&delete={{ articulo.referencia }}" title="{{ 'delete'|trans }}" onclick="return confirm('{{ 'confirm-delete'|trans }}');">
+                                        <span class="glyphicon glyphicon-trash"></span>
+                                    </a>
+                                    {% endif %}
+                                    <a class="btn btn-sm btn-primary" href="{{ articulo.url() }}" title="{{ 'show'|trans }}">
+                                        <span class="glyphicon glyphicon-eye-open"></span>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr class="warning">
+                            <td colspan="7">{{ 'no-data'|trans }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if fsc.offset > 0 or fsc.hasMoreResults() %}
+            <nav aria-label="Page navigation">
+                <ul class="pagination">
+                    {% if fsc.offset > 0 %}
+                    <li>
+                        <a href="{{ fsc.getPaginationUrl(max(0, fsc.offset - 50)) }}" aria-label="Previous">
+                            <span aria-hidden="true">&laquo;</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% if fsc.hasMoreResults() %}
+                    <li>
+                        <a href="{{ fsc.getPaginationUrl(fsc.offset + 50) }}" aria-label="Next">
+                            <span aria-hidden="true">&raquo;</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            <div class="panel panel-default" style="margin-top: 20px;">
+                <div class="panel-heading">
+                    <h3 class="panel-title">{{ 'new-article'|trans }}</h3>
+                </div>
+                <div class="panel-body">
+                    <form class="form-horizontal" method="post" action="{{ fsc.url() }}">
+                        {{ csrf_field() }}
+                        <div class="form-group">
+                            <label for="nreferencia" class="col-sm-2 control-label">{{ 'reference'|trans }}</label>
+                            <div class="col-sm-4">
+                                <input type="text" class="form-control" id="nreferencia" name="nreferencia" placeholder="{{ 'reference'|trans }}" required autocomplete="off"/>
+                            </div>
+                            <label for="ncodfamilia" class="col-sm-2 control-label">{{ 'family'|trans }}</label>
+                            <div class="col-sm-4">
+                                <select class="form-control" id="ncodfamilia" name="ncodfamilia">
+                                    <option value="">{{ 'none'|trans }}</option>
+                                    {% for familia in fsc.familias %}
+                                        <option value="{{ familia.codfamilia }}">{{ familia.descripcion }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="ndescripcion" class="col-sm-2 control-label">{{ 'description'|trans }}</label>
+                            <div class="col-sm-4">
+                                <input type="text" class="form-control" id="ndescripcion" name="ndescripcion" placeholder="{{ 'description'|trans }}" required autocomplete="off"/>
+                            </div>
+                            <label for="ncodfabricante" class="col-sm-2 control-label">{{ 'manufacturer'|trans }}</label>
+                            <div class="col-sm-4">
+                                <select class="form-control" id="ncodfabricante" name="ncodfabricante">
+                                    <option value="">{{ 'none'|trans }}</option>
+                                    {% for fabricante in fsc.fabricantes %}
+                                        <option value="{{ fabricante.codfabricante }}">{{ fabricante.nombre }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="npvp" class="col-sm-2 control-label">{{ 'price'|trans }}</label>
+                            <div class="col-sm-4">
+                                <input type="number" step="0.01" class="form-control" id="npvp" name="npvp" value="0" placeholder="0.00"/>
+                            </div>
+                            <div class="col-sm-6">
+                                <button type="submit" class="btn btn-primary">
+                                    <span class="glyphicon glyphicon-plus-sign"></span>&nbsp; {{ 'new'|trans }}
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ include('footer.html.twig') }}
