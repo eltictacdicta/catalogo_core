@@ -85,18 +85,16 @@ class FrameworkAutoloaderOverrideTest extends TestCase
      */
     public function testTarifarioGlobalClassCoexistsWithNamespacedClass(): void
     {
+        $this->requireTarifarioOrSkip();
+
         // Load catalogo_core's namespaced familia manually
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-        
+
         // Verify it exists
         $this->assertTrue(
             class_exists('FSFramework\model\familia', false),
             'Namespaced familia should exist'
         );
-        
-        // Load tarifario's models manually
-        require_once FS_FOLDER . '/plugins/tarifario/model/tarif_familia.php';
-        require_once FS_FOLDER . '/plugins/tarifario/model/familia.php';
         
         // Verify both classes exist
         $this->assertTrue(
@@ -136,6 +134,8 @@ class FrameworkAutoloaderOverrideTest extends TestCase
      */
     public function testOverridePatternInPractice(): void
     {
+        $this->requireTarifarioOrSkip();
+
         // Load both versions
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
         require_once FS_FOLDER . '/plugins/tarifario/model/tarif_familia.php';
@@ -182,11 +182,13 @@ class FrameworkAutoloaderOverrideTest extends TestCase
      */
     public function testNoCannotDeclareClassError(): void
     {
+        $this->requireTarifarioOrSkip();
+
         // This should NOT throw "Cannot declare class familia" error
         try {
             // Load catalogo_core first
             require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-            
+
             // Then load tarifario (which defines global 'familia')
             require_once FS_FOLDER . '/plugins/tarifario/model/tarif_familia.php';
             require_once FS_FOLDER . '/plugins/tarifario/model/familia.php';
@@ -199,6 +201,21 @@ class FrameworkAutoloaderOverrideTest extends TestCase
                 $this->fail('The "Cannot declare class familia" error still occurs: ' . $e->getMessage());
             }
             throw $e;
+        }
+    }
+
+    /**
+     * Skip the test if the optional tarifario plugin is not installed.
+     * tarifario is not a core plugin and is not required by catalogo_core,
+     * so the override tests must be no-ops when the plugin is absent.
+     */
+    private function requireTarifarioOrSkip(): void
+    {
+        $tarifarioFile = FS_FOLDER . '/plugins/tarifario/model/familia.php';
+        if (!is_file($tarifarioFile)) {
+            $this->markTestSkipped(
+                'tarifario plugin is not installed; catalogo_core/tarifario override test skipped'
+            );
         }
     }
 }

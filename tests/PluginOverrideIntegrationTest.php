@@ -74,21 +74,28 @@ class PluginOverrideIntegrationTest extends TestCase
      */
     public function testTarifarioCanOverrideFamilia(): void
     {
+        $tarifarioFile = FS_FOLDER . '/plugins/tarifario/model/familia.php';
+        if (!is_file($tarifarioFile)) {
+            $this->markTestSkipped(
+                'tarifario plugin is not installed; catalogo_core/tarifario override test skipped'
+            );
+        }
+
         // Load catalogo_core's familia first
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-        
+
         // Verify it's loaded
         $this->assertTrue(
             class_exists('FSFramework\model\familia', false),
             'Base familia should be loaded'
         );
-        
+
         // Now simulate tarifario being loaded (which defines global 'familia')
         // This should NOT cause "Cannot declare class" error because:
         // 1. catalogo_core defines FSFramework\model\familia (namespaced)
         // 2. tarifario defines global 'familia' (different class)
         // 3. They coexist without conflict
-        
+
         require_once FS_FOLDER . '/plugins/tarifario/model/tarif_familia.php';
         require_once FS_FOLDER . '/plugins/tarifario/model/familia.php';
         
