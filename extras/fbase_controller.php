@@ -313,10 +313,6 @@ class fbase_controller extends fs_controller
             $factura->numero2 = $albaranes[0]->numero2;
         }
 
-        if (!$this->validateFacturaEjercicio($ejercicio, $factura)) {
-            return FALSE;
-        }
-
         if (!$factura->save()) {
             $this->new_error_msg("¡Imposible guardar la factura!");
             return FALSE;
@@ -533,10 +529,6 @@ class fbase_controller extends fs_controller
             $factura->numproveedor = $albaranes[0]->numproveedor;
         }
 
-        if (!$this->validateFacturaEjercicio($ejercicio, $factura)) {
-            return FALSE;
-        }
-
         if (!$factura->save()) {
             $this->new_error_msg("¡Imposible guardar la factura!");
             return FALSE;
@@ -665,30 +657,6 @@ class fbase_controller extends fs_controller
                 $this->new_error_msg("¡Imposible vincular el " . FS_ALBARAN . " con la nueva factura!");
                 return false;
             }
-        }
-
-        return true;
-    }
-
-    /**
-     * Valida que el ejercicio exista, esté abierto y no haya regularización de IVA.
-     */
-    private function validateFacturaEjercicio(?object $ejercicio, object $factura): bool
-    {
-        if (!$ejercicio) {
-            $this->new_error_msg("Ejercicio no encontrado o está cerrado.");
-            return false;
-        }
-
-        if (!$ejercicio->abierto()) {
-            $this->new_error_msg('El ejercicio ' . $ejercicio->codejercicio . ' está cerrado.');
-            return false;
-        }
-
-        $regularizacion = new regularizacion_iva();
-        if ($regularizacion->get_fecha_inside($factura->fecha)) {
-            $this->new_error_msg('El ' . FS_IVA . ' de ese periodo ya ha sido regularizado. No se pueden añadir más facturas en esa fecha.');
-            return false;
         }
 
         return true;
