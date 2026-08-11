@@ -1,5 +1,9 @@
 # catalogo_core
 
+Plugin núcleo de catálogo para [FSFramework](https://github.com/eltictacdicta/fs-framework).
+
+Repositorio: https://github.com/eltictacdicta/catalogo_core
+
 Plugin núcleo de catálogo para FSFramework. Concentra los modelos base del catálogo (7 core + 12 adyacentes) compartidos por otros plugins funcionales del ecosistema.
 
 ## Modelos incluidos
@@ -71,6 +75,7 @@ Los 7 core models tienen wrappers PascalCase en `plugins/catalogo_core/Model/`:
 | Controller | Página | Descripción |
 |------------|--------|-------------|
 | `AdminDivisas` | `admin_divisas` | Gestión de divisas |
+| `ContabilidadImpuestos` | `contabilidad_impuestos` | Gestión de impuestos (IVA) |
 | `AdminAlmacenes` | `admin_almacenes` | Gestión de almacenes |
 | `AdminPaises` | `admin_paises` | Gestión de países |
 | `VentasArticulos` | `ventas_articulos` | Listado de artículos |
@@ -83,7 +88,7 @@ Los 7 core models tienen wrappers PascalCase en `plugins/catalogo_core/Model/`:
 ### Wrappers legacy (en `controller/`)
 
 Cada controlador PSR-4 tiene un wrapper legacy snake_case que preserva el routing:
-`admin_divisas.php`, `admin_almacenes.php`, `admin_paises.php`, `ventas_articulos.php`, `ventas_articulo.php`, `ventas_familias.php`, `ventas_familia.php`, `ventas_fabricantes.php`, `ventas_fabricante.php`.
+`admin_divisas.php`, `contabilidad_impuestos.php`, `admin_almacenes.php`, `admin_paises.php`, `ventas_articulos.php`, `ventas_articulo.php`, `ventas_familias.php`, `ventas_familia.php`, `ventas_fabricantes.php`, `ventas_fabricante.php`.
 
 ## Extras
 
