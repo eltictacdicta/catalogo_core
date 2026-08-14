@@ -18,6 +18,8 @@
  */
 namespace FSFramework\model;
 
+use FSFramework\Plugins\catalogo_core\Services\ArticuloSearchQueryBuilder;
+
 /**
  * Almacena los datos de un artículos.
  * 
@@ -1216,41 +1218,12 @@ class articulo extends \fs_model
 
     private function appendTextSearchConditions(string &$sql, string $separador, string $query): void
     {
-        if ($query === '') {
-            return;
-        }
-
-        $escaped = $this->escapeForLike($query);
-
-        if (is_numeric($query)) {
-            $sql .= $separador . " (referencia = " . $this->var2str($query)
-                . " OR referencia LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
-                . " OR partnumber LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
-                . " OR equivalencia LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
-                . " OR descripcion LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
-                . " OR codbarras = " . $this->var2str($query) . ")";
-            return;
-        }
-
-        $palabras = explode(' ', $query);
-        $baseConditions = " (lower(referencia) = " . $this->var2str($query)
-            . " OR lower(referencia) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
-            . " OR lower(partnumber) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'"
-            . " OR lower(equivalencia) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|'";
-
-        if (count($palabras) > 1) {
-            $descParts = array_map(fn($pal) => "lower(descripcion) LIKE " . $this->var2str('%' . $this->escapeForLike($pal) . '%') . " ESCAPE '|'", $palabras);
-            $sql .= $separador . $baseConditions . " OR (" . implode(' AND ', $descParts) . "))";
-        } else {
-            $sql .= $separador . $baseConditions
-                . " OR lower(codbarras) = " . $this->var2str($query)
-                . " OR lower(descripcion) LIKE " . $this->var2str('%' . $escaped . '%') . " ESCAPE '|')";
-        }
-    }
-
-    private function escapeForLike(string $s): string
-    {
-        return str_replace(['|', '%', '_'], ['||', '|%', '|_'], $s);
+        ArticuloSearchQueryBuilder::appendTextSearchConditions(
+            $sql,
+            $separador,
+            $query,
+            fn (string $value): string => $this->var2str($value)
+        );
     }
 
     private function all_from($sql, $offset = 0, $limit = FS_ITEM_LIMIT)

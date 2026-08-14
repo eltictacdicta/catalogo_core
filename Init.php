@@ -1,44 +1,78 @@
 <?php
 /**
- * This file is part of FSFramework originally based on Facturascript 2017
- * Copyright (C) 2026 Javier Trujillo <mistertekcom@gmail.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Plugin initialization for catalogo_core.
  */
+declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core;
 
-/**
- * Plugin initialization for catalogo_core.
- *
- * Model loading is handled by the framework's fs_model_autoloader, which
- * respects plugin dependency order and allows plugins to override models
- * from their dependencies. This is the standard FSFramework mechanism.
- *
- * The fs_model_autoloader automatically:
- * - Searches for models in plugin order (from $GLOBALS['plugins'])
- * - Loads models from model/ and model/core/ directories
- * - Creates class aliases for namespaced models (FSFramework\model\* → global)
- * - Allows dependent plugins to override parent plugin models
- *
- * No custom autoloader or compat layer is needed here.
- */
 final class Init
 {
+    private const WIZARD_TMP_TTL = 86400;
+
+    /** @var list<string> Modelos PSR-4 con install() que deben sembrarse al activar. */
+    private const DEFAULT_SEED_MODELS = [
+        'impuesto',
+        'familia',
+        'fabricante',
+    ];
+
     public function init(): void
     {
-        // No initialization needed.
-        // Model loading and aliasing is handled by fs_model_autoloader.
+        $this->cleanupOrphanWizardFiles();
+    }
+
+    /**
+     * Siembra datos maestros del catálogo al activar el plugin.
+     *
+     * Los modelos legacy sin namespace (almacén, divisa, país…) los cubre
+     * fs_model::seed_if_empty() en PluginSchemaSynchronizer. Los modelos
+     * bajo FSFramework\model\* no pasan por ese refresco y se siembran aquí.
+     */
+    public static function upgrade(): void
+    {
+        try {
+            foreach (self::DEFAULT_SEED_MODELS as $modelName) {
+                self::seedNamespacedModel($modelName);
+            }
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] Default seed failed: ' . $e->getMessage());
+        }
+    }
+
+    private static function seedNamespacedModel(string $modelName): void
+    {
+        $fqcn = 'FSFramework\\model\\' . $modelName;
+
+        if (!class_exists($fqcn, false)) {
+            $file = FS_FOLDER . '/plugins/catalogo_core/model/core/' . $modelName . '.php';
+            if (!is_file($file)) {
+                return;
+            }
+
+            require_once $file;
+        }
+
+        if (!class_exists($fqcn, false) || !is_subclass_of($fqcn, \fs_model::class)) {
+            return;
+        }
+
+        $model = new $fqcn();
+        $model->seed_if_empty();
+    }
+
+    private function cleanupOrphanWizardFiles(): void
+    {
+        $tmpDir = rtrim(FS_FOLDER, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'tmp';
+        if (!is_dir($tmpDir)) {
+            return;
+        }
+
+        $now = time();
+        foreach (glob($tmpDir . '/catalogo_excel_wizard_*.xlsx') ?: [] as $path) {
+            if (is_file($path) && ($now - filemtime($path)) > self::WIZARD_TMP_TTL) {
+                @unlink($path);
+            }
+        }
     }
 }

@@ -1,5 +1,25 @@
 {{ include('header.html.twig') }}
 
+<script type="text/javascript">
+function show_nuevo_articulo() {
+    $('#modal_nuevo_articulo').modal('show');
+    if (document.f_nuevo_articulo && document.f_nuevo_articulo.nreferencia) {
+        document.f_nuevo_articulo.nreferencia.focus();
+    }
+}
+
+$(document).ready(function() {
+    if (window.location.hash.substring(1) === 'nuevo') {
+        show_nuevo_articulo();
+    }
+
+    $('#b_nuevo_articulo').click(function(event) {
+        event.preventDefault();
+        show_nuevo_articulo();
+    });
+});
+</script>
+
 <div class="container-fluid">
     <div class="row">
         <div class="col-sm-12">
@@ -10,7 +30,22 @@
                     <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
                         <span class="glyphicon glyphicon-refresh"></span>
                     </a>
+                    <a id="b_nuevo_articulo" class="btn btn-xs btn-success" href="#" title="{{ 'new-article'|trans }}">
+                        <span class="glyphicon glyphicon-plus"></span>
+                        <span class="hidden-xs">&nbsp;{{ 'new-article'|trans }}</span>
+                    </a>
                     <span class="btn-group">
+                        {% if fsc.can_import_export %}
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-xs btn-default dropdown-toggle" data-toggle="dropdown" title="{{ 'excel-menu'|trans }}">
+                                <i class="fa fa-file-excel-o text-success"></i> Excel <span class="caret"></span>
+                            </button>
+                            <ul class="dropdown-menu" role="menu">
+                                <li><a href="#" data-toggle="modal" data-target="#modal-exportar-articulos-excel"><i class="fa fa-download fa-fw"></i> {{ 'excel-export-title'|trans }}</a></li>
+                                <li><a href="#" data-toggle="modal" data-target="#modal-importar-articulos-excel"><i class="fa fa-upload fa-fw"></i> {{ 'excel-import-wizard-title'|trans }}</a></li>
+                            </ul>
+                        </div>
+                        {% endif %}
                         {% for ext in fsc.extensions %}
                             {% if ext.type == 'button' %}
                             <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
@@ -20,7 +55,8 @@
                 </h1>
             </div>
 
-            <form class="form-inline" method="get" action="{{ fsc.url() }}">
+            <form class="form-inline" method="get" action="index.php">
+                <input type="hidden" name="page" value="ventas_articulos"/>
                 <div class="form-group">
                     <input type="text" name="search" class="form-control" placeholder="{{ 'search'|trans }}..." value="{{ fsc.request.query.get('search') }}" autocomplete="off"/>
                 </div>
@@ -117,7 +153,7 @@
                         </tr>
                         {% else %}
                         <tr class="warning">
-                            <td colspan="7">{{ 'no-data'|trans }}</td>
+                            <td colspan="7">{{ 'no-data'|trans }}. {{ 'new-article-hint'|trans }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -145,59 +181,26 @@
             </nav>
             {% endif %}
 
-            <div class="panel panel-default" style="margin-top: 20px;">
-                <div class="panel-heading">
-                    <h3 class="panel-title">{{ 'new-article'|trans }}</h3>
-                </div>
-                <div class="panel-body">
-                    <form class="form-horizontal" method="post" action="{{ fsc.url() }}">
-                        {{ csrf_field() }}
-                        <div class="form-group">
-                            <label for="nreferencia" class="col-sm-2 control-label">{{ 'reference'|trans }}</label>
-                            <div class="col-sm-4">
-                                <input type="text" class="form-control" id="nreferencia" name="nreferencia" placeholder="{{ 'reference'|trans }}" required autocomplete="off"/>
-                            </div>
-                            <label for="ncodfamilia" class="col-sm-2 control-label">{{ 'family'|trans }}</label>
-                            <div class="col-sm-4">
-                                <select class="form-control" id="ncodfamilia" name="ncodfamilia">
-                                    <option value="">{{ 'none'|trans }}</option>
-                                    {% for familia in fsc.familias %}
-                                        <option value="{{ familia.codfamilia }}">{{ familia.descripcion }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="ndescripcion" class="col-sm-2 control-label">{{ 'description'|trans }}</label>
-                            <div class="col-sm-4">
-                                <input type="text" class="form-control" id="ndescripcion" name="ndescripcion" placeholder="{{ 'description'|trans }}" required autocomplete="off"/>
-                            </div>
-                            <label for="ncodfabricante" class="col-sm-2 control-label">{{ 'manufacturer'|trans }}</label>
-                            <div class="col-sm-4">
-                                <select class="form-control" id="ncodfabricante" name="ncodfabricante">
-                                    <option value="">{{ 'none'|trans }}</option>
-                                    {% for fabricante in fsc.fabricantes %}
-                                        <option value="{{ fabricante.codfabricante }}">{{ fabricante.nombre }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="npvp" class="col-sm-2 control-label">{{ 'price'|trans }}</label>
-                            <div class="col-sm-4">
-                                <input type="number" step="0.01" class="form-control" id="npvp" name="npvp" value="0" placeholder="0.00"/>
-                            </div>
-                            <div class="col-sm-6">
-                                <button type="submit" class="btn btn-primary">
-                                    <span class="glyphicon glyphicon-plus-sign"></span>&nbsp; {{ 'new'|trans }}
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
         </div>
     </div>
 </div>
+
+{% include 'partials/articulos/modal_nuevo_articulo.html.twig' %}
+
+{% if fsc.can_import_export %}
+{% include 'partials/articulos/modal_exportar_excel.html.twig' %}
+{% include 'partials/articulos/modal_importar_excel_wizard.html.twig' %}
+<script type="text/javascript">
+window.catalogoArticulosExcelConfig = {
+    baseUrl: {{ fsc.url()|json_encode|raw }},
+    priceDecimals: {{ fsc.price_decimals }},
+    defaultCodimpuesto: {{ fsc.default_codimpuesto|json_encode|raw }},
+    labelNext: {{ 'next'|trans|json_encode|raw }},
+    labelApply: {{ 'excel-import-apply'|trans|json_encode|raw }},
+    labelClose: {{ 'close'|trans|json_encode|raw }}
+};
+</script>
+<script src="plugins/catalogo_core/View/js/articulos-excel-import-wizard.js"></script>
+{% endif %}
 
 {{ include('footer.html.twig') }}

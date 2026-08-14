@@ -1,0 +1,34 @@
+{#
+ # Modal exportar artículos Excel
+ #}
+<div class="modal fade" id="modal-exportar-articulos-excel" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                <h4 class="modal-title"><i class="fa fa-file-excel-o text-success"></i> {{ 'excel-export-title'|trans }}</h4>
+            </div>
+            <div class="modal-body">
+                <p>{{ 'excel-export-help'|trans }}</p>
+                <ul>
+                    <li>{{ 'excel-export-col-ref'|trans }}</li>
+                    <li>{{ 'excel-export-col-desc'|trans }}</li>
+                    <li>{{ 'excel-export-col-price'|trans }}</li>
+                    <li>{{ 'excel-export-col-optional'|trans }}</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">{{ 'cancel'|trans }}</button>
+                <a class="btn btn-primary" href="{{ fsc.url() }}&action=export_excel_template">
+                    <i class="fa fa-file-o"></i> {{ 'excel-download-template'|trans }}
+                </a>
+                <a class="btn btn-success" href="{{ fsc.url() }}&action=export_excel_filtered{{ fsc.getExportFilteredQuery() }}">
+                    <i class="fa fa-filter"></i> {{ 'excel-export-filtered'|trans }}
+                </a>
+                <a class="btn btn-success" href="{{ fsc.url() }}&action=export_excel">
+                    <i class="fa fa-download"></i> {{ 'excel-export-all'|trans }}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

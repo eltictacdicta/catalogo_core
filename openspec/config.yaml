@@ -1,0 +1,15 @@
+project: catalogo-core-plugin
+scope: plugins/catalogo_core/
+parent_project: fs-framework
+ownership: plugin-local
+change_root: plugins/catalogo_core/openspec/changes/{name}/
+archive_root: plugins/catalogo_core/openspec/changes/archive/{YYYY-MM-DD}-{name}/
+
+context: >
+  Plugin core de catálogo (artículos, familias, fabricantes). SDD interno al plugin.
+
+strict_tdd: true
+
+testing:
+  runner: ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml
+  plugin_tests: true

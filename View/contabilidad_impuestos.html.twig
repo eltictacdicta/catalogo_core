@@ -1,0 +1,134 @@
+{{ include('header.html.twig') }}
+
+<script type="text/javascript">
+function delete_impuesto(cod) {
+    bootbox.confirm({
+        message: '{{ 'taxes-delete-confirm'|trans }}'.replace('%code%', cod),
+        title: '<b>{{ 'warning'|trans }}</b>',
+        callback: function(result) {
+            if (result) {
+                window.location.href = '{{ fsc.url() }}&delete=' + encodeURIComponent(cod);
+            }
+        }
+    });
+}
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    {{ 'taxes'|trans }}
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload-page'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <span class="btn-group">
+                    {% for ext in fsc.extensions %}
+                        {% if ext.type == 'button' %}
+                        <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                        {% endif %}
+                    {% endfor %}
+                    </span>
+                </h1>
+                <p class="help-block">
+                    {{ 'taxes-help-recargo'|trans }}
+                    {% if fsc.has_subcuentas %}
+                    <br/>
+                    {{ 'taxes-help-subcuentas'|trans }}
+                    {% endif %}
+                    <br/>
+                    {{ 'taxes-help-informe-prefix'|trans }}
+                    <a href="index.php?page=informe_articulos&tab=impuestos">{{ 'taxes-help-informe-link'|trans }}</a>.
+                </p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th class="text-left" width="150">{{ 'code'|trans }}</th>
+                            <th class="text-left">{{ 'description'|trans }}</th>
+                            <th class="text-right" width="120">% {{ 'taxes-vat'|trans }}</th>
+                            <th class="text-right" width="120">% {{ 'taxes-recargo'|trans }}</th>
+                            {% if fsc.has_subcuentas %}
+                            <th class="text-left">{{ 'taxes-subcuenta-compras'|trans }} {{ fsc.empresa.codejercicio }}</th>
+                            <th class="text-left">{{ 'taxes-subcuenta-ventas'|trans }} {{ fsc.empresa.codejercicio }}</th>
+                            {% endif %}
+                            <th class="text-right" width="180">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    {% for imp in fsc.impuestos %}
+                    <form class="form" role="form" action="{{ fsc.url() }}" method="post">
+                        {{ csrf_field() }}
+                        <input type="hidden" name="codimpuesto" value="{{ imp.codimpuesto }}"/>
+                        <tr>
+                            <td><div class="form-control">{{ imp.codimpuesto }}</div></td>
+                            <td>
+                                <input class="form-control" type="text" name="descripcion" value="{{ imp.descripcion }}" autocomplete="off"/>
+                            </td>
+                            <td>
+                                <input class="form-control text-right" type="number" step="any" name="iva" value="{{ imp.iva }}" autocomplete="off"/>
+                            </td>
+                            <td>
+                                <input class="form-control text-right" type="number" step="any" name="recargo" value="{{ imp.recargo }}" autocomplete="off"/>
+                            </td>
+                            {% if fsc.has_subcuentas %}
+                            <td>
+                                <input class="form-control" type="text" name="codsubcuentasop" value="{{ imp.codsubcuentasop }}" placeholder="{{ fsc.codsubcuentasop }}" autocomplete="off"/>
+                            </td>
+                            <td>
+                                <input class="form-control" type="text" name="codsubcuentarep" value="{{ imp.codsubcuentarep }}" placeholder="{{ fsc.codsubcuentarep }}" autocomplete="off"/>
+                            </td>
+                            {% endif %}
+                            <td class="text-right">
+                                <div class="btn-group">
+                                    {% if imp.is_default() %}
+                                    <a href="#" class="btn btn-sm btn-success" title="{{ 'taxes-default'|trans }}">
+                                        <span class="glyphicon glyphicon-flag"></span>
+                                    </a>
+                                    {% else %}
+                                    <a href="{{ fsc.url() }}&set_default={{ imp.codimpuesto }}" class="btn btn-sm btn-default" title="{{ 'taxes-set-default'|trans }}">
+                                        <span class="glyphicon glyphicon-flag"></span>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                                <div class="btn-group">
+                                    {% if fsc.allow_delete %}
+                                    <button class="btn btn-sm btn-danger" type="button" title="{{ 'delete'|trans }}" onclick="delete_impuesto('{{ imp.codimpuesto }}')">
+                                        <span class="glyphicon glyphicon-trash"></span>
+                                    </button>
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();" title="{{ 'save'|trans }}">
+                                        <span class="glyphicon glyphicon-floppy-disk"></span>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </form>
+                    {% endfor %}
+                    <form class="form" name="f_nuevo_impuesto" action="{{ fsc.url() }}" method="post">
+                        {{ csrf_field() }}
+                        <tr class="info">
+                            <td><input class="form-control" type="text" name="codimpuesto" maxlength="10" placeholder="{{ 'taxes-new-code'|trans }}" autocomplete="off" required=""/></td>
+                            <td><input class="form-control" type="text" name="descripcion" placeholder="{{ 'taxes-new-description'|trans }}" autocomplete="off" required=""/></td>
+                            <td><input class="form-control text-right" type="number" step="any" name="iva" value="0" autocomplete="off"/></td>
+                            <td><input class="form-control text-right" type="number" step="any" name="recargo" value="0" autocomplete="off"/></td>
+                            {% if fsc.has_subcuentas %}
+                            <td><input class="form-control" type="text" name="codsubcuentasop" placeholder="{{ fsc.codsubcuentasop }}" autocomplete="off"/></td>
+                            <td><input class="form-control" type="text" name="codsubcuentarep" placeholder="{{ fsc.codsubcuentarep }}" autocomplete="off"/></td>
+                            {% endif %}
+                            <td class="text-right">
+                                <button class="btn btn-sm btn-primary" type="submit" title="{{ 'new'|trans }}">
+                                    <span class="glyphicon glyphicon-plus-sign"></span>
+                                    <span class="hidden-sm">&nbsp;{{ 'new'|trans }}</span>
+                                </button>
+                            </td>
+                        </tr>
+                    </form>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ include('footer.html.twig') }}

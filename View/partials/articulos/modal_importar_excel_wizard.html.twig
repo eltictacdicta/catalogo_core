@@ -1,0 +1,114 @@
+{#
+ # Wizard import Excel artículos (3 pasos)
+ #}
+<div class="modal fade" id="modal-importar-articulos-excel" data-backdrop="static" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" id="articulos-wizard-close-x"><span>&times;</span></button>
+                <h4 class="modal-title"><i class="fa fa-file-excel-o text-info"></i> {{ 'excel-import-wizard-title'|trans }}</h4>
+            </div>
+            <div class="modal-body">
+                <div id="articulos-wizard-step-1" class="wizard-step">
+                    <div class="alert alert-info">{{ 'excel-import-step1-help'|trans }}</div>
+                    <form id="articulos-wizard-form-step1" enctype="multipart/form-data">
+                        {{ csrf_field() }}
+                        <div class="form-group">
+                            <label>{{ 'excel-import-mode'|trans }}</label><br>
+                            <label class="radio-inline">
+                                <input type="radio" name="wizard_default_action" value="create_if_missing" checked>
+                                {{ 'excel-import-mode-create'|trans }}
+                            </label>
+                            <label class="radio-inline">
+                                <input type="radio" name="wizard_default_action" value="update_only">
+                                {{ 'excel-import-mode-update'|trans }}
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-inline">
+                                <input type="checkbox" id="articulos-wizard-round-price" name="wizard_round_price" value="1" checked>
+                                {{ 'excel-import-round-price'|trans({'%decimals%': fsc.price_decimals}) }}
+                            </label>
+                            <p class="help-block text-muted" style="margin-top:4px;">{{ 'excel-import-round-price-help'|trans }}</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="articulos-wizard-default-impuesto">{{ 'excel-import-default-tax'|trans }}</label>
+                            <select id="articulos-wizard-default-impuesto" name="wizard_default_codimpuesto" class="form-control">
+                                {% for imp in fsc.impuestos %}
+                                <option value="{{ imp.codimpuesto }}"{% if imp.codimpuesto == fsc.default_codimpuesto %} selected{% endif %}>
+                                    {{ imp.descripcion }} ({{ imp.codimpuesto }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <p class="help-block text-muted">{{ 'excel-import-default-tax-help'|trans }}</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="articulos-wizard-file">{{ 'excel-import-select-file'|trans }}</label>
+                            <input type="file" id="articulos-wizard-file" name="file" accept=".xlsx,.xls" class="form-control" required>
+                        </div>
+                        <div id="articulos-wizard-step1-error" class="alert alert-danger" style="display:none;"></div>
+                        <div id="articulos-wizard-sheet-wrapper" class="form-group" style="display:none;">
+                            <label for="articulos-wizard-sheet">{{ 'excel-import-sheet'|trans }}</label>
+                            <select id="articulos-wizard-sheet" class="form-control"></select>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="articulos-wizard-step-2" class="wizard-step" style="display:none;">
+                    <p>{{ 'excel-import-step2-help'|trans }}</p>
+                    <div id="articulos-wizard-mapping"></div>
+                    <div id="articulos-wizard-required-warn" class="alert alert-warning" style="display:none;">
+                        <span id="articulos-wizard-required-msg"></span>
+                    </div>
+                    <h4 style="margin-top:18px;">
+                        <i class="fa fa-eye"></i> {{ 'excel-import-preview-title'|trans }}
+                    </h4>
+                    <p class="text-muted">{{ 'excel-import-preview-help'|trans }}</p>
+                    <div class="table-responsive" style="max-height:220px;overflow-y:auto;border:1px solid #ddd;margin-top:10px;">
+                        <table class="table table-condensed table-bordered" id="articulos-wizard-preview-table">
+                            <thead></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="articulos-wizard-step-3" class="wizard-step" style="display:none;">
+                    <div id="articulos-wizard-summary">
+                        <p>{{ 'excel-import-summary'|trans }}</p>
+                        <ul>
+                            <li>{{ 'excel-import-summary-rows'|trans }}: <strong id="articulos-wizard-summary-total">0</strong></li>
+                        </ul>
+                        <h4 style="margin-top:18px;">
+                            <i class="fa fa-list"></i> {{ 'excel-import-summary-preview-title'|trans }}
+                        </h4>
+                        <p class="text-muted">{{ 'excel-import-summary-preview-help'|trans }}</p>
+                        <div class="table-responsive" style="max-height:280px;overflow-y:auto;border:1px solid #ddd;">
+                            <table class="table table-striped table-condensed table-bordered" id="articulos-wizard-summary-table">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="articulos-wizard-progress" style="display:none;">
+                        <div class="progress">
+                            <div id="articulos-wizard-progress-bar" class="progress-bar progress-bar-striped active" style="width:0%">0%</div>
+                        </div>
+                        <p id="articulos-wizard-progress-msg" class="text-muted"></p>
+                    </div>
+                    <div id="articulos-wizard-result" style="display:none;">
+                        <div class="alert alert-success" id="articulos-wizard-result-ok"></div>
+                        <p id="articulos-wizard-result-stats"></p>
+                        <a href="#" id="articulos-wizard-descartadas-link" style="display:none;" class="btn btn-default btn-sm">
+                            {{ 'excel-import-download-discarded'|trans }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" id="articulos-wizard-btn-back" style="display:none;">{{ 'back'|trans }}</button>
+                <button type="button" class="btn btn-default" data-dismiss="modal">{{ 'cancel'|trans }}</button>
+                <button type="button" class="btn btn-primary" id="articulos-wizard-btn-next">{{ 'next'|trans }}</button>
+            </div>
+        </div>
+    </div>
+</div>

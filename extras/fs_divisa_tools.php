@@ -20,8 +20,7 @@
 
 /**
  * Currency tools for formatting prices and converting between currencies.
- * This class is part of the business_data plugin and provides currency-related
- * functionality for business applications.
+ * Owned by catalogo_core; loaded by the core when that plugin is active.
  *
  * @author Carlos García Gómez <neorazorx@gmail.com>
  */

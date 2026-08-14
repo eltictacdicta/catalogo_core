@@ -118,12 +118,8 @@ class articulo_traza extends \fs_model
 
     protected function install()
     {
-        /// forzamos la comprobación de las tablas necesarias
+        /// Aseguramos que la tabla de artículos exista antes de crear trazas.
         new \articulo();
-        new \linea_albaran_cliente();
-        new \linea_albaran_proveedor();
-        new \linea_factura_cliente();
-        new \linea_factura_proveedor();
 
         return '';
     }
@@ -134,13 +130,13 @@ class articulo_traza extends \fs_model
      */
     public function documento_compra_url()
     {
-        if ($this->idlalbcompra) {
+        if ($this->idlalbcompra && class_exists('\linea_albaran_proveedor')) {
             $lin0 = new \linea_albaran_proveedor();
             $linea = $lin0->get($this->idlalbcompra);
             if ($linea) {
                 return $linea->url();
             }
-        } else if ($this->idlfaccompra) {
+        } else if ($this->idlfaccompra && class_exists('\linea_factura_proveedor')) {
             $lin0 = new \linea_factura_proveedor();
             $linea = $lin0->get($this->idlfaccompra);
             if ($linea) {
@@ -157,13 +153,13 @@ class articulo_traza extends \fs_model
      */
     public function documento_venta_url()
     {
-        if ($this->idlalbventa) {
+        if ($this->idlalbventa && class_exists('\linea_albaran_cliente')) {
             $lin0 = new \linea_albaran_cliente();
             $linea = $lin0->get($this->idlalbventa);
             if ($linea) {
                 return $linea->url();
             }
-        } else if ($this->idlfacventa) {
+        } else if ($this->idlfacventa && class_exists('\linea_factura_cliente')) {
             $lin0 = new \linea_factura_cliente();
             $linea = $lin0->get($this->idlfacventa);
             if ($linea) {

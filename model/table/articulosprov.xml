@@ -78,12 +78,6 @@
         <consulta>PRIMARY KEY (id)</consulta>
     </restriccion>
     <restriccion>
-        <nombre>ca_articulosprov_proveedores</nombre>
-        <consulta>FOREIGN KEY (codproveedor)
-            REFERENCES proveedores (codproveedor)
-            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
-    </restriccion>
-    <restriccion>
         <nombre>uniq_articulo_proveedor2</nombre>
         <consulta>UNIQUE (codproveedor, refproveedor)</consulta>
     </restriccion>

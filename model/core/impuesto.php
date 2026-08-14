@@ -201,7 +201,7 @@ class impuesto extends \fs_model
             $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . " ORDER BY iva DESC;");
             if ($data) {
                 foreach ($data as $i) {
-                    $impuestolist[] = new \impuesto($i);
+                    $impuestolist[] = new self($i);
                 }
             }
 

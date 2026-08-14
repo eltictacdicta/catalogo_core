@@ -100,7 +100,9 @@ Cada controlador PSR-4 tiene un wrapper legacy snake_case que preserva el routin
 Este plugin **no depende** de ningún otro plugin. Es la base sobre la que se construyen:
 
 - `facturacion_base` (requiere `catalogo_core`)
-- `business_data` (requiere `catalogo_core`)
+- `clientes_core` y otros plugins funcionales (según su `fsframework.ini`)
+
+`business_data` es independiente; conviene activar `catalogo_core` antes o junto con él para divisas, almacenes y países.
 
 ## Uso
 
