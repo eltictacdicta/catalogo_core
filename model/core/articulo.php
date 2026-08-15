@@ -1361,4 +1361,115 @@ class articulo extends \fs_model
         $this->db->exec(self::SQL_UPDATE . $this->table_name . " SET codfamilia = null WHERE codfamilia IS NOT NULL"
             . " AND codfamilia NOT IN (SELECT codfamilia FROM familias);");
     }
+
+    /**
+     * Cache de descripciones multiidioma del artículo.
+     * @var array|null
+     */
+    private $descripciones_catalogo;
+
+    /**
+     * Devuelve las descripciones del artículo en todos los idiomas.
+     * @return array<int, articulo_descripcion>
+     */
+    public function get_descripciones()
+    {
+        if (is_null($this->descripciones_catalogo)) {
+            $this->descripciones_catalogo = [];
+            if (!is_null($this->referencia)) {
+                $desc = new articulo_descripcion();
+                $this->descripciones_catalogo = $desc->all_from_articulo($this->referencia);
+            }
+        }
+
+        return $this->descripciones_catalogo;
+    }
+
+    /**
+     * Devuelve la descripción en un idioma específico con fallback al idioma por defecto
+     * y, en última instancia, a articulos.descripcion.
+     */
+    public function get_descripcion_idioma($codidioma = 'es')
+    {
+        if (is_null($this->referencia)) {
+            return $this->descripcion;
+        }
+
+        $desc = new articulo_descripcion();
+        $d = $desc->get_by_articulo_idioma($this->referencia, $codidioma);
+        if ($d) {
+            return $d->descripcion;
+        }
+
+        $idioma = new catalogo_idioma();
+        $default = $idioma->get_default();
+        if ($default && $default->codidioma != $codidioma) {
+            $d = $desc->get_by_articulo_idioma($this->referencia, $default->codidioma);
+            if ($d) {
+                return $d->descripcion;
+            }
+        }
+
+        return $this->descripcion;
+    }
+
+    /**
+     * Devuelve la descripción corta en un idioma específico.
+     */
+    public function descripcion_idioma($codidioma = 'es', $len = 120)
+    {
+        $desc = $this->get_descripcion_idioma($codidioma);
+        if (mb_strlen($desc, 'UTF8') > $len) {
+            return mb_substr($desc, 0, $len) . '...';
+        }
+
+        return $desc;
+    }
+
+    /**
+     * Guarda o actualiza una descripción multiidioma.
+     */
+    public function set_descripcion_idioma($codidioma, $descripcion, $descripcion_corta = null)
+    {
+        $desc = new articulo_descripcion();
+        $d = $desc->get_by_articulo_idioma($this->referencia, $codidioma);
+
+        if ($d) {
+            $d->descripcion = $descripcion;
+            $d->descripcion_corta = $descripcion_corta;
+        } else {
+            $d = new articulo_descripcion();
+            $d->referencia = $this->referencia;
+            $d->codidioma = $codidioma;
+            $d->descripcion = $descripcion;
+            $d->descripcion_corta = $descripcion_corta;
+        }
+
+        $this->descripciones_catalogo = null;
+
+        if ($d->save()) {
+            $default = (new catalogo_idioma())->get_default();
+            $defaultCode = $default ? $default->codidioma : catalogo_idioma::DEFAULT_CODE;
+            if ($codidioma === $defaultCode) {
+                $this->descripcion = $descripcion;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Devuelve los opcionales asociados al artículo.
+     * @return array<int, catalogo_opcional>
+     */
+    public function get_opcionales()
+    {
+        if (is_null($this->referencia)) {
+            return [];
+        }
+
+        $rel = new catalogo_articulo_opcional();
+        return $rel->get_opcionales_from_articulo($this->referencia);
+    }
 }

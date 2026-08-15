@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Grupos de opcionales (p. ej. Color, con variantes Blanco/Rojo).
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codigo</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>nombre</nombre>
+        <tipo>character varying(100)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>exclusivo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>true</defecto>
+    </columna>
+    <columna>
+        <nombre>activo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>true</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_opcional_grupos_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>catalogo_opcional_grupos_codigo_unique</nombre>
+        <consulta>UNIQUE (codigo)</consulta>
+    </restriccion>
+</tabla>

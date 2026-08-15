@@ -222,4 +222,28 @@ class VentasArticuloControllerTest extends TestCase
             'Controller must use var2str() or model get() for SQL safety (CPV-08)'
         );
     }
+
+    public function testControllerExposesMultiLanguageAndOptionals(): void
+    {
+        $source = file_get_contents(
+            FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php'
+        );
+
+        $this->assertStringContainsString('public array $idiomas', $source);
+        $this->assertStringContainsString('public array $articulo_opcionales', $source);
+        $this->assertStringContainsString('saveMultiidiomaDescriptions', $source);
+        $this->assertStringContainsString('addOpcionalArticulo', $source);
+    }
+
+    public function testTwigViewIncludesCatalogTabs(): void
+    {
+        $content = file_get_contents(
+            FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulo.html.twig'
+        );
+
+        $this->assertStringContainsString('#multiidioma', $content);
+        $this->assertStringContainsString('#opcionales', $content);
+        $this->assertStringContainsString('tab_multiidioma.html.twig', $content);
+        $this->assertStringContainsString('tab_opcionales.html.twig', $content);
+    }
 }

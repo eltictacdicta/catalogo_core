@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Relación muchos a muchos entre opcionales y familias.
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_opcional_familias_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>catalogo_opcional_familias_unique</nombre>
+        <consulta>UNIQUE (id_opcional, codfamilia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_opcional_familias_opcional</nombre>
+        <consulta>FOREIGN KEY (id_opcional)
+            REFERENCES catalogo_opcionales (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_opcional_familias_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

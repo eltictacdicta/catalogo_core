@@ -1,0 +1,126 @@
+{{ include('header.html.twig') }}
+
+<script type="text/javascript">
+function delete_opcional(url, id) {
+    bootbox.confirm({
+        message: '{{ 'confirm-delete-optional'|trans|e('js') }}',
+        title: '<b>{{ 'attention'|trans|default('Atención') }}</b>',
+        callback: function (result) {
+            if (result) {
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+
+                var deleteField = document.createElement('input');
+                deleteField.type = 'hidden';
+                deleteField.name = 'delete';
+                deleteField.value = id;
+                form.appendChild(deleteField);
+
+                var csrfField = document.createElement('input');
+                csrfField.type = 'hidden';
+                csrfField.name = 'form_token';
+                csrfField.value = document.querySelector('input[name="form_token"]').value;
+                form.appendChild(csrfField);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    });
+}
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-puzzle-piece" aria-hidden="true"></i>&nbsp; {{ 'optionals'|trans }}
+                    <span class="badge">{{ fsc.resultados|length }}</span>
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                    <a class="btn btn-xs btn-success" href="index.php?page=ventas_opcional" title="{{ 'optional-new'|trans }}">
+                        <span class="glyphicon glyphicon-plus"></span>
+                        <span class="hidden-xs">&nbsp;{{ 'optional-new'|trans }}</span>
+                    </a>
+                    <a class="btn btn-xs btn-default" href="index.php?page=ventas_opcional_grupos" title="{{ 'optional-groups'|trans }}">
+                        <span class="glyphicon glyphicon-th-large"></span>
+                        <span class="hidden-xs">&nbsp;{{ 'optional-groups'|trans }}</span>
+                    </a>
+                    <span class="btn-group">
+                        {% for ext in fsc.extensions %}
+                            {% if ext.type == 'button' %}
+                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                </h1>
+            </div>
+
+            <form class="form-inline" method="get" action="{{ fsc.url() }}">
+                <div class="form-group">
+                    <input type="text" name="search" class="form-control" placeholder="{{ 'search'|trans }}..." value="{{ fsc.search_query }}" autocomplete="off"/>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <span class="glyphicon glyphicon-search"></span>
+                </button>
+                {% if fsc.search_query %}
+                <a href="{{ fsc.url() }}" class="btn btn-default">{{ 'clear'|trans }}</a>
+                {% endif %}
+            </form>
+
+            <div class="table-responsive" style="margin-top: 15px;">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th class="text-left">{{ 'optional-code'|trans }}</th>
+                            <th class="text-left">{{ 'optional-name'|trans }}</th>
+                            <th class="text-left">{{ 'optional-group'|trans }}</th>
+                            <th class="text-right">{{ 'optional-base-price'|trans }}</th>
+                            <th class="text-center">{{ 'status'|trans|default('Estado') }}</th>
+                            <th class="text-right">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for opcional in fsc.resultados %}
+                        <tr{% if not opcional.activo %} class="danger"{% endif %}>
+                            <td><a href="{{ opcional.url() }}">{{ opcional.codigo }}</a></td>
+                            <td>{{ opcional.nombre }}</td>
+                            <td>{{ opcional.etiqueta_grupo() }}</td>
+                            <td class="text-right">{{ opcional.etiqueta_precio_base() }}</td>
+                            <td class="text-center">
+                                {% if opcional.activo %}
+                                    <span class="label label-success">{{ 'active'|trans|default('Activo') }}</span>
+                                {% else %}
+                                    <span class="label label-danger">{{ 'inactive'|trans|default('Inactivo') }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-right">
+                                <div class="btn-group">
+                                    <a class="btn btn-sm btn-default" href="{{ opcional.url() }}" title="{{ 'edit'|trans|default('Editar') }}">
+                                        <span class="glyphicon glyphicon-edit"></span>
+                                    </a>
+                                    {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                    <a class="btn btn-sm btn-danger" onclick="delete_opcional('{{ fsc.url() }}', '{{ opcional.id }}')" title="{{ 'delete'|trans }}">
+                                        <span class="glyphicon glyphicon-trash"></span>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr class="warning">
+                            <td colspan="9">{{ 'optional-no-results'|trans }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ csrf_field() }}
+{{ include('footer.html.twig') }}

@@ -1,0 +1,226 @@
+{{ include('header.html.twig') }}
+
+{% if fsc.grupo %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-object-group" aria-hidden="true"></i>&nbsp;
+                    {% if fsc.is_new %}
+                        {{ 'optional-group-new'|trans }}
+                    {% else %}
+                        {{ fsc.grupo.nombre }}
+                    {% endif %}
+                    <a class="btn btn-xs btn-default" href="index.php?page=ventas_opcional_grupos" title="{{ 'back'|trans }}">
+                        <span class="glyphicon glyphicon-arrow-left"></span>
+                    </a>
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}{% if not fsc.is_new %}&id={{ fsc.grupo.id }}{% endif %}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                </h1>
+            </div>
+        </div>
+    </div>
+
+    <form class="form" role="form" action="{{ fsc.url() }}{% if not fsc.is_new %}&id={{ fsc.grupo.id }}{% endif %}" method="post">
+        {{ csrf_field() }}
+        <input type="hidden" name="save_grupo" value="1"/>
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">{{ 'optional-group-data'|trans }}</h3>
+            </div>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="col-sm-4">
+                        <div class="form-group">
+                            {{ 'optional-code'|trans }}:
+                            <input class="form-control" type="text" name="scodigo" value="{{ fsc.grupo.codigo }}" maxlength="20" autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="form-group">
+                            {{ 'optional-name'|trans }}:
+                            <input class="form-control" type="text" name="snombre" value="{{ fsc.grupo.nombre }}" maxlength="100" required autocomplete="off"/>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="form-group">
+                            {{ 'optional-group-order'|trans }}:
+                            <input class="form-control" type="number" name="sorden" value="{{ fsc.grupo.orden }}" autocomplete="off"/>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-12">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" name="sexclusivo" value="1"{% if fsc.grupo.exclusivo %} checked{% endif %}/>
+                                {{ 'optional-group-exclusive'|trans }}
+                            </label>
+                            <p class="help-block">{{ 'optional-group-exclusive-help'|trans }}</p>
+                        </div>
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" name="sactivo" value="1"{% if fsc.grupo.activo %} checked{% endif %}/>
+                                {{ 'active'|trans|default('Activo') }}
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-footer text-right">
+                <button class="btn btn-primary" type="submit">
+                    <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                </button>
+                {% if not fsc.is_new and fsc.allow_delete %}
+                <button class="btn btn-danger" type="submit" name="delete" value="{{ fsc.grupo.id }}" onclick="return confirm('{{ 'optional-group-confirm-delete'|trans|e('js') }}');">
+                    <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
+    {% if not fsc.is_new %}
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">
+                        {{ 'optional-group-variants'|trans }}
+                        <span class="badge">{{ fsc.opcionales|length }}</span>
+                        <a class="btn btn-xs btn-success pull-right" href="index.php?page=ventas_opcional&id_grupo={{ fsc.grupo.id }}">
+                            <span class="glyphicon glyphicon-plus"></span>
+                            <span class="hidden-xs">&nbsp;{{ 'optional-group-new-variant'|trans }}</span>
+                        </a>
+                    </h3>
+                </div>
+                <div class="panel-body">
+                    <p class="help-block">{{ 'optional-group-hint'|trans }}</p>
+
+                    {% if fsc.opcionales|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>{{ 'optional-code'|trans }}</th>
+                                    <th>{{ 'optional-name'|trans }}</th>
+                                    <th class="text-right">{{ 'price'|trans }}</th>
+                                    <th class="text-center">{{ 'status'|trans|default('Estado') }}</th>
+                                    <th class="text-right">{{ 'actions'|trans }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for opcional in fsc.opcionales %}
+                                <tr{% if not opcional.activo %} class="danger"{% endif %}>
+                                    <td><a href="{{ opcional.url() }}">{{ opcional.codigo }}</a></td>
+                                    <td>{{ opcional.nombre }}</td>
+                                    <td class="text-right">{{ opcional.etiqueta_precio_base() }}</td>
+                                    <td class="text-center">
+                                        {% if opcional.activo %}
+                                            <span class="label label-success">{{ 'active'|trans|default('Activo') }}</span>
+                                        {% else %}
+                                            <span class="label label-danger">{{ 'inactive'|trans|default('Inactivo') }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-right">
+                                        <div class="btn-group">
+                                            <a class="btn btn-xs btn-default" href="{{ opcional.url() }}" title="{{ 'edit'|trans|default('Editar') }}">
+                                                <span class="glyphicon glyphicon-edit"></span>
+                                            </a>
+                                            <form action="{{ fsc.url() }}&id={{ fsc.grupo.id }}" method="post" style="display:inline;">
+                                                {{ csrf_field() }}
+                                                <input type="hidden" name="remove_opcional_grupo" value="1"/>
+                                                <input type="hidden" name="id_opcional" value="{{ opcional.id }}"/>
+                                                <button type="submit" class="btn btn-xs btn-danger" title="{{ 'optional-group-remove-variant'|trans }}" onclick="return confirm('{{ 'optional-group-remove-variant-confirm'|trans|e('js') }}');">
+                                                    <span class="glyphicon glyphicon-remove"></span>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                        <p class="text-muted">{{ 'optional-group-no-variants'|trans }}</p>
+                    {% endif %}
+
+                    {% if fsc.opcionales_disponibles|length > 0 %}
+                    <form action="{{ fsc.url() }}&id={{ fsc.grupo.id }}" method="post" class="form-inline" style="margin-top: 15px;">
+                        {{ csrf_field() }}
+                        <input type="hidden" name="add_opcional_grupo" value="1"/>
+                        <div class="form-group">
+                            <label for="id_opcional">{{ 'optional-group-add-existing'|trans }}</label>
+                            <select class="form-control" name="id_opcional" id="id_opcional" required>
+                                <option value="">{{ 'none'|trans }}</option>
+                                {% for opcional in fsc.opcionales_disponibles %}
+                                    <option value="{{ opcional.id }}">{{ opcional.codigo }} — {{ opcional.nombre }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <span class="glyphicon glyphicon-plus"></span>&nbsp; {{ 'add'|trans }}
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="panel panel-info">
+                <div class="panel-heading">
+                    <h3 class="panel-title">
+                        {{ 'optional-group-articles'|trans }}
+                        <span class="badge">{{ fsc.articulos|length }}</span>
+                    </h3>
+                </div>
+                <div class="panel-body">
+                    <p class="help-block">{{ 'optional-group-articles-help'|trans }}</p>
+
+                    {% if fsc.articulos|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>{{ 'reference'|trans }}</th>
+                                    <th>{{ 'description'|trans }}</th>
+                                    <th>{{ 'family'|trans }}</th>
+                                    <th class="text-right">{{ 'actions'|trans }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for articulo in fsc.articulos %}
+                                <tr>
+                                    <td><a href="{{ articulo.url() }}">{{ articulo.referencia }}</a></td>
+                                    <td>{{ articulo.descripcion }}</td>
+                                    <td>{{ articulo.codfamilia }}</td>
+                                    <td class="text-right">
+                                        <a class="btn btn-xs btn-default" href="{{ articulo.url() }}#opcionales" title="{{ 'article-optionals'|trans }}">
+                                            <span class="glyphicon glyphicon-th-list"></span>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                        <p class="text-muted">{{ 'optional-group-no-articles'|trans }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">{{ 'optional-group-save-first'|trans }}</div>
+    {% endif %}
+</div>
+{% endif %}
+
+{{ include('footer.html.twig') }}

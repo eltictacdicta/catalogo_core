@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core;
 
+use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
+
 final class Init
 {
     private const WIZARD_TMP_TTL = 86400;
@@ -15,11 +17,15 @@ final class Init
         'impuesto',
         'familia',
         'fabricante',
+        'catalogo_idioma',
+        'catalogo_lista_precio',
     ];
 
     public function init(): void
     {
         $this->cleanupOrphanWizardFiles();
+        self::migrateLegacyTables();
+        self::ensureArticuloOpcionalGrupoTable();
     }
 
     /**
@@ -32,11 +38,77 @@ final class Init
     public static function upgrade(): void
     {
         try {
+            self::migrateLegacyTables();
+            self::ensureCatalogTables();
             foreach (self::DEFAULT_SEED_MODELS as $modelName) {
                 self::seedNamespacedModel($modelName);
             }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Default seed failed: ' . $e->getMessage());
+        }
+    }
+
+    private static function migrateLegacyTables(): void
+    {
+        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
+            return;
+        }
+
+        try {
+            $db = \FSFramework\DependencyInjection\Container::db();
+            CatalogLegacyTableMigration::migrateIfNeeded($db);
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());
+        }
+    }
+
+    private static function ensureArticuloOpcionalGrupoTable(): void
+    {
+        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
+            return;
+        }
+
+        try {
+            self::touchNamespacedModel('catalogo_articulo_opcional_grupo');
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] articulo_opcional_grupo table ensure failed: ' . $e->getMessage());
+        }
+    }
+
+    private static function ensureCatalogTables(): void
+    {
+        foreach ([
+            'catalogo_idioma',
+            'articulo_descripcion',
+            'catalogo_lista_precio',
+            'catalogo_opcional',
+            'catalogo_opcional_familia',
+            'catalogo_articulo_opcional',
+            'catalogo_opcional_precio',
+            'catalogo_opcional_grupo',
+            'catalogo_articulo_opcional_grupo',
+        ] as $modelName) {
+            self::touchNamespacedModel($modelName);
+        }
+    }
+
+    private static function touchNamespacedModel(string $modelName): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+
+        $fqcn = 'FSFramework\\model\\' . $modelName;
+
+        if (!class_exists($fqcn, false)) {
+            $file = FS_FOLDER . '/plugins/catalogo_core/model/core/' . $modelName . '.php';
+            if (!is_file($file)) {
+                return;
+            }
+
+            require_once $file;
+        }
+
+        if (class_exists($fqcn, false) && is_subclass_of($fqcn, \fs_model::class)) {
+            new $fqcn();
         }
     }
 

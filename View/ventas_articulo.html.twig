@@ -69,6 +69,10 @@ $(document).ready(function () {
         $('#tab_articulo a[href="#stock"]').tab('show');
     } else if (window.location.hash.substring(1) == 'atributos') {
         $('#tab_articulo a[href="#atributos"]').tab('show');
+    } else if (window.location.hash.substring(1) == 'multiidioma') {
+        $('#tab_articulo a[href="#multiidioma"]').tab('show');
+    } else if (window.location.hash.substring(1) == 'opcionales') {
+        $('#tab_articulo a[href="#opcionales"]').tab('show');
     }
 });
 </script>
@@ -116,6 +120,12 @@ $(document).ready(function () {
                     <li role="presentation">
                         <a href="#stock" aria-controls="stock" role="tab" data-toggle="tab">{{ 'stock'|trans }}</a>
                     </li>
+                    <li role="presentation">
+                        <a href="#multiidioma" aria-controls="multiidioma" role="tab" data-toggle="tab">{{ 'languages'|trans }}</a>
+                    </li>
+                    <li role="presentation">
+                        <a href="#opcionales" aria-controls="opcionales" role="tab" data-toggle="tab">{{ 'optionals'|trans }}</a>
+                    </li>
                 </ul>
 
                 <div class="tab-content" style="margin-top: 15px;">
@@ -131,6 +141,9 @@ $(document).ready(function () {
                                         <div class="form-group">
                                             {{ 'description'|trans }}:
                                             <textarea class="form-control" name="sdescripcion" rows="3" autocomplete="off">{{ fsc.articulo.descripcion }}</textarea>
+                                            {% if fsc.idiomas|length > 1 %}
+                                                <p class="help-block">{{ 'description-default-language-hint'|trans }}</p>
+                                            {% endif %}
                                         </div>
                                     </div>
                                 </div>
@@ -321,6 +334,9 @@ $(document).ready(function () {
                             </div>
                         </div>
                     </div>
+
+                    {% include 'partials/articulos/tab_multiidioma.html.twig' %}
+                    {% include 'partials/articulos/tab_opcionales.html.twig' %}
                 </div>
 
                 <div class="panel-footer text-right" style="margin-top: 15px;">
@@ -344,5 +360,372 @@ $(document).ready(function () {
     </div>
     {% endif %}
 </div>
+
+{% if fsc.articulo.referencia %}
+<script type="text/javascript">
+(function ($) {
+    'use strict';
+
+    var labels = {
+        yes: {{ 'optional-required-tpv-yes'|trans|json_encode|raw }},
+        no: {{ 'optional-required-tpv-no'|trans|json_encode|raw }}
+    };
+
+    var i18n = {
+        genericError: {{ 'optional-ajax-error'|trans|default('No se pudo completar la operación.')|json_encode|raw }},
+        confirmRemoveGrupo: {{ 'remove-optional-group-from-article-confirm'|trans|default('¿Quitar este grupo del artículo?')|json_encode|raw }},
+        confirmRemoveOpcional: {{ 'remove-optional-from-article-confirm'|trans|default('¿Quitar este opcional del artículo?')|json_encode|raw }},
+        selectGrupo: {{ 'optional-select-group'|trans|default('Selecciona un grupo.')|json_encode|raw }},
+        selectOpcional: {{ 'optional-select-optional'|trans|default('Selecciona un opcional.')|json_encode|raw }},
+        attention: {{ 'attention'|trans|default('Atención')|json_encode|raw }}
+    };
+
+    function getPanel() {
+        return $('#opcionales');
+    }
+
+    function getArticuloRef() {
+        return getPanel().data('articulo-ref');
+    }
+
+    function getArticuloUrl() {
+        var ref = getArticuloRef();
+        var fromData = getPanel().data('articulo-url');
+
+        if (fromData && String(fromData).indexOf('ref=') >= 0) {
+            return fromData;
+        }
+
+        if (ref) {
+            return 'index.php?page=ventas_articulo&ref=' + encodeURIComponent(ref);
+        }
+
+        return fromData || 'index.php?page=ventas_articulo';
+    }
+
+    function buildOpcionalesPartialUrl() {
+        var ref = getArticuloRef();
+        if (!ref) {
+            return null;
+        }
+
+        return 'index.php?page=ventas_articulo&ref=' + encodeURIComponent(ref) + '&partial=opcionales&ajax=1';
+    }
+
+    function showMessage(message) {
+        if (window.bootbox) {
+            bootbox.alert(message);
+            return;
+        }
+
+        window.alert(message);
+    }
+
+    function securePost(payload, callbacks) {
+        var url = getArticuloUrl();
+        callbacks = callbacks || {};
+
+        var onSuccess = callbacks.onSuccess || function () {};
+        var onError = callbacks.onError || function () {
+            showMessage(i18n.genericError);
+        };
+
+        if (window.FSAjaxLoader && typeof window.FSAjaxLoader.securePost === 'function') {
+            window.FSAjaxLoader.securePost(url, payload, {
+                dataType: 'json',
+                onSuccess: onSuccess,
+                onError: onError
+            });
+            return;
+        }
+
+        var csrfToken = $('meta[name="csrf-token"]').attr('content') || '';
+        payload._csrf_token = csrfToken;
+        payload._token = csrfToken;
+
+        $.ajax({
+            url: url,
+            method: 'POST',
+            data: payload,
+            dataType: 'json',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).done(onSuccess).fail(onError);
+    }
+
+    function parseOpcionalesPanel(html) {
+        if (!html) {
+            return $();
+        }
+
+        var $parsed = $($.parseHTML(html, document, false));
+        var $panel = $parsed.filter('#opcionales').first();
+        if (!$panel.length) {
+            $panel = $parsed.find('#opcionales').first();
+        }
+
+        return $panel;
+    }
+
+    function applyOpcionalesHtml(html) {
+        var $current = getPanel();
+        if (!$current.length) {
+            return false;
+        }
+
+        var $newPanel = parseOpcionalesPanel(html);
+        if (!$newPanel.length) {
+            return false;
+        }
+
+        var keepActive = $current.hasClass('active');
+        if (keepActive) {
+            $newPanel.addClass('active');
+        }
+
+        $current.replaceWith($newPanel);
+
+        if (keepActive) {
+            $('#tab_articulo li').removeClass('active');
+            $('#tab_articulo a[href="#opcionales"]').parent('li').addClass('active');
+        }
+
+        return true;
+    }
+
+    function reloadOpcionalesTab() {
+        var reloadUrl = buildOpcionalesPartialUrl();
+        if (!reloadUrl) {
+            showMessage(i18n.genericError);
+            return;
+        }
+
+        $.ajax({
+            url: reloadUrl,
+            method: 'GET',
+            dataType: 'html',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).done(function (html) {
+            if (!applyOpcionalesHtml(html)) {
+                showMessage(i18n.genericError);
+            }
+        }).fail(function (xhr) {
+            var message = i18n.genericError;
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                message = xhr.responseJSON.message;
+            }
+            showMessage(message);
+        });
+    }
+
+    function handleJsonResponse(response, onOk) {
+        if (response && response.ok) {
+            if (typeof onOk === 'function') {
+                onOk(response);
+                return;
+            }
+
+            if (response.html && applyOpcionalesHtml(response.html)) {
+                return;
+            }
+
+            reloadOpcionalesTab();
+            return;
+        }
+
+        showMessage((response && response.message) ? response.message : i18n.genericError);
+    }
+
+    function updateObligatorioToggle($btn, obligatorio) {
+        var $label = $btn.find('.label');
+
+        $btn.attr('data-obligatorio', obligatorio ? '1' : '0');
+        $btn.toggleClass('btn-warning', obligatorio);
+        $btn.toggleClass('btn-default', !obligatorio);
+        $label.toggleClass('label-warning', obligatorio);
+        $label.toggleClass('label-default', !obligatorio);
+        $label.text(obligatorio ? labels.yes : labels.no);
+    }
+
+    function confirmAction(message, callback) {
+        if (window.bootbox) {
+            bootbox.confirm({
+                message: message,
+                title: '<b>' + i18n.attention + '</b>',
+                callback: function (result) {
+                    if (result) {
+                        callback();
+                    }
+                }
+            });
+            return;
+        }
+
+        if (window.confirm(message)) {
+            callback();
+        }
+    }
+
+    $(document).on('click', '#opcionales .js-toggle-obligatorio-tpv', function (event) {
+        event.preventDefault();
+
+        var $btn = $(this);
+        if ($btn.prop('disabled')) {
+            return;
+        }
+
+        var type = $btn.data('type');
+        var id = parseInt($btn.data('id'), 10);
+        var current = $btn.attr('data-obligatorio') === '1';
+        var next = !current;
+
+        var payload = {
+            sreferencia: getArticuloRef(),
+            obligatorio: next ? '1' : '0'
+        };
+
+        if (type === 'grupo') {
+            payload.toggle_obligatorio_grupo = '1';
+            payload.id_grupo = id;
+        } else {
+            payload.toggle_obligatorio_opcional = '1';
+            payload.id_opcional = id;
+        }
+
+        $btn.prop('disabled', true);
+
+        securePost(payload, {
+            onSuccess: function (response) {
+                if (response && response.ok) {
+                    updateObligatorioToggle($btn, !!response.obligatorio);
+                } else {
+                    showMessage((response && response.message) ? response.message : i18n.genericError);
+                }
+                $btn.prop('disabled', false);
+            },
+            onError: function () {
+                showMessage(i18n.genericError);
+                $btn.prop('disabled', false);
+            }
+        });
+    });
+
+    $(document).on('click', '#opcionales .js-add-grupo-submit', function (event) {
+        event.preventDefault();
+
+        var $form = $(this).closest('.js-add-grupo-form');
+        var $submit = $form.find('.js-add-grupo-submit');
+        var idGrupo = parseInt($form.find('[name="id_grupo"]').val(), 10);
+
+        if (!idGrupo) {
+            showMessage(i18n.selectGrupo);
+            return;
+        }
+
+        $submit.prop('disabled', true);
+
+        securePost({
+            add_grupo_articulo: '1',
+            sreferencia: getArticuloRef(),
+            id_grupo: idGrupo,
+            obligatorio: $form.find('[name="obligatorio"]').is(':checked') ? '1' : '0'
+        }, {
+            onSuccess: function (response) {
+                handleJsonResponse(response);
+                $submit.prop('disabled', false);
+            },
+            onError: function () {
+                showMessage(i18n.genericError);
+                $submit.prop('disabled', false);
+            }
+        });
+    });
+
+    $(document).on('click', '#opcionales .js-add-opcional-submit', function (event) {
+        event.preventDefault();
+
+        var $form = $(this).closest('.js-add-opcional-form');
+        var $submit = $form.find('.js-add-opcional-submit');
+        var idOpcional = parseInt($form.find('[name="id_opcional"]').val(), 10);
+
+        if (!idOpcional) {
+            showMessage(i18n.selectOpcional);
+            return;
+        }
+
+        $submit.prop('disabled', true);
+
+        securePost({
+            add_opcional_articulo: '1',
+            sreferencia: getArticuloRef(),
+            id_opcional: idOpcional,
+            obligatorio: $form.find('[name="obligatorio"]').is(':checked') ? '1' : '0'
+        }, {
+            onSuccess: function (response) {
+                handleJsonResponse(response);
+                $submit.prop('disabled', false);
+            },
+            onError: function () {
+                showMessage(i18n.genericError);
+                $submit.prop('disabled', false);
+            }
+        });
+    });
+
+    $(document).on('click', '#opcionales .js-remove-grupo-articulo', function (event) {
+        event.preventDefault();
+
+        var $btn = $(this);
+        var idGrupo = parseInt($btn.data('id'), 10);
+
+        confirmAction(i18n.confirmRemoveGrupo, function () {
+            $btn.prop('disabled', true);
+
+            securePost({
+                remove_grupo_articulo: '1',
+                sreferencia: getArticuloRef(),
+                id_grupo: idGrupo
+            }, {
+                onSuccess: function (response) {
+                    handleJsonResponse(response);
+                },
+                onError: function () {
+                    showMessage(i18n.genericError);
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+    });
+
+    $(document).on('click', '#opcionales .js-remove-opcional-articulo', function (event) {
+        event.preventDefault();
+
+        var $btn = $(this);
+        var idOpcional = parseInt($btn.data('id'), 10);
+
+        confirmAction(i18n.confirmRemoveOpcional, function () {
+            $btn.prop('disabled', true);
+
+            securePost({
+                remove_opcional_articulo: '1',
+                sreferencia: getArticuloRef(),
+                id_opcional: idOpcional
+            }, {
+                onSuccess: function (response) {
+                    handleJsonResponse(response);
+                },
+                onError: function () {
+                    showMessage(i18n.genericError);
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+    });
+})(jQuery);
+</script>
+{% endif %}
 
 {{ include('footer.html.twig') }}

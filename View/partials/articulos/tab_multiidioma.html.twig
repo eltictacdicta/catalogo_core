@@ -1,0 +1,46 @@
+<div role="tabpanel" class="tab-pane" id="multiidioma">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">{{ 'article-multi-language'|trans }}</h3>
+        </div>
+        <div class="panel-body">
+            {% if fsc.idiomas|length > 0 %}
+                {% for idioma in fsc.idiomas %}
+                <div class="form-group">
+                    <label for="descripcion_{{ idioma.codidioma }}">
+                        {{ idioma.nombre }}
+                        {% if idioma.por_defecto %}
+                            <span class="label label-primary">{{ 'default-language'|trans }}</span>
+                        {% endif %}
+                    </label>
+                    <textarea
+                        class="form-control"
+                        id="descripcion_{{ idioma.codidioma }}"
+                        name="descripcion_{{ idioma.codidioma }}"
+                        rows="3"
+                        autocomplete="off"
+                    >{{ fsc.articulo.get_descripcion_idioma(idioma.codidioma) }}</textarea>
+                    <p class="help-block">{{ 'short-description'|trans }}</p>
+                    {% set descripciones = fsc.articulo.get_descripciones() %}
+                    {% set descripcion_corta = '' %}
+                    {% for desc in descripciones %}
+                        {% if desc.codidioma == idioma.codidioma %}
+                            {% set descripcion_corta = desc.descripcion_corta %}
+                        {% endif %}
+                    {% endfor %}
+                    <input
+                        class="form-control"
+                        type="text"
+                        name="descripcion_corta_{{ idioma.codidioma }}"
+                        value="{{ descripcion_corta }}"
+                        maxlength="150"
+                        autocomplete="off"
+                    />
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="alert alert-info">{{ 'no-languages-configured'|trans }}</div>
+            {% endif %}
+        </div>
+    </div>
+</div>

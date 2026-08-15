@@ -1,0 +1,442 @@
+{{ include('header.html.twig') }}
+
+{% if fsc.opcional %}
+<script type="text/javascript">
+function delete_opcional(url, id) {
+    bootbox.confirm({
+        message: '{{ 'confirm-delete-optional'|trans|e('js') }}',
+        title: '<b>{{ 'attention'|trans|default('Atención') }}</b>',
+        callback: function (result) {
+            if (result) {
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = url;
+
+                var deleteField = document.createElement('input');
+                deleteField.type = 'hidden';
+                deleteField.name = 'delete';
+                deleteField.value = id;
+                form.appendChild(deleteField);
+
+                var csrfField = document.createElement('input');
+                csrfField.type = 'hidden';
+                csrfField.name = 'form_token';
+                csrfField.value = document.querySelector('input[name="form_token"]').value;
+                form.appendChild(csrfField);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    });
+}
+
+$(document).ready(function () {
+    if (window.location.hash.substring(1) === 'familias') {
+        $('#ul_tabs a[href="#familias"]').tab('show');
+    } else if (window.location.hash.substring(1) === 'articulos') {
+        $('#ul_tabs a[href="#articulos"]').tab('show');
+        setupArticuloAutocomplete();
+    }
+
+    function setupArticuloAutocomplete() {
+        if (typeof $.fn.devbridgeAutocomplete === 'undefined' || $('#buscar_articulo').length === 0) {
+            return;
+        }
+
+        if ($('#buscar_articulo').data('autocomplete-initialized')) {
+            return;
+        }
+
+        $('#buscar_articulo').devbridgeAutocomplete({
+            serviceUrl: 'index.php?page=ventas_opcional&id={{ fsc.opcional.id }}',
+            paramName: 'buscar_articulo',
+            minChars: 2,
+            onSelect: function (suggestion) {
+                $('#referencia').val(suggestion.referencia);
+                $('#form_add_articulo_opcional').submit();
+            }
+        });
+        $('#buscar_articulo').data('autocomplete-initialized', true);
+    }
+
+    $('a[href="#articulos"]').on('shown.bs.tab', function () {
+        setupArticuloAutocomplete();
+        $('#buscar_articulo').focus();
+    });
+
+    function toggleTipoPrecio() {
+        var esPorcentaje = $('input[name="stipo_precio"]:checked').val() === 'porcentaje';
+        $('#grupo_precio_fijo').toggle(!esPorcentaje);
+        $('#grupo_precio_porcentaje').toggle(esPorcentaje);
+    }
+
+    $('input[name="stipo_precio"]').on('change', toggleTipoPrecio);
+    toggleTipoPrecio();
+});
+</script>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-puzzle-piece" aria-hidden="true"></i>&nbsp;
+                    {% if fsc.is_new %}
+                        {{ 'optional-new'|trans }}
+                    {% else %}
+                        {{ fsc.opcional.nombre }}
+                    {% endif %}
+                    <a class="btn btn-xs btn-default" href="index.php?page=ventas_opcionales" title="{{ 'back'|trans }}">
+                        <span class="glyphicon glyphicon-arrow-left"></span>
+                    </a>
+                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}{% if not fsc.is_new %}&id={{ fsc.opcional.id }}{% endif %}" title="{{ 'reload'|trans }}">
+                        <span class="glyphicon glyphicon-refresh"></span>
+                    </a>
+                </h1>
+            </div>
+        </div>
+    </div>
+
+    <div role="tabpanel">
+        <ul id="ul_tabs" class="nav nav-tabs" role="tablist">
+            <li role="presentation" class="active">
+                <a href="#datos" aria-controls="datos" role="tab" data-toggle="tab">
+                    <span class="glyphicon glyphicon-edit"></span>
+                    <span class="hidden-xs">&nbsp;{{ 'data'|trans|default('Datos') }}</span>
+                </a>
+            </li>
+            {% if not fsc.is_new %}
+            <li role="presentation">
+                <a href="#familias" aria-controls="familias" role="tab" data-toggle="tab">
+                    <span class="glyphicon glyphicon-folder-open"></span>
+                    <span class="hidden-xs">&nbsp;{{ 'optional-families'|trans }}</span>
+                    <span class="badge">{{ fsc.familias_asignadas|length }}</span>
+                </a>
+            </li>
+            <li role="presentation">
+                <a href="#articulos" aria-controls="articulos" role="tab" data-toggle="tab">
+                    <span class="glyphicon glyphicon-th-list"></span>
+                    <span class="hidden-xs">&nbsp;{{ 'optional-articles'|trans }}</span>
+                    {% if not fsc.opcional.id_grupo %}
+                    <span class="badge">{{ fsc.articulos|length }}</span>
+                    {% endif %}
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+
+        <div class="tab-content" style="margin-top: 15px;">
+            <div role="tabpanel" class="tab-pane active" id="datos">
+                <form class="form" role="form" action="{{ fsc.url() }}{% if not fsc.is_new %}&id={{ fsc.opcional.id }}{% endif %}" method="post">
+                    {{ csrf_field() }}
+                    <input type="hidden" name="save_opcional" value="1"/>
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title">{{ 'optional-data'|trans }}</h3>
+                        </div>
+                        <div class="panel-body">
+                            <div class="row">
+                                <div class="col-sm-6">
+                                    <div class="form-group">
+                                        {{ 'optional-code'|trans }}:
+                                        <input class="form-control" type="text" name="scodigo" value="{{ fsc.opcional.codigo }}" maxlength="20" autocomplete="off"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-12">
+                                    <div class="form-group">
+                                        {{ 'optional-name'|trans }}:
+                                        <input class="form-control" type="text" name="snombre" value="{{ fsc.opcional.nombre }}" maxlength="100" required autocomplete="off"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-12">
+                                    <div class="form-group">
+                                        {{ 'optional-price-type'|trans }}:
+                                        <div>
+                                            <label class="radio-inline">
+                                                <input type="radio" name="stipo_precio" value="{{ constant('FSFramework\\model\\catalogo_opcional::TIPO_PRECIO_FIJO') }}"{% if not fsc.opcional.es_precio_porcentaje() %} checked{% endif %}/>
+                                                {{ 'optional-price-type-fixed'|trans }}
+                                            </label>
+                                            <label class="radio-inline">
+                                                <input type="radio" name="stipo_precio" value="{{ constant('FSFramework\\model\\catalogo_opcional::TIPO_PRECIO_PORCENTAJE') }}"{% if fsc.opcional.es_precio_porcentaje() %} checked{% endif %}/>
+                                                {{ 'optional-price-type-percent'|trans }}
+                                            </label>
+                                        </div>
+                                        <p class="help-block">{{ 'optional-price-type-help'|trans }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-6">
+                                    <div class="form-group" id="grupo_precio_fijo">
+                                        {{ 'price'|trans }}:
+                                        <input class="form-control" type="text" name="sprecio" value="{{ fsc.opcional.precio }}" autocomplete="off"/>
+                                    </div>
+                                    <div class="form-group" id="grupo_precio_porcentaje" style="display:none;">
+                                        {{ 'optional-price-type-percent'|trans }}:
+                                        <div class="input-group">
+                                            <input class="form-control" type="text" name="sporcentaje" value="{{ fsc.opcional.porcentaje }}" autocomplete="off"/>
+                                            <span class="input-group-addon">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-6">
+                                    <div class="form-group">
+                                        {{ 'optional-group'|trans }}:
+                                        <select class="form-control" name="sid_grupo">
+                                            <option value="">{{ 'optional-group-none'|trans }}</option>
+                                            {% for grupo in fsc.grupos_opcional %}
+                                            <option value="{{ grupo.id }}"{% if fsc.opcional.id_grupo == grupo.id %} selected{% endif %}>
+                                                {{ grupo.nombre }}{% if grupo.exclusivo %} ({{ 'optional-group-exclusive-short'|trans }}){% endif %}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                        <p class="help-block">
+                                            <a href="index.php?page=ventas_opcional_grupos">{{ 'optional-groups-manage'|trans }}</a>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-12">
+                                    <div class="form-group">
+                                        {{ 'optional-description'|trans }}:
+                                        <textarea class="form-control" name="sdescripcion" rows="3">{{ fsc.opcional.descripcion }}</textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-12">
+                                    <div class="checkbox">
+                                        <label><input type="checkbox" name="sactivo" value="1"{% if fsc.opcional.activo %} checked{% endif %}/> {{ 'optional-active'|trans }}</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel-footer text-right">
+                            {% if not fsc.is_new and fsc.allow_delete is defined and fsc.allow_delete %}
+                            <a class="btn btn-sm btn-danger pull-left" onclick="delete_opcional('{{ fsc.url() }}&id={{ fsc.opcional.id }}', '{{ fsc.opcional.id }}')">
+                                <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
+                            </a>
+                            {% endif %}
+                            <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                                <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            {% if not fsc.is_new %}
+            <div role="tabpanel" class="tab-pane" id="familias">
+                <div class="alert alert-info">
+                    <label>
+                        <input type="checkbox" id="propagate_familia" checked="checked"/>
+                        <b>{{ 'optional-propagate'|trans }}</b>
+                    </label>
+                    <p class="text-muted" style="margin-bottom: 0;">{{ 'optional-propagate-help'|trans }}</p>
+                </div>
+                <div class="row">
+                    <div class="col-sm-6">
+                        <div class="panel panel-default">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'optional-families-assigned'|trans }}</h3>
+                            </div>
+                            <div class="panel-body">
+                                {% if fsc.familias_asignadas|length > 0 %}
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>{{ 'code'|trans|default('Código') }}</th>
+                                            <th>{{ 'description'|trans }}</th>
+                                            <th class="text-right">{{ 'actions'|trans }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for familia in fsc.familias_asignadas %}
+                                        <tr>
+                                            <td>{{ familia.codfamilia }}</td>
+                                            <td>{{ familia.descripcion }}</td>
+                                            <td class="text-right">
+                                                <form action="{{ fsc.url() }}&id={{ fsc.opcional.id }}#familias" method="post" style="display:inline;">
+                                                    {{ csrf_field() }}
+                                                    <input type="hidden" name="remove_familia_opcional" value="1"/>
+                                                    <input type="hidden" name="codfamilia" value="{{ familia.codfamilia }}"/>
+                                                    <input type="hidden" name="propagate_familia" value="0" class="propagate-field"/>
+                                                    <button type="submit" class="btn btn-xs btn-danger btn-remove-family" title="{{ 'optional-remove-family'|trans }}">
+                                                        <span class="glyphicon glyphicon-remove"></span>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted">{{ 'optional-no-families'|trans }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="panel panel-success">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'optional-families-available'|trans }}</h3>
+                            </div>
+                            <div class="panel-body">
+                                {% if fsc.familias_disponibles|length > 0 %}
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>{{ 'code'|trans|default('Código') }}</th>
+                                            <th>{{ 'description'|trans }}</th>
+                                            <th class="text-right">{{ 'actions'|trans }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for familia in fsc.familias_disponibles %}
+                                        <tr>
+                                            <td>{{ familia.codfamilia }}</td>
+                                            <td>{{ familia.descripcion }}</td>
+                                            <td class="text-right">
+                                                <form action="{{ fsc.url() }}&id={{ fsc.opcional.id }}#familias" method="post" style="display:inline;">
+                                                    {{ csrf_field() }}
+                                                    <input type="hidden" name="add_familia_opcional" value="1"/>
+                                                    <input type="hidden" name="codfamilia" value="{{ familia.codfamilia }}"/>
+                                                    <input type="hidden" name="propagate_familia" value="0" class="propagate-field"/>
+                                                    <button type="submit" class="btn btn-xs btn-success btn-add-family" title="{{ 'optional-add-family'|trans }}">
+                                                        <span class="glyphicon glyphicon-plus"></span>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p class="text-muted">{{ 'optional-no-more-families'|trans }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div role="tabpanel" class="tab-pane" id="articulos">
+                {% if fsc.opcional.id_grupo %}
+                <div class="alert alert-info">
+                    {{ 'optional-grouped-no-direct-articles'|trans }}
+                    <br/>
+                    <a href="index.php?page=ventas_opcional_grupo&id={{ fsc.opcional.id_grupo }}">{{ 'optional-group-view'|trans }}</a>
+                    &nbsp;|&nbsp;
+                    <a href="index.php?page=ventas_opcional_grupos">{{ 'optional-groups-manage'|trans }}</a>
+                </div>
+                {% else %}
+                <div class="panel panel-info">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'optional-search-article'|trans }}</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="form-group">
+                            <div class="input-group">
+                                <input type="text" id="buscar_articulo" class="form-control" placeholder="{{ 'optional-search-article-placeholder'|trans }}" autocomplete="off"/>
+                                <span class="input-group-addon"><span class="glyphicon glyphicon-search"></span></span>
+                            </div>
+                            <p class="help-block">{{ 'optional-search-article-help'|trans }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'optional-add-article'|trans }}</h3>
+                    </div>
+                    <div class="panel-body">
+                        <form id="form_add_articulo_opcional" action="{{ fsc.url() }}&id={{ fsc.opcional.id }}#articulos" method="post" class="form-inline">
+                            {{ csrf_field() }}
+                            <input type="hidden" name="add_articulo_opcional" value="1"/>
+                            <div class="form-group">
+                                <label for="referencia">{{ 'reference'|trans }}</label>
+                                <input class="form-control" type="text" name="referencia" id="referencia" required autocomplete="off"/>
+                            </div>
+                            <button type="submit" class="btn btn-success">
+                                <span class="glyphicon glyphicon-plus"></span>&nbsp; {{ 'add'|trans }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'optional-articles'|trans }} ({{ fsc.articulos|length }})</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% if fsc.articulos|length > 0 %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>{{ 'reference'|trans }}</th>
+                                        <th>{{ 'description'|trans }}</th>
+                                        <th>{{ 'family'|trans }}</th>
+                                        <th class="text-right">{{ 'actions'|trans }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for articulo in fsc.articulos %}
+                                    <tr>
+                                        <td><a href="{{ articulo.url() }}">{{ articulo.referencia }}</a></td>
+                                        <td>{{ articulo.descripcion }}</td>
+                                        <td>{{ articulo.codfamilia }}</td>
+                                        <td class="text-right">
+                                            <form action="{{ fsc.url() }}&id={{ fsc.opcional.id }}#articulos" method="post" style="display:inline;">
+                                                {{ csrf_field() }}
+                                                <input type="hidden" name="remove_articulo_opcional" value="1"/>
+                                                <input type="hidden" name="referencia" value="{{ articulo.referencia }}"/>
+                                                <button type="submit" class="btn btn-xs btn-danger" title="{{ 'delete'|trans }}">
+                                                    <span class="glyphicon glyphicon-trash"></span>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted">{{ 'optional-no-articles'|trans }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+$(document).ready(function () {
+    function syncPropagate() {
+        var propagate = document.getElementById('propagate_familia');
+        var value = propagate && propagate.checked ? '1' : '0';
+        $('.propagate-field').val(value);
+    }
+
+    $('#propagate_familia').on('change', syncPropagate);
+    $('.btn-add-family, .btn-remove-family').on('click', syncPropagate);
+});
+</script>
+{% else %}
+<div class="container-fluid">
+    <div class="alert alert-warning">{{ 'optional-not-found'|trans }}</div>
+</div>
+{% endif %}
+
+{{ include('footer.html.twig') }}

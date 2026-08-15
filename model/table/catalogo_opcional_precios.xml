@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Precios de opcionales por lista de precio del catálogo.
+-->
+<tabla>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codlista</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>precio</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>porcentaje</nombre>
+        <tipo>double precision</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <defecto>false</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_opcional_precios_pkey</nombre>
+        <consulta>PRIMARY KEY (id_opcional, codlista)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_opcional_precios_opcional</nombre>
+        <consulta>FOREIGN KEY (id_opcional)
+            REFERENCES catalogo_opcionales (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_opcional_precios_lista</nombre>
+        <consulta>FOREIGN KEY (codlista)
+            REFERENCES catalogo_listas_precio (codlista)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

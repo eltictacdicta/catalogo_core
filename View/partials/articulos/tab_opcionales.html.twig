@@ -1,0 +1,196 @@
+<div role="tabpanel" class="tab-pane" id="opcionales"
+     data-articulo-url="{{ fsc.articulo.url()|e('html_attr') }}"
+     data-articulo-ref="{{ fsc.articulo.referencia|e('html_attr') }}">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">
+                {{ 'article-optionals'|trans }}
+                <a href="index.php?page=ventas_opcional_grupos" class="btn btn-xs btn-default pull-right" title="{{ 'optional-groups-manage'|trans }}" style="margin-left: 5px;">
+                    <span class="glyphicon glyphicon-th-large"></span>
+                    <span class="hidden-xs">&nbsp;{{ 'optional-groups-manage'|trans }}</span>
+                </a>
+                <a href="index.php?page=ventas_opcionales" class="btn btn-xs btn-default pull-right" title="{{ 'optional-manage'|trans }}">
+                    <span class="glyphicon glyphicon-cog"></span>
+                    <span class="hidden-xs">&nbsp;{{ 'optional-manage'|trans }}</span>
+                </a>
+            </h3>
+        </div>
+        <div class="panel-body">
+            <h4>{{ 'article-optionals-groups'|trans }}</h4>
+            <div id="opcionales-grupos-section">
+            {% if fsc.articulo_grupos|length > 0 %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>{{ 'optional-code'|trans }}</th>
+                            <th>{{ 'optional-name'|trans }}</th>
+                            <th>{{ 'optional-group-variants'|trans }}</th>
+                            <th class="text-center">{{ 'optional-group-exclusive'|trans }}</th>
+                            <th class="text-center">{{ 'optional-required-tpv'|trans }}</th>
+                            <th class="text-right">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for grupo in fsc.articulo_grupos %}
+                        <tr>
+                            <td><a href="{{ grupo.url() }}">{{ grupo.codigo }}</a></td>
+                            <td><a href="{{ grupo.url() }}">{{ grupo.nombre }}</a></td>
+                            <td>
+                                {% set variantes = grupo.get_opcionales_activos() %}
+                                {% if variantes|length > 0 %}
+                                    {% for variante in variantes %}
+                                        {{ variante.nombre }}{% if not loop.last %}, {% endif %}
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if grupo.exclusivo %}
+                                    <span class="label label-info">{{ 'yes'|trans|default('Sí') }}</span>
+                                {% else %}
+                                    <span class="label label-default">{{ 'no'|trans|default('No') }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <button type="button"
+                                        class="btn btn-xs js-toggle-obligatorio-tpv {{ grupo.obligatorio_en_articulo ? 'btn-warning' : 'btn-default' }}"
+                                        data-type="grupo"
+                                        data-id="{{ grupo.id }}"
+                                        data-obligatorio="{{ grupo.obligatorio_en_articulo ? '1' : '0' }}"
+                                        title="{{ 'optional-required-tpv-help'|trans }}">
+                                    <span class="label {{ grupo.obligatorio_en_articulo ? 'label-warning' : 'label-default' }}">
+                                        {% if grupo.obligatorio_en_articulo %}
+                                            {{ 'optional-required-tpv-yes'|trans }}
+                                        {% else %}
+                                            {{ 'optional-required-tpv-no'|trans }}
+                                        {% endif %}
+                                    </span>
+                                </button>
+                            </td>
+                            <td class="text-right">
+                                <button type="button"
+                                        class="btn btn-xs btn-danger js-remove-grupo-articulo"
+                                        data-id="{{ grupo.id }}"
+                                        title="{{ 'remove-optional-group'|trans }}">
+                                    <span class="glyphicon glyphicon-trash"></span>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+                <p class="text-muted js-grupos-empty">{{ 'no-optionals-groups-assigned'|trans }}</p>
+            {% endif %}
+            </div>
+
+            {% if fsc.grupos_disponibles|length > 0 %}
+            <div class="form-inline js-add-grupo-form" style="margin-bottom: 20px;">
+                <div class="form-group">
+                    <label for="id_grupo">{{ 'add-optional-group'|trans }}</label>
+                    <select class="form-control" name="id_grupo" id="id_grupo" required>
+                        <option value="">{{ 'none'|trans }}</option>
+                        {% for grupo in fsc.grupos_disponibles %}
+                            <option value="{{ grupo.id }}">{{ grupo.codigo }} — {{ grupo.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="checkbox" style="margin-left: 10px;">
+                    <label>
+                        <input type="checkbox" name="obligatorio" value="1"/>
+                        {{ 'optional-required-tpv'|trans }}
+                    </label>
+                </div>
+                <button type="button" class="btn btn-success js-add-grupo-submit">
+                    <span class="glyphicon glyphicon-plus"></span>&nbsp; {{ 'add'|trans }}
+                </button>
+            </div>
+            {% endif %}
+
+            <hr/>
+            <h4>{{ 'article-optionals-loose'|trans }}</h4>
+            <div id="opcionales-sueltos-section">
+            {% if fsc.articulo_opcionales|length > 0 %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>{{ 'optional-code'|trans }}</th>
+                            <th>{{ 'optional-name'|trans }}</th>
+                            <th class="text-right">{{ 'price'|trans }}</th>
+                            <th class="text-right">{{ 'optional-calculated-price'|trans }}</th>
+                            <th class="text-center">{{ 'optional-required-tpv'|trans }}</th>
+                            <th class="text-right">{{ 'actions'|trans }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for opcional in fsc.articulo_opcionales %}
+                        <tr>
+                            <td>{{ opcional.codigo }}</td>
+                            <td>{{ opcional.nombre }}</td>
+                            <td class="text-right">{{ opcional.etiqueta_precio_base() }}</td>
+                            <td class="text-right">{{ opcional.precio_para_articulo(fsc.articulo, fsc.lista_precio_defecto)|number_format(2, ',', '.') }}</td>
+                            <td class="text-center">
+                                <button type="button"
+                                        class="btn btn-xs js-toggle-obligatorio-tpv {{ opcional.obligatorio_en_articulo ? 'btn-warning' : 'btn-default' }}"
+                                        data-type="opcional"
+                                        data-id="{{ opcional.id }}"
+                                        data-obligatorio="{{ opcional.obligatorio_en_articulo ? '1' : '0' }}"
+                                        title="{{ 'optional-required-tpv-help'|trans }}">
+                                    <span class="label {{ opcional.obligatorio_en_articulo ? 'label-warning' : 'label-default' }}">
+                                        {% if opcional.obligatorio_en_articulo %}
+                                            {{ 'optional-required-tpv-yes'|trans }}
+                                        {% else %}
+                                            {{ 'optional-required-tpv-no'|trans }}
+                                        {% endif %}
+                                    </span>
+                                </button>
+                            </td>
+                            <td class="text-right">
+                                <button type="button"
+                                        class="btn btn-xs btn-danger js-remove-opcional-articulo"
+                                        data-id="{{ opcional.id }}"
+                                        title="{{ 'remove-optional'|trans }}">
+                                    <span class="glyphicon glyphicon-trash"></span>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+                <p class="text-muted js-opcionales-empty">{{ 'no-optionals-assigned'|trans }}</p>
+            {% endif %}
+            </div>
+
+            {% if fsc.opcionales_disponibles|length > 0 %}
+            <div class="form-inline js-add-opcional-form">
+                <div class="form-group">
+                    <label for="id_opcional">{{ 'add-optional-loose'|trans }}</label>
+                    <select class="form-control" name="id_opcional" id="id_opcional" required>
+                        <option value="">{{ 'none'|trans }}</option>
+                        {% for opcional in fsc.opcionales_disponibles %}
+                            <option value="{{ opcional.id }}">{{ opcional.codigo }} — {{ opcional.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="checkbox" style="margin-left: 10px;">
+                    <label>
+                        <input type="checkbox" name="obligatorio" value="1"/>
+                        {{ 'optional-required-tpv'|trans }}
+                    </label>
+                </div>
+                <button type="button" class="btn btn-success js-add-opcional-submit">
+                    <span class="glyphicon glyphicon-plus"></span>&nbsp; {{ 'add'|trans }}
+                </button>
+            </div>
+            {% else %}
+                <p class="help-block">{{ 'no-optionals-available'|trans }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

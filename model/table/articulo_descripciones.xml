@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Descripciones multiidioma de artículos.
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codidioma</nombre>
+        <tipo>character varying(5)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>descripcion</nombre>
+        <tipo>text</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>descripcion_corta</nombre>
+        <tipo>character varying(150)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <restriccion>
+        <nombre>articulo_descripciones_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>articulo_descripciones_unique</nombre>
+        <consulta>UNIQUE (referencia, codidioma)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_articulo_descripciones_articulos</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>
