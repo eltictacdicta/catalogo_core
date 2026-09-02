@@ -34,8 +34,10 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_gr
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
+use FSFramework\Event\FSEventDispatcher;
 use FSFramework\Controller\PageController;
 use FSFramework\Core\Html;
+use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\model\catalogo_articulo_opcional;
 use FSFramework\model\catalogo_articulo_opcional_grupo;
 use FSFramework\model\catalogo_idioma;
@@ -199,6 +201,26 @@ class VentasArticulo extends PageController
         if (!$art) {
             $art = new \articulo();
             $art->referencia = $referencia;
+        }
+
+        // Permission filter (AD-2/AD-3): resolve BEFORE any field mutation so a
+        // denial makes save() unreachable. No listeners -> allow (host-neutral).
+        $filterEvent = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            $this->user->nick
+        );
+
+        try {
+            FSEventDispatcher::getInstance()->dispatch($filterEvent, ArticlePermissionFilterEvent::NAME);
+        } catch (\Throwable $e) {
+            error_log('ArticlePermissionFilterEvent listener error: ' . $e->getMessage());
+            $filterEvent->deny('permission filter error');
+        }
+
+        if (!$filterEvent->isAllowed()) {
+            $this->new_error_msg('No tienes permisos para editar este artículo: ' . $filterEvent->getDenialReason());
+            return;
         }
 
         $art->descripcion = (string) $request->request->get('sdescripcion', '');
