@@ -124,6 +124,7 @@ $(document).ready(function () {
                 </a>
             </li>
             {% endif %}
+        {{- render_hook('ventas_opcional_tabs_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}
         </ul>
 
         <div class="tab-content" style="margin-top: 15px;">
@@ -417,6 +418,7 @@ $(document).ready(function () {
                 {% endif %}
             </div>
             {% endif %}
+        {{- render_hook('ventas_opcional_tab_pane_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}
         </div>
     </div>
 </div>
