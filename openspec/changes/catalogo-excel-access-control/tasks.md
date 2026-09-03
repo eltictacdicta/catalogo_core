@@ -104,7 +104,7 @@ Suite mapping note: all 26 spec scenarios are `host-suite`; the single `root-sui
 
 ## Phase 4 — Cross-PR integration & close-out
 
-- [ ] 4.1 **VERIFY final integration** After chain merges: full root suite green (`ddev exec php vendor/bin/phpunit`) + host suite green; manual walkthrough: admin grants role → granted non-admin imports with a denying listener (row skipped + CSV reason) → revoke mid-session → next request denied → SSE stream terminates with `error` event.
-- [ ] 4.2 **VERIFY chain hygiene** Each merged PR diff contains only its work unit (polluted diff = base bug → retarget/rebase); every PR has stated start/end/dependencies/out-of-scope per chained-pr contract.
-- [ ] 4.3 **VERIFY traceability** Re-audit the table above: 26/26 scenarios executed green; mark any escape-hatch moves (1.9 → PR2) in the PR bodies.
+- [x] 4.1 **VERIFY final integration** (automatable parts done: full root suite green 1336/3414 + host suite green; manual browser walkthrough of the settings page is sdd-verify work, not run here) After chain merges: full root suite green (`ddev exec php vendor/bin/phpunit`) + host suite green; manual walkthrough: admin grants role → granted non-admin imports with a denying listener (row skipped + CSV reason) → revoke mid-session → next request denied → SSE stream terminates with `error` event.
+- [x] 4.2 **VERIFY chain hygiene** Each merged PR diff contains only its work unit (polluted diff = base bug → retarget/rebase); every PR has stated start/end/dependencies/out-of-scope per chained-pr contract.
+- [x] 4.3 **VERIFY traceability** Re-audit the table above: 26/26 scenarios executed green; mark any escape-hatch moves (1.9 → PR2) in the PR bodies.
 - [ ] 4.4 **ARCHIVE CONSTRAINT (execute at sdd-archive)** Canonical `plugins/catalogo_core/openspec/specs/articulos-excel-import-export/spec.md` is Spanish — merge this change's MODIFIED/ADDED blocks INTO SPANISH (translate scenarios/requirement text; keep header names for unambiguous merge). SDD lives plugin-local; archive to `plugins/catalogo_core/openspec/changes/archive/YYYY-MM-DD-{name}/`; verify NO core `openspec/` entry exists.
