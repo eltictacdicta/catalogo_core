@@ -410,7 +410,117 @@ final class CatalogoExcelWizardAccessTest extends TestCase
         ];
     }
 
-// ---- Fakes (ArticlePermissionListenerTest pattern) ----
+    // ---- SSE per-event re-check (R-CEXC-005; scenario 24) ----
+
+    public function testSsePolicyRecheckThrowsAccessDeniedExceptionOnVerdictFlip(): void
+    {
+        // A granted user whose grant is revoked mid-stream: the re-check must
+        // surface the flip as CatalogoExcelAccessDeniedException, which the
+        // existing catch turns into the SSE 'error' event ending the stream.
+        $policy = new ArticleExcelAccessPolicy();
+        $policy->setUser($this->mockUser('pepe', false));
+        $policy->setRolUserModel($this->mockRolUserModel(['pepe' => []]));
+        $policy->setRolModel($this->mockRolModel(['A']));
+
+        $this->expectException(\FSFramework\Plugins\catalogo_core\Services\CatalogoExcelAccessDeniedException::class);
+        catalogo_excel_wizard_assert_policy($policy);
+    }
+
+    public function testSsePolicyRecheckCarriesDenialText(): void
+    {
+        $policy = new ArticleExcelAccessPolicy();
+        $policy->setUser($this->mockUser('pepe', false));
+        $policy->setRolUserModel($this->mockRolUserModel(['pepe' => []]));
+        $policy->setRolModel($this->mockRolModel(['A']));
+
+        try {
+            catalogo_excel_wizard_assert_policy($policy);
+            $this->fail('Revoked user must fail the per-event re-check');
+        } catch (\FSFramework\Plugins\catalogo_core\Services\CatalogoExcelAccessDeniedException $e) {
+            $this->assertNotSame('', (string) $e->getMessage(), 'Denial exception must carry the user-facing denial text');
+        }
+    }
+
+    public function testSsePolicyRecheckPassesWhenStillAllowed(): void
+    {
+        $GLOBALS['config2'][ArticleExcelAccessPolicy::SETTING_KEY] = 'A';
+        $policy = new ArticleExcelAccessPolicy();
+        $policy->setUser($this->mockUser('pepe', false));
+        $policy->setRolUserModel($this->mockRolUserModel(['pepe' => ['A']]));
+        $policy->setRolModel($this->mockRolModel(['A']));
+
+        catalogo_excel_wizard_assert_policy($policy);
+        // No exception = the stream event may be emitted (any throw fails this test).
+        $this->addToAssertionCount(1);
+    }
+
+    public function testSseRecheckWiredIntoProgressCallbackAndComplete(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::DISPATCH_FILE);
+        $this->assertNotFalse($source);
+
+        // The shared progressCallback must re-check the policy per stream event
+        // before emitting progress (embedded & standalone share this callback).
+        $pcStart = strpos($source, '$progressCallback = static function');
+        $this->assertNotFalse($pcStart, 'progressCallback must exist');
+        $pcEnd = (int) strpos($source, '};', $pcStart);
+        $pcBody = (string) substr($source, $pcStart, $pcEnd - $pcStart);
+        $this->assertStringContainsString(
+            'catalogo_excel_wizard_assert_policy()',
+            $pcBody,
+            'progressCallback must re-check the policy per stream event (R-CEXC-005)'
+        );
+
+        // The re-check must also run BEFORE the 'complete' event is emitted.
+        $assertPos = strpos($source, 'catalogo_excel_wizard_assert_policy()');
+        $completePos = strpos($source, 'saveProgress($progressFile, \'complete\'');
+        $this->assertNotFalse($assertPos, 'Re-check helper must exist');
+        $this->assertNotFalse($completePos, 'Complete event must be emitted');
+        $this->assertLessThan(
+            $completePos,
+            $assertPos,
+            'The final re-check must run before the complete event (design flowchart b)'
+        );
+    }
+
+    // ---- Scenario 23 (deferred from PR1 via the 400-line escape hatch): ----
+    // ---- SSE denial at stream start, before any import event is emitted ----
+
+    public function testSseStreamStartDeniedBeforeAnyImportEvent(): void
+    {
+        // Standalone SSE flow: the policy gate must precede the first import
+        // event emission (scenario 23 — denial at stream start).
+        $source = file_get_contents(FS_FOLDER . self::DISPATCH_FILE);
+        $this->assertNotFalse($source);
+
+        $gatePos = strpos($source, 'catalogo_excel_wizard_policy_denial()');
+        $startEventPos = strpos($source, "sendEvent('start'");
+        $this->assertNotFalse($gatePos, 'Standalone runner must apply the policy gate');
+        $this->assertNotFalse($startEventPos, 'Import start event must be emitted by the wizard flow');
+        $this->assertLessThan(
+            $startEventPos,
+            $gatePos,
+            'Policy denial must run before any SSE start event is emitted (scenario 23)'
+        );
+
+        // Embedded SSE flow: excel_import_sse is gated in processExcelAction
+        // BEFORE the wizard handler can run — the denial precedes the switch,
+        // so a denied user never reaches handleExcelImportSse/handleCatalogoStart
+        // and no import event is emitted.
+        $controllerSource = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $this->assertNotFalse($controllerSource);
+        $denialPos = strpos($controllerSource, 'emitExcelAccessDenied');
+        $sseCasePos = strpos($controllerSource, "case 'excel_import_sse'");
+        $this->assertNotFalse($denialPos, 'Embedded denial emitter must exist');
+        $this->assertNotFalse($sseCasePos, 'excel_import_sse case must exist');
+        $this->assertLessThan(
+            $sseCasePos,
+            $denialPos,
+            'Embedded SSE denial must precede the excel_import_sse case (no import events before denial)'
+        );
+    }
+
+    // ---- Fakes (ArticlePermissionListenerTest pattern) ----
 
     /**
      * Extracts a class method's source (start marker up to the next method

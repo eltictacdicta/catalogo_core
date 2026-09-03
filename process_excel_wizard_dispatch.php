@@ -184,6 +184,28 @@ function catalogo_excel_wizard_policy_denial(?\FSFramework\Plugins\catalogo_core
 }
 
 /**
+ * SSE per-event policy re-check (R-CEXC-005, AD-4).
+ *
+ * A verdict flip to denied throws CatalogoExcelAccessDeniedException, which
+ * the existing catch in handleCatalogoStart() turns into the SSE 'error'
+ * event and ends the stream. Each call evaluates a FRESH policy instance, so
+ * DB-backed revocations (role/user changes) are detected mid-stream; the
+ * per-instance memoization in AD-3 only spans a single evaluation.
+ *
+ * @param \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy|null $policy
+ *        Injectable for tests; production resolves the session user.
+ *
+ * @throws \FSFramework\Plugins\catalogo_core\Services\CatalogoExcelAccessDeniedException
+ */
+function catalogo_excel_wizard_assert_policy(?\FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy $policy = null): void
+{
+    $denial = catalogo_excel_wizard_policy_denial($policy);
+    if ($denial !== null) {
+        throw new \FSFramework\Plugins\catalogo_core\Services\CatalogoExcelAccessDeniedException((string) $denial['error']);
+    }
+}
+
+/**
  * Emits the standalone denied response (403 JSON) and terminates before any
  * wizard handling. Shape matches what the wizard client already parses
  * (json.error); mirrors the existing CSRF denial response.
@@ -304,6 +326,11 @@ function handleCatalogoStart(string $progressFile): void
     $rowIsAdmin = $rowPolicy->isAdmin();
 
     $progressCallback = static function (string $step, string $message, int $percent) use ($progressFile, &$lastEventTime) {
+        // SSE per-event policy re-check (R-CEXC-005): a mid-stream revocation
+        // flips the verdict; the throw is caught by the existing catch below,
+        // which emits the 'error' event and ends the stream.
+        catalogo_excel_wizard_assert_policy();
+
         if (time() - $lastEventTime > 10) {
             \FSFramework\Core\ProgressStream::sendKeepalive(false);
         }
@@ -422,6 +449,10 @@ function handleCatalogoStart(string $progressFile): void
         }
 
         @unlink($filePath);
+
+        // Final re-check before 'complete' (R-CEXC-005, design flowchart b):
+        // the stream must not report success after a mid-run revocation.
+        catalogo_excel_wizard_assert_policy();
 
         \FSFramework\Core\ProgressStream::saveProgress($progressFile, 'complete', 'Importación completada.', 100);
         \FSFramework\Core\ProgressStream::sendEvent('complete', [
