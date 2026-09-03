@@ -164,7 +164,173 @@ final class CatalogoExcelWizardAccessTest extends TestCase
         $this->assertStringContainsString('exit', $emitBody, 'Denied standalone response must terminate before wizard handling');
     }
 
+    // ---- Embedded controller: explicit denials, never silent fall-through ----
+
+    private const CONTROLLER_FILE = '/plugins/catalogo_core/Controller/VentasArticulos.php';
+    private const TWIG_FILE = '/plugins/catalogo_core/View/ventas_articulos.html.twig';
+
+    public function testControllerGateUsesPolicyVerdictNotTautology(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $this->assertNotFalse($source);
+
+        $method = $this->methodSource($source, 'private function initImportExportPermissions');
+
+        $this->assertNotSame('', $method, 'initImportExportPermissions must exist');
+        $this->assertStringContainsString(
+            'ArticleExcelAccessPolicy',
+            $method,
+            'can_import_export must come from the central access policy'
+        );
+        $this->assertStringContainsString(
+            '->isAllowed(',
+            $method,
+            'can_import_export must be the policy verdict'
+        );
+        $this->assertStringNotContainsString(
+            'have_access_to',
+            $method,
+            'The tautological admin || have_access_to(page) gate must be gone'
+        );
+    }
+
+    public function testProcessExcelActionDeniesKnownExcelActionsExplicitly(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $this->assertNotFalse($source);
+
+        $method = $this->methodSource($source, 'private function processExcelAction');
+        $this->assertNotSame('', $method, 'processExcelAction must exist');
+
+        $this->assertStringContainsString(
+            'self::EXCEL_ACTIONS',
+            $method,
+            'Known Excel actions must be enumerated so denials are explicit'
+        );
+        $this->assertStringContainsString(
+            '$this->emitExcelAccessDenied($action);',
+            $method,
+            'A denied known action must call the explicit denial emitter'
+        );
+        $denialPos = (int) strpos($method, 'emitExcelAccessDenied');
+        $this->assertGreaterThan(
+            0,
+            $denialPos,
+            'Denial emitter must be invoked from processExcelAction'
+        );
+        $this->assertStringContainsString(
+            'return true;',
+            (string) substr($method, $denialPos, 120),
+            'After emitting the denial the action must be consumed (never fall through to list render)'
+        );
+    }
+
+    public function testExcelActionsListCoversEveryEntryPoint(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $this->assertNotFalse($source);
+
+        $const = $this->methodSource($source, 'private const EXCEL_ACTIONS');
+        foreach (
+            [
+                'preview_excel',
+                'get_preview',
+                'export_excel',
+                'export_excel_filtered',
+                'export_excel_template',
+                'download_import_log',
+                'excel_import_sse',
+            ] as $action
+        ) {
+            $this->assertStringContainsString(
+                "'$action'",
+                $const,
+                "EXCEL_ACTIONS must gate entry point $action"
+            );
+        }
+    }
+
+    public function testExcelDenialResponds403WithAd4Shapes(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $this->assertNotFalse($source);
+
+        $method = $this->methodSource($source, 'private function emitExcelAccessDenied');
+        $this->assertNotSame('', $method, 'emitExcelAccessDenied must exist');
+
+        $this->assertStringContainsString('403', $method, 'Denied responses must be HTTP 403');
+        $this->assertStringContainsString(
+            "'success' => false",
+            $method,
+            'JSON surfaces (fetch/EventSource) must get {success:false, error:...}'
+        );
+        $this->assertStringContainsString('application/json', $method, 'JSON surfaces must send a JSON content type');
+        $this->assertStringContainsString(
+            "'preview_excel', 'get_preview', 'excel_import_sse'",
+            $method,
+            'preview_excel, get_preview and excel_import_sse are the JSON surfaces (AD-4)'
+        );
+        $this->assertStringContainsString(
+            'echo $message;',
+            $method,
+            'Link-navigation surfaces (export/log) must get a 403 text body (mirrors 404 pattern)'
+        );
+    }
+
+    // NOTE (PR1 escape hatch): the SSE stream-start ordering test
+    // (task 1.9, scenario 23) is deferred to PR2 per the documented
+    // 400-line budget escape hatch. The stream-start GATE itself ships in
+    // PR1: excel_import_sse is in EXCEL_ACTIONS and the JSON denial shape
+    // (asserted above) applies to it like every JSON surface.
+
+    // ---- Scenario 25/26: UI parity (0 template changes expected) ----
+
+    public function testTwigGatesKeyOnCanImportExportFlag(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::TWIG_FILE);
+        $this->assertNotFalse($source);
+
+        $this->assertSame(
+            2,
+            substr_count($source, '{% if fsc.can_import_export %}'),
+            'The Excel UI must be gated exactly on fsc.can_import_export (menu + modals)'
+        );
+
+        // Menu gate (scenario 25/26 surface 1): Excel dropdown inside the gate.
+        $menuGatePos = (int) strpos($source, '{% if fsc.can_import_export %}');
+        $menuPos = strpos($source, 'excel-menu');
+        $this->assertGreaterThan($menuGatePos, $menuPos, 'Excel menu must render inside the can_import_export gate');
+
+        // Modals gate (surface 2): both Excel partials inside the second gate.
+        $modalsGatePos = (int) strrpos($source, '{% if fsc.can_import_export %}');
+        $exportPos = strpos($source, "include 'partials/articulos/modal_exportar_excel.html.twig'");
+        $importPos = strpos($source, "include 'partials/articulos/modal_importar_excel_wizard.html.twig'");
+        $this->assertGreaterThan($modalsGatePos, $exportPos, 'Export modal must render inside the can_import_export gate');
+        $this->assertGreaterThan($modalsGatePos, $importPos, 'Import modal must render inside the can_import_export gate');
+    }
+
     // ---- Fakes (ArticlePermissionListenerTest pattern) ----
+
+    /**
+     * Extracts a class method's source (start marker up to the next method
+     * declaration) so assertions stay method-scoped.
+     */
+    private function methodSource(string $source, string $startMarker): string
+    {
+        $start = strpos($source, $startMarker);
+        if ($start === false) {
+            return '';
+        }
+
+        $rest = (string) substr($source, $start + strlen($startMarker));
+        $boundaries = array_filter(
+            [strpos($rest, "\n    private function"), strpos($rest, "\n    public function")],
+            static fn ($pos): bool => $pos !== false
+        );
+        $end = $boundaries === [] ? strlen($rest) : (int) min($boundaries);
+
+        return (string) substr($rest, 0, $end);
+    }
 
     private function mockUser(string $nick, bool $isAdmin): \FSFramework\model\fs_user
     {

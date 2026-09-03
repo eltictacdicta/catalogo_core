@@ -28,6 +28,7 @@ require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
+use FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -35,6 +36,17 @@ use Symfony\Component\HttpFoundation\Request;
 
 class VentasArticulos extends PageController
 {
+    /** Every Excel entry point gated by the access policy (R-CEXC-001/004). */
+    private const EXCEL_ACTIONS = [
+        'preview_excel',
+        'get_preview',
+        'export_excel',
+        'export_excel_filtered',
+        'export_excel_template',
+        'download_import_log',
+        'excel_import_sse',
+    ];
+
     public array $resultados = [];
     public ?\articulo $articulo = null;
     public array $familias = [];
@@ -48,6 +60,8 @@ class VentasArticulos extends PageController
     public int $offset = 0;
     public int $total_resultados = 0;
     public const ITEMS_PER_PAGE = 50;
+
+    private ArticleExcelAccessPolicy $excelPolicy;
 
     public function __construct()
     {
@@ -109,8 +123,11 @@ class VentasArticulos extends PageController
 
     private function initImportExportPermissions(): void
     {
-        $this->can_import_export = $this->user->admin
-            || $this->user->have_access_to($this->getPageData()['name']);
+        // Central access policy verdict (R-CEXC-001/004): admin dominance or a
+        // granted role via catalogo_excel_roles. One instance per request is
+        // kept for reuse by the per-action denials below.
+        $this->excelPolicy = new ArticleExcelAccessPolicy();
+        $this->can_import_export = $this->excelPolicy->isAllowed($this->user);
     }
 
     private function loadImpuestos(): void
@@ -135,13 +152,22 @@ class VentasArticulos extends PageController
 
     private function processExcelAction(): bool
     {
-        if (!$this->can_import_export) {
-            return false;
-        }
-
         $action = (string) $this->request->query->get('action', '');
         if ($action === '') {
             return false;
+        }
+
+        // Non-Excel actions are normal page behavior: fall through.
+        if (!in_array($action, self::EXCEL_ACTIONS, true)) {
+            return false;
+        }
+
+        // Explicit denial for a gated entry point — never a silent
+        // fall-through to the list render (R-CEXC-001/004).
+        if (!$this->can_import_export) {
+            $this->emitExcelAccessDenied($action);
+
+            return true;
         }
 
         switch ($action) {
@@ -178,6 +204,32 @@ class VentasArticulos extends PageController
         }
 
         return false;
+    }
+
+    /**
+     * Explicit 403 denial for a gated Excel entry point (AD-4): JSON
+     * {success:false, error} for fetch/EventSource surfaces the wizard client
+     * already parses; a 403 text body for link-navigation surfaces (mirrors
+     * the existing 404 pattern in downloadImportLog). No wizard JS changes.
+     */
+    private function emitExcelAccessDenied(string $action): void
+    {
+        $this->template = false;
+        $message = $this->excelPolicy->denialMessage();
+
+        if (in_array($action, ['preview_excel', 'get_preview', 'excel_import_sse'], true)) {
+            if (!headers_sent()) {
+                http_response_code(403);
+                header('Content-Type: application/json; charset=UTF-8');
+            }
+            echo json_encode(['success' => false, 'error' => $message]);
+            return;
+        }
+
+        if (!headers_sent()) {
+            http_response_code(403);
+        }
+        echo $message;
     }
 
     private function handleExcelImportSse(): bool
