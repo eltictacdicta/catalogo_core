@@ -85,6 +85,14 @@ function catalogo_excel_wizard_run(bool $embedded): void
             echo json_encode(['success' => false, 'error' => 'No authenticated session. Please log in again.']);
             exit;
         }
+
+        // Access policy gate (R-CEXC-001/004): applies to ALL standalone
+        // actions (start, progress, status) after login, before wizard
+        // handling. Closes the direct-URL hole with an explicit 403 JSON.
+        $policyDenial = catalogo_excel_wizard_policy_denial();
+        if ($policyDenial !== null) {
+            catalogo_excel_wizard_emit_denial($policyDenial);
+        }
     }
 
     @set_time_limit(300);
@@ -152,6 +160,42 @@ function catalogo_excel_wizard_require_login(): bool
     } catch (\Throwable $e) {
         return false;
     }
+}
+
+/**
+ * Central access-policy verdict for the Excel wizard (R-CEXC-001/004).
+ *
+ * @param \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy|null $policy
+ *        Injectable for tests; production resolves the session user.
+ *
+ * @return array|null null = allowed | ['success' => false, 'error' => ...] denial payload
+ */
+function catalogo_excel_wizard_policy_denial(?\FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy $policy = null): ?array
+{
+    $policy = $policy ?? new \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy();
+    if ($policy->isAllowed()) {
+        return null;
+    }
+
+    return [
+        'success' => false,
+        'error' => $policy->denialMessage(),
+    ];
+}
+
+/**
+ * Emits the standalone denied response (403 JSON) and terminates before any
+ * wizard handling. Shape matches what the wizard client already parses
+ * (json.error); mirrors the existing CSRF denial response.
+ */
+function catalogo_excel_wizard_emit_denial(array $payload): void
+{
+    if (!headers_sent()) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=UTF-8');
+    }
+    echo json_encode($payload);
+    exit;
 }
 
 function handleCatalogoStart(string $progressFile): void
