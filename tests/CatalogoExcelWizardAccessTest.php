@@ -309,7 +309,108 @@ final class CatalogoExcelWizardAccessTest extends TestCase
         $this->assertGreaterThan($modalsGatePos, $importPos, 'Import modal must render inside the can_import_export gate');
     }
 
-    // ---- Fakes (ArticlePermissionListenerTest pattern) ----
+    // ---- Per-row gate + denied-row CSV (R-CEXC-003; scenarios 18-19) ----
+
+    public function testDenyRowWritesCsvRowAndBumpsStats(): void
+    {
+        $handle = fopen('php://temp', 'w+');
+        $this->assertNotFalse($handle);
+        $stats = $this->freshStats();
+
+        catalogo_excel_wizard_deny_row($handle, 'REF-X', 'editor sin asignación', $stats);
+
+        rewind($handle);
+        $line = (string) fgets($handle);
+        fclose($handle);
+
+        $this->assertSame(
+            "permiso_denegado;REF-X;\"editor sin asignación\"\n",
+            $line,
+            'Denied row must be appended to the discarded CSV as permiso_denegado;referencia;detalle (AD-8); '
+            . 'fields with spaces are quoted by the shared catalogoFputcsvSafe infra'
+        );
+        $this->assertSame(1, $stats['descartadas'], 'Denied row must count as descartadas');
+        $this->assertSame(1, $stats['errores'], 'Denied row must count as errores');
+    }
+
+    public function testDenyRowSanitizesFormulaPrefixedReason(): void
+    {
+        $handle = fopen('php://temp', 'w+');
+        $this->assertNotFalse($handle);
+        $stats = $this->freshStats();
+
+        catalogo_excel_wizard_deny_row($handle, 'REF-X', '=HYPERLINK("http://evil.example")', $stats);
+
+        rewind($handle);
+        $line = (string) fgets($handle);
+        fclose($handle);
+
+        $parsed = str_getcsv($line, ';');
+        $this->assertSame('permiso_denegado', $parsed[0] ?? null, 'CSV row must keep the permiso_denegado motive');
+        $this->assertSame('REF-X', $parsed[1] ?? null, 'CSV row must keep the row referencia');
+        $this->assertStringStartsWith(
+            "'=",
+            $parsed[2] ?? '',
+            'CSV formula injection in the denial reason must be neutralized (catalogoFputcsvSafe)'
+        );
+        $this->assertSame(1, $stats['descartadas']);
+        $this->assertSame(1, $stats['errores']);
+    }
+
+    public function testRowHookGatesBeforeCreateAndUpdateBranches(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::DISPATCH_FILE);
+        $this->assertNotFalse($source);
+
+        $rowHookStart = strpos($source, '$rowHook = static function');
+        $this->assertNotFalse($rowHookStart, 'rowHook must exist');
+        $rowHookEnd = strpos($source, '};', $rowHookStart);
+        $rowHookBody = (string) substr($source, $rowHookStart, $rowHookEnd - $rowHookStart);
+
+        $gatePos = strpos($rowHookBody, 'ArticuloExcelPermissionGate::check');
+        $createPos = strpos($rowHookBody, 'createArticuloFromRow');
+        $updatePos = strpos($rowHookBody, 'catalogoApplyWizardFields');
+
+        $this->assertNotFalse($gatePos, 'rowHook must call ArticuloExcelPermissionGate::check');
+        $this->assertNotFalse($createPos, 'create branch must exist');
+        $this->assertNotFalse($updatePos, 'update branch must exist');
+        $this->assertLessThan($createPos, $gatePos, 'Gate must fire before the create branch (scenario 19: before pvp mutation/save)');
+        $this->assertLessThan($updatePos, $gatePos, 'Gate must fire before the update branch (scenario 19)');
+    }
+
+    public function testRowHookDenyPathSkipsRowAndContinues(): void
+    {
+        $source = file_get_contents(FS_FOLDER . self::DISPATCH_FILE);
+        $this->assertNotFalse($source);
+
+        $rowHookStart = strpos($source, '$rowHook = static function');
+        $this->assertNotFalse($rowHookStart);
+        $rowHookEnd = strpos($source, '};', $rowHookStart);
+        $rowHookBody = (string) substr($source, $rowHookStart, $rowHookEnd - $rowHookStart);
+
+        $denyCall = strpos($rowHookBody, 'catalogo_excel_wizard_deny_row');
+        $this->assertNotFalse($denyCall, 'Denied row must be recorded via the CSV helper (AD-8)');
+        $this->assertStringContainsString(
+            'return;',
+            (string) substr($rowHookBody, $denyCall, 120),
+            'Deny path must skip the row (no create/update/save for it) and continue the loop (scenario 18)'
+        );
+    }
+
+    private function freshStats(): array
+    {
+        return [
+            'creados' => 0,
+            'actualizados' => 0,
+            'sin_cambios' => 0,
+            'no_encontrados' => 0,
+            'errores' => 0,
+            'descartadas' => 0,
+            'detalles_errores' => [],
+        ];
+    }
+
+// ---- Fakes (ArticlePermissionListenerTest pattern) ----
 
     /**
      * Extracts a class method's source (start marker up to the next method

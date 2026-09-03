@@ -292,6 +292,17 @@ function handleCatalogoStart(string $progressFile): void
     $lastEventTime = time();
     $articuloModel = new \FSFramework\model\articulo();
 
+    // Per-run policy context for the row gate (AD-3: one instance per import
+    // run; the session nick feeds the event payload).
+    $rowPolicy = new \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy();
+    $rowNick = '';
+    try {
+        $rowNick = (string) (\FSFramework\Security\SessionManager::getInstance()->getCurrentUserNick() ?? '');
+    } catch (\Throwable) {
+        $rowNick = '';
+    }
+    $rowIsAdmin = $rowPolicy->isAdmin();
+
     $progressCallback = static function (string $step, string $message, int $percent) use ($progressFile, &$lastEventTime) {
         if (time() - $lastEventTime > 10) {
             \FSFramework\Core\ProgressStream::sendKeepalive(false);
@@ -308,10 +319,28 @@ function handleCatalogoStart(string $progressFile): void
         $defaultAction,
         $articuloModel,
         $roundPrice,
-        $defaultCodimpuesto
+        $defaultCodimpuesto,
+        $rowNick,
+        $rowIsAdmin
     ): void {
         $referencia = trim((string) ($mappedRow['referencia'] ?? ''));
         $rowSig = ['motivo_descarte' => '', 'referencia' => $referencia, 'detalle' => ''];
+
+        // Per-row permission gate (R-CEXC-003): fires BEFORE every create/update
+        // branch so a denial makes any pvp mutation and save() unreachable
+        // (scenario 19). Admin rows skip the dispatch entirely (AD-5); only
+        // pvp-mapped non-admin rows dispatch the frozen ACTION_EDIT_ARTICLE
+        // (AD-2). Denied rows are skipped and reported (scenario 18).
+        $denialReason = \FSFramework\Plugins\catalogo_core\Services\ArticuloExcelPermissionGate::check(
+            $mappedRow,
+            $referencia,
+            $rowNick,
+            $rowIsAdmin
+        );
+        if ($denialReason !== null) {
+            catalogo_excel_wizard_deny_row($hDesc, $referencia, $denialReason, $stats);
+            return;
+        }
 
         if ($defaultAction === 'create_if_missing') {
             if ($referencia !== '') {
@@ -468,6 +497,22 @@ function handleCatalogoStatus(string $progressFile): void
         'active' => $data !== null && (int) ($data['percent'] ?? 0) < 100,
         'data' => $data,
     ]);
+}
+
+/**
+ * Records a permission-denied row into the existing discarded-rows CSV
+ * (AD-8: motivo_descarte;referencia;detalle — same file served by the
+ * policy-gated download_import_log) and bumps the import stats. The import
+ * loop continues with the remaining rows.
+ *
+ * @param resource $handle
+ * @param array<string,int|array<int,string>> $stats
+ */
+function catalogo_excel_wizard_deny_row($handle, string $referencia, string $reason, array &$stats): void
+{
+    catalogoFputcsvSafe($handle, ['permiso_denegado', $referencia, $reason], ';');
+    $stats['descartadas']++;
+    $stats['errores']++;
 }
 
 /**
