@@ -94,13 +94,13 @@ Suite mapping note: all 26 spec scenarios are `host-suite`; the single `root-sui
 
 ## Phase 3 — PR3: Settings page (branch `catalogo-excel-access-pr3-settings-ui` → main, based on PR2 until it merges)
 
-- [ ] 3.1 **RED** Create `tests/CatalogoExcelSettingsPageTest.php` (structural + `$GLOBALS['config2']` round-trip, `VentasArticulosControllerTest` style): save persists list `A,B` and reads back (scenarios 1, 9); non-whitelisted POST fields ignored (11); invalid CSRF ⇒ nothing persisted (12); naming grep-audit `grep -riE 'grupocliente|grupo_clientes|customer[_ ]?group'` over ALL change files ⇒ zero hits (4); page data registers in `admin` menu.
-- [ ] 3.2 **GREEN** Create `controller/catalogo_excel_settings.php` per AD-7: legacy `fs_controller` with `parent::__construct(__CLASS__, ..., 'admin', TRUE, TRUE)` — NOT PageController (its `admin || have_access_to` gate is the tautology class this change removes); POST: `isCsrfValid()`, input whitelist to single `catalogo_excel_roles` field, save pipeline per AD-6 (split/trim/drop empties/validate against `fs_roles`/dedupe/preserve order/implode `,` → `fs_settings set()` + `save()`); page shows policy summary + granted roles with `descripcion`.
-- [ ] 3.3 **GREEN** Create `view/catalogo_excel_settings.html.twig`: role checkbox list from `fs_roles`, `{{ csrf_field() }}`, no `|raw` with user data.
-- [ ] 3.4 **VERIFY non-admin denial** (scenario 10): structural test asserts the admin gate args; framework renders `access_denied` for non-admin GET/POST — no page logic reachable.
-- [ ] 3.5 **REFACTOR** Page clean-up; naming grep re-run as part of 3.1 test execution.
-- [ ] 3.6 **VERIFY PR3** Host suite green (known-failure exclusion) + root suite green; runtime: admin saves list via page, non-admin blocked. Measure diff ≤400.
-- [ ] 3.7 **ROLLBACK PLAN + COMMIT/PR3** Record revert boundary (page gone; key may remain in `config2.ini` harmlessly); work-unit commits; open PR3 with Chain Context (📍 on PR3).
+- [x] 3.1 **RED** Create `tests/CatalogoExcelSettingsPageTest.php` (structural + `$GLOBALS['config2']` round-trip, `VentasArticulosControllerTest` style): save persists list `A,B` and reads back (scenarios 1, 9); non-whitelisted POST fields ignored (11); invalid CSRF ⇒ nothing persisted (12); naming grep-audit `grep -riE 'grupocliente|grupo_clientes|customer[_ ]?group'` over ALL change files ⇒ zero hits (4); page data registers in `admin` menu.
+- [x] 3.2 **GREEN** Create `controller/catalogo_excel_settings.php` per AD-7: legacy `fs_controller` with `parent::__construct(__CLASS__, ..., 'admin', TRUE, TRUE)` — NOT PageController (its `admin || have_access_to` gate is the tautology class this change removes); POST: `isCsrfValid()`, input whitelist to single `catalogo_excel_roles` field, save pipeline per AD-6 (split/trim/drop empties/validate against `fs_roles`/dedupe/preserve order/implode `,` → `fs_settings set()` + `save()`); page shows policy summary + granted roles with `descripcion`.
+- [x] 3.3 **GREEN** Create `view/catalogo_excel_settings.html.twig`: role checkbox list from `fs_roles`, `{{ csrf_field() }}`, no `|raw` with user data.
+- [x] 3.4 **VERIFY non-admin denial** (scenario 10): structural test asserts the admin gate args; framework renders `access_denied` for non-admin GET/POST — no page logic reachable.
+- [x] 3.5 **REFACTOR** Page clean-up; naming grep re-run as part of 3.1 test execution.
+- [x] 3.6 **VERIFY PR3** Host suite green (known-failure exclusion) + root suite green; runtime: admin saves list via page, non-admin blocked. Measure diff ≤400.
+- [x] 3.7 **ROLLBACK PLAN + COMMIT/PR3** Record revert boundary (page gone; key may remain in `config2.ini` harmlessly); work-unit commits; open PR3 with Chain Context (📍 on PR3).
 
 ## Phase 4 — Cross-PR integration & close-out
 
