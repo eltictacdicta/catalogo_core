@@ -33,7 +33,13 @@ use PHPUnit\Framework\TestCase;
  */
 final class CodlistaNamingAuditTest extends TestCase
 {
-    /** @var list<string> files introduced or modified by multitarifa (PR1 scope) */
+    /**
+     * Production files introduced or modified by multitarifa (PR1-PR3 scope).
+     * Test files are excluded deliberately: they legitimately contain the
+     * forbidden strings inside negative assertions.
+     *
+     * @var list<string>
+     */
     private const AUDITED_FILES = [
         'model/table/catalogo_articulo_precios.xml',
         'model/table/catalogo_grupo.xml',
@@ -49,11 +55,21 @@ final class CodlistaNamingAuditTest extends TestCase
         'model/core/catalogo_grupo_articulo.php',
         'model/core/catalogo_lista_precio.php',
         'Services/CatalogoOptions.php',
-        'tests/CatalogoArticuloPrecioTest.php',
-        'tests/CatalogoListaPrecioSingleDefaultTest.php',
-        'tests/CatalogoGrupoModelsTest.php',
-        'tests/Services/CatalogoOptionsTest.php',
-        'tests/CodlistaNamingAuditTest.php',
+        'Services/GroupPermissionListener.php',
+        'Services/CatalogoRoleListNormalizer.php',
+        'Services/CatalogoPriceResolver.php',
+        'Services/CatalogoPriceUpdateService.php',
+        'Init.php',
+        'controller/ventas_listas_precio.php',
+        'controller/opciones_catalogo.php',
+        'controller/catalogo_actualizar_precios.php',
+        'Controller/VentasArticulo.php',
+        'Controller/VentasArticulos.php',
+        'view/ventas_listas_precio.html.twig',
+        'view/opciones_catalogo.html.twig',
+        'view/catalogo_actualizar_precios.html.twig',
+        'View/ventas_articulo.html.twig',
+        'View/ventas_articulos.html.twig',
     ];
 
     /** @var list<string> forbidden legacy vocabularies (D7 + R-CEXC-002) */
@@ -61,6 +77,20 @@ final class CodlistaNamingAuditTest extends TestCase
         'codtarifa' => '/codtarifa/i',
         'grupocliente' => '/grupocliente|grupo_clientes|customer[\s_]?group/i',
     ];
+
+    public function test_audited_files_exist(): void
+    {
+        // Guards against a vacuous pass: every audited path must resolve
+        // (a missing file would silently skip the scan below).
+        $missing = [];
+        foreach (self::AUDITED_FILES as $relative) {
+            if (!is_file($this->pluginPath($relative))) {
+                $missing[] = $relative;
+            }
+        }
+
+        $this->assertSame([], $missing, 'Audited files must exist: ' . implode(', ', $missing));
+    }
 
     public function test_new_files_use_codlista_vocabulary_only(): void
     {
@@ -90,7 +120,8 @@ final class CodlistaNamingAuditTest extends TestCase
 
     private function pluginPath(string $relative): string
     {
-        return dirname(__DIR__, 2) . '/' . $relative;
+        // __DIR__ = plugins/catalogo_core/tests → plugin root is one level up.
+        return dirname(__DIR__, 1) . '/' . $relative;
     }
 
     /** @return list<int> zero-based matching line numbers */
