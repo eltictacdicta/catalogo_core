@@ -23,7 +23,7 @@ use FSFramework\model\fs_user;
  * very first statement makes the feature provably inert when the role-groups
  * master setting is off (no DB reads, no deny reachable).
  *
- * Resolution mirrors tarifario's ArticlePermissionListener semantics:
+ * Resolution semantics (mirroring the external guest-side listener pattern):
  * - master off ⇒ silent return (allow) before any model access
  * - admin dominance ⇒ silent return (allow)
  * - gestor in any group ⇒ allow on every scoped article
