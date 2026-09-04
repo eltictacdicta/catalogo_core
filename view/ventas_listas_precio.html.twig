@@ -1,0 +1,132 @@
+{#
+/**
+ * Plugin: catalogo_core
+ * Admin-only CRUD page for the catalog price lists (multitarifa, R-MT-004).
+ *
+ * Twig nativo con autoescape (sin filtros que salteen el escape con datos de usuario). Los POST son
+ * CSRF-protegidos vía csrf_field() y el controlador valida el token antes de
+ * persistir. Aquí es el ÚNICO punto donde las listas inactivas siguen
+ * visibles/editables (R-MT-001: reactivación).
+ */
+#}
+{% include 'header.html.twig' %}
+
+<div class="container">
+   {% if not fsc.multi_tariff %}
+   <div class="alert alert-warning">
+      La multi-tarifa está desactivada. Actívala en <strong>Opciones de catálogo</strong> para usar las listas de precio.
+   </div>
+   {% endif %}
+
+   <div class="page-header">
+      <h1><i class="fa fa-list-alt" aria-hidden="true"></i>&nbsp; Listas de precio</h1>
+      <p class="help-block">
+         Listas nombradas de precios del catálogo. La lista marcada como <strong>por defecto</strong>
+         es el fallback de <code>pvp</code> del artículo.
+      </p>
+   </div>
+
+   {% if fsc.multi_tariff %}
+   <div class="panel panel-default">
+      <div class="panel-heading">
+         <h3 class="panel-title">Nueva lista de precio</h3>
+      </div>
+      <div class="panel-body">
+         <form action="{{ fsc.url() }}" method="post" class="form-inline" role="form">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="create" />
+            <div class="form-group">
+               <input type="text" name="codlista" maxlength="20" class="form-control" placeholder="Código" required />
+            </div>
+            <div class="form-group">
+               <input type="text" name="nombre" maxlength="50" class="form-control" placeholder="Nombre" required />
+            </div>
+            <div class="form-group">
+               <input type="text" name="coddivisa" maxlength="3" class="form-control" placeholder="Divisa" value="EUR" />
+            </div>
+            <div class="checkbox">
+               <label>
+                  <input type="checkbox" name="activa" value="TRUE" checked /> Activa
+               </label>
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">
+               <span class="glyphicon glyphicon-plus"></span> &nbsp; Crear
+            </button>
+         </form>
+      </div>
+   </div>
+   {% endif %}
+
+   <div class="panel panel-default">
+      <div class="panel-heading">
+         <h3 class="panel-title">Listas (activas e inactivas)</h3>
+      </div>
+      <div class="table-responsive">
+         <table class="table table-hover">
+            <thead>
+            <tr>
+               <th>Código</th>
+               <th>Nombre</th>
+               <th>Divisa</th>
+               <th>Estado</th>
+               <th>Por defecto</th>
+               <th class="text-right">Acciones</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for lista in fsc.listas %}
+            <tr>
+               <td>{{ lista.codlista }}</td>
+               <td>
+                  <form action="{{ fsc.url() }}" method="post" class="form-inline" role="form">
+                     {{ csrf_field() }}
+                     <input type="hidden" name="action" value="edit" />
+                     <input type="hidden" name="codlista" value="{{ lista.codlista }}" />
+                     <input type="text" name="nombre" maxlength="50" class="form-control input-sm" value="{{ lista.nombre }}" />
+                     <input type="text" name="coddivisa" maxlength="3" class="form-control input-sm" value="{{ lista.coddivisa }}" />
+                     <input type="hidden" name="activa" value="{% if lista.activa %}TRUE{% else %}FALSE{% endif %}" />
+                     <button class="btn btn-xs btn-default" type="submit">Guardar</button>
+                  </form>
+               </td>
+               <td>{{ lista.coddivisa }}</td>
+               <td>
+                  {% if lista.activa %}
+                  <span class="label label-success">Activa</span>
+                  {% else %}
+                  <span class="label label-default">Inactiva</span>
+                  {% endif %}
+               </td>
+               <td>
+                  {% if lista.por_defecto %}
+                  <span class="label label-primary">Por defecto</span>
+                  {% endif %}
+               </td>
+               <td class="text-right">
+                  <form action="{{ fsc.url() }}" method="post" class="form-inline" role="form">
+                     {{ csrf_field() }}
+                     <input type="hidden" name="codlista" value="{{ lista.codlista }}" />
+                     {% if lista.activa %}
+                     <button class="btn btn-xs btn-warning" type="submit" name="action" value="deactivate">Desactivar</button>
+                     {% else %}
+                     <button class="btn btn-xs btn-success" type="submit" name="action" value="activate">Activar</button>
+                     {% endif %}
+                     {% if not lista.por_defecto %}
+                     <button class="btn btn-xs btn-info" type="submit" name="action" value="set_default">Por defecto</button>
+                     <button class="btn btn-xs btn-danger" type="submit" name="action" value="delete"
+                             onclick="return confirm('¿Eliminar la lista de precio?');">Eliminar</button>
+                     {% endif %}
+                  </form>
+               </td>
+            </tr>
+            {% else %}
+            <tr>
+               <td colspan="6" class="text-center text-muted">Sin listas de precio definidas.</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+         </table>
+      </div>
+   </div>
+</div>
+
+{% include 'footer.html.twig' %}
