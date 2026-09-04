@@ -28,6 +28,8 @@ require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
+use FSFramework\Event\FSEventDispatcher;
+use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
@@ -463,6 +465,31 @@ class VentasArticulos extends PageController
         if ($this->articulo->get($referencia)) {
             $this->new_error_msg('Ya existe un artículo con la referencia ' . $referencia);
             return;
+        }
+
+        // Permission filter (R-QCRT-001..005): resolve BEFORE any pvp mutation
+        // or save; admin skips the dispatch entirely (AD-5, ArticuloExcelPermissionGate
+        // precedent) so the admin outcome never depends on listener correctness.
+        // Zero listeners resolve allow (host neutrality).
+        if (!$this->user->admin) {
+            $filterEvent = new ArticlePermissionFilterEvent(
+                $referencia,
+                ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+                $this->user->nick
+            );
+
+            try {
+                FSEventDispatcher::getInstance()->dispatch($filterEvent, ArticlePermissionFilterEvent::NAME);
+            } catch (\Throwable) {
+                // Fail-closed (R-QCRT-004): NO error_log here — the host suite
+                // runs processIsolation=true, which surfaces any stderr write.
+                $filterEvent->deny('permission filter error');
+            }
+
+            if (!$filterEvent->isAllowed()) {
+                $this->new_error_msg('No tienes permisos para crear este artículo: ' . $filterEvent->getDenialReason());
+                return;
+            }
         }
 
         $art = new \articulo();
