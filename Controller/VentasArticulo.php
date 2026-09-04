@@ -27,6 +27,8 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/fabricante.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/impuesto.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_precio.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional_grupo.php';
@@ -60,6 +62,15 @@ class VentasArticulo extends PageController
     public array $grupos_disponibles = [];
     public string $lista_precio_defecto = catalogo_lista_precio::DEFAULT_CODE;
     public bool $allow_delete = false;
+
+    /** Multi-tariff master flag: hides the per-list prices tab when off (R-CO-003). */
+    public bool $multi_tariff = false;
+
+    /** @var list<\FSFramework\model\catalogo_lista_precio> active lists only (R-MT-001) */
+    public array $listas_activas = [];
+
+    /** @var array<string,float> codlista => per-list price rows of the current article */
+    public array $precios_por_lista = [];
 
     public function __construct()
     {
@@ -150,6 +161,8 @@ class VentasArticulo extends PageController
             $this->toggleObligatorioGrupo($this->request);
         } elseif ($this->request->request->has('toggle_obligatorio_opcional')) {
             $this->toggleObligatorioOpcional($this->request);
+        } elseif ($this->request->request->has('guardar_precios_lista')) {
+            $this->guardarPreciosPorLista($this->request);
         } elseif ($this->request->request->has('sreferencia')) {
             $this->editarArticulo($this->request);
         } elseif ($this->request->query->has('delete') && $this->allow_delete) {
@@ -327,6 +340,119 @@ class VentasArticulo extends PageController
 
         $this->loadOpcionalesDisponibles();
         $this->loadGruposDisponibles();
+        $this->loadPreciosPorLista();
+    }
+
+    /**
+     * Multitarifa (R-MT-001): only ACTIVE lists feed the per-article price
+     * tab; when the multi-tariff flag is off the tab is hidden entirely
+     * (R-CO-003, inert feature).
+     */
+    private function loadPreciosPorLista(): void
+    {
+        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions())->multiTariffEnabled();
+        $this->listas_activas = [];
+        $this->precios_por_lista = [];
+
+        if (!$this->multi_tariff) {
+            return;
+        }
+
+        $listaModel = new catalogo_lista_precio();
+        foreach ($listaModel->all() as $lista) {
+            if ($lista->activa) {
+                $this->listas_activas[] = $lista;
+            }
+        }
+
+        if ($this->articulo === null || $this->articulo->referencia === null || $this->articulo->referencia === '') {
+            return;
+        }
+
+        $precioModel = new \FSFramework\model\catalogo_articulo_precio();
+        foreach ($precioModel->all_from_articulo($this->articulo->referencia) as $precio) {
+            $this->precios_por_lista[(string) $precio->codlista] = (float) $precio->precio;
+        }
+    }
+
+    /**
+     * Multitarifa dispatch helper (R-MT-005, D2): the per-list price save
+     * reuses the EXISTING event with ACTION_EDIT_ARTICLE + referencia. Public
+     * static so the dispatch semantics are unit-testable without a Kernel.
+     *
+     * @return ArticlePermissionFilterEvent|null the dispatched event (null on transport error)
+     */
+    public static function dispatchPriceEditFilter(string $referencia, string $nick): ?ArticlePermissionFilterEvent
+    {
+        $filterEvent = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            $nick
+        );
+
+        try {
+            FSEventDispatcher::getInstance()->dispatch($filterEvent, ArticlePermissionFilterEvent::NAME);
+        } catch (\Throwable $e) {
+            error_log('ArticlePermissionFilterEvent listener error: ' . $e->getMessage());
+            $filterEvent->deny('permission filter error');
+        }
+
+        return $filterEvent;
+    }
+
+    /**
+     * Saves per-list prices for the current article (multitarifa R-MT-005).
+     * Dispatches the permission filter with ACTION_EDIT_ARTICLE + referencia
+     * BEFORE persistence; a deny blocks every write with the listener reason.
+     */
+    private function guardarPreciosPorLista(Request $request): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        $referencia = (string) $this->articulo->referencia;
+
+        $filterEvent = self::dispatchPriceEditFilter($referencia, (string) $this->user->nick);
+        if ($filterEvent === null || !$filterEvent->isAllowed()) {
+            $this->new_error_msg('No tienes permisos para editar los precios de este artículo: '
+                . ($filterEvent !== null ? $filterEvent->getDenialReason() : 'error del filtro'));
+            return;
+        }
+
+        $posted = $request->request->all('precios_lista');
+        $precioModel = new \FSFramework\model\catalogo_articulo_precio();
+
+        $saved = 0;
+        if (is_array($posted)) {
+            foreach ($posted as $codlista => $valor) {
+                $codlista = (string) $codlista;
+                $valor = trim((string) $valor);
+                if ($codlista === '') {
+                    continue;
+                }
+
+                if ($valor === '') {
+                    // Empty input clears the per-list override.
+                    $existing = $precioModel->get($referencia, $codlista);
+                    if ($existing !== false && $existing->delete()) {
+                        $saved++;
+                    }
+                    continue;
+                }
+
+                if ($precioModel->set_precio($referencia, $codlista, (float) str_replace(',', '.', $valor))) {
+                    $saved++;
+                } else {
+                    $this->new_error_msg('No se pudo guardar el precio de la lista ' . $codlista . '.');
+                }
+            }
+        }
+
+        if ($saved > 0) {
+            $this->new_message('Precios por lista guardados (' . $saved . ').');
+        }
     }
 
     private function loadGruposDisponibles(): void

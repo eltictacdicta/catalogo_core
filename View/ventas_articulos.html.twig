@@ -34,6 +34,12 @@ $(document).ready(function() {
                         <span class="glyphicon glyphicon-plus"></span>
                         <span class="hidden-xs">&nbsp;{{ 'new-article'|trans }}</span>
                     </a>
+                    {% if fsc.multi_tariff %}
+                    <a class="btn btn-xs btn-default" href="index.php?page=ventas_listas_precio" title="Listas de precio">
+                        <i class="fa fa-list-alt"></i>
+                        <span class="hidden-xs">&nbsp;Listas de precio</span>
+                    </a>
+                    {% endif %}
                     <span class="btn-group">
                         {% if fsc.can_import_export %}
                         <div class="btn-group">

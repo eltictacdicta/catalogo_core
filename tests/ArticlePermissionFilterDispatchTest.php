@@ -126,4 +126,53 @@ class ArticlePermissionFilterDispatchTest extends TestCase
         $this->assertFalse($event->isAllowed(), 'Listener exception must deny (fail-closed, AD-3)');
         $this->assertSame('permission filter error', $event->getDenialReason());
     }
+
+    // ---- Per-article prices tab: dispatch semantics on price save (R-MT-005, R-RG-002) ----
+
+    /**
+     * The per-list price save path MUST dispatch the existing event with
+     * ACTION_EDIT_ARTICLE + referencia (D2: the event class is NOT modified).
+     */
+    public function testPriceSaveDispatchesEditArticleEventWithReferencia(): void
+    {
+        FSEventDispatcher::reset();
+        require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php';
+
+        $captured = null;
+        FSEventDispatcher::getInstance()->addListener(
+            ArticlePermissionFilterEvent::NAME,
+            function (ArticlePermissionFilterEvent $event) use (&$captured): void {
+                $captured = $event;
+            }
+        );
+
+        $dispatched = \FSFramework\Plugins\catalogo_core\Controller\VentasArticulo::dispatchPriceEditFilter('REF-9', 'juan');
+
+        $this->assertNotNull($dispatched, 'The price save path must dispatch the filter event');
+        $this->assertTrue($dispatched->isAllowed(), 'Zero denying listeners must resolve allow');
+        $this->assertNotNull($captured);
+        $this->assertSame(ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE, $captured->getAction());
+        $this->assertSame('REF-9', $captured->getReferencia());
+        $this->assertSame('juan', $captured->getNick());
+    }
+
+    /** A denying listener blocks the price save with its reason (R-RG-002). */
+    public function testPriceSaveRespectsDenyingListener(): void
+    {
+        FSEventDispatcher::reset();
+        require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php';
+
+        FSEventDispatcher::getInstance()->addListener(
+            ArticlePermissionFilterEvent::NAME,
+            function (ArticlePermissionFilterEvent $event): void {
+                $event->deny('editor: el artículo no está asignado a tus grupos');
+            }
+        );
+
+        $dispatched = \FSFramework\Plugins\catalogo_core\Controller\VentasArticulo::dispatchPriceEditFilter('REF-9', 'juan');
+
+        $this->assertNotNull($dispatched);
+        $this->assertFalse($dispatched->isAllowed());
+        $this->assertSame('editor: el artículo no está asignado a tus grupos', $dispatched->getDenialReason());
+    }
 }
