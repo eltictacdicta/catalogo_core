@@ -24,7 +24,8 @@ use FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Admin-only settings page for the article catalog Excel access role grants
+ * R-CO-004: the old catalogo_excel_settings page is REMOVED; opciones_catalogo
+ * handles the article catalog Excel access role grants
  * (R-CEXC-002 settings UI; scenarios 1, 4, 9, 10, 11, 12).
  *
  * The page is a LEGACY fs_controller (AD-7): constructor args folder='admin',
@@ -41,8 +42,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class CatalogoExcelSettingsPageTest extends TestCase
 {
-    private const CONTROLLER_FILE = '/plugins/catalogo_core/controller/catalogo_excel_settings.php';
-    private const VIEW_FILE = '/plugins/catalogo_core/view/catalogo_excel_settings.html.twig';
+    private const CONTROLLER_FILE = '/plugins/catalogo_core/controller/opciones_catalogo.php';
+    private const VIEW_FILE = '/plugins/catalogo_core/view/opciones_catalogo.html.twig';
 
     protected function setUp(): void
     {
@@ -65,20 +66,32 @@ final class CatalogoExcelSettingsPageTest extends TestCase
 
     // ---- Structural: legacy controller with the admin gate (scenarios 10, menu) ----
 
+    public function testOldExcelSettingsPageRemoved(): void
+    {
+        $this->assertFileDoesNotExist(
+            FS_FOLDER . '/plugins/catalogo_core/controller/catalogo_excel_settings.php',
+            'R-CO-004: the catalogo_excel_settings controller must be REMOVED (no redirect)'
+        );
+        $this->assertFileDoesNotExist(
+            FS_FOLDER . '/plugins/catalogo_core/view/catalogo_excel_settings.html.twig',
+            'R-CO-004: the catalogo_excel_settings view must be REMOVED'
+        );
+    }
+
     public function testSettingsControllerFileExists(): void
     {
         $file = FS_FOLDER . self::CONTROLLER_FILE;
-        $this->assertFileExists($file, 'Legacy settings controller catalogo_excel_settings.php must exist (AD-7)');
+        $this->assertFileExists($file, 'opciones_catalogo must exist and handle the Excel role setting');
     }
 
     public function testSettingsControllerExtendsFsController(): void
     {
         require_once FS_FOLDER . self::CONTROLLER_FILE;
 
-        $reflection = new \ReflectionClass('catalogo_excel_settings');
+        $reflection = new \ReflectionClass('opciones_catalogo');
         $this->assertTrue(
             $reflection->isSubclassOf(\fs_controller::class),
-            'catalogo_excel_settings must extend the legacy fs_controller, NOT PageController (AD-7)'
+            'opciones_catalogo must extend the legacy fs_controller, NOT PageController'
         );
     }
 
@@ -93,10 +106,10 @@ final class CatalogoExcelSettingsPageTest extends TestCase
             'Constructor must pass folder=admin + admin=TRUE + shmenu=TRUE (framework-level admin gate, scenario 10)'
         );
         $this->assertMatchesRegularExpression(
-            "/class\s+catalogo_excel_settings\s+extends\s+fs_controller\b/",
+            "/class\s+opciones_catalogo\s+extends\s+fs_controller\b/",
             $source,
             'The class declaration must extend the legacy fs_controller, NOT PageController '
-            . '(its admin || have_access_to gate is the tautology removed, AD-7)'
+            . '(its admin || have_access_to gate is the tautology removed)'
         );
     }
 
@@ -125,7 +138,7 @@ final class CatalogoExcelSettingsPageTest extends TestCase
 
         $this->assertSame(
             'A,B',
-            catalogo_excel_roles_normalize('A,B', ['A', 'B']),
+            \FSFramework\Plugins\catalogo_core\Services\CatalogoRoleListNormalizer::normalize('A,B', ['A', 'B']),
             'A valid comma list must survive normalization unchanged'
         );
     }
@@ -136,7 +149,7 @@ final class CatalogoExcelSettingsPageTest extends TestCase
 
         $this->assertSame(
             'A,B',
-            catalogo_excel_roles_normalize(' A ,, B , ', ['A', 'B']),
+            \FSFramework\Plugins\catalogo_core\Services\CatalogoRoleListNormalizer::normalize(' A ,, B , ', ['A', 'B']),
             'Normalization must trim pieces, drop empty cells and drop trailing commas (AD-6)'
         );
     }
@@ -147,7 +160,7 @@ final class CatalogoExcelSettingsPageTest extends TestCase
 
         $this->assertSame(
             'A',
-            catalogo_excel_roles_normalize('A,Z', ['A', 'B']),
+            \FSFramework\Plugins\catalogo_core\Services\CatalogoRoleListNormalizer::normalize('A,Z', ['A', 'B']),
             'Unknown codrols must be dropped at save time (whitelist against fs_roles, scenario 11)'
         );
     }
@@ -158,7 +171,7 @@ final class CatalogoExcelSettingsPageTest extends TestCase
 
         $this->assertSame(
             'B,A',
-            catalogo_excel_roles_normalize('B,A,B', ['A', 'B']),
+            \FSFramework\Plugins\catalogo_core\Services\CatalogoRoleListNormalizer::normalize('B,A,B', ['A', 'B']),
             'Normalization must dedupe preserving first-seen order (AD-6)'
         );
     }
@@ -197,7 +210,7 @@ final class CatalogoExcelSettingsPageTest extends TestCase
 
     // ---- POST handling: whitelist + CSRF (scenarios 11, 12) ----
 
-    public function testPostReadsOnlyWhitelistedField(): void
+    public function testPostReadsOnlyWhitelistedFields(): void
     {
         $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
         $this->assertNotFalse($source);
@@ -205,12 +218,12 @@ final class CatalogoExcelSettingsPageTest extends TestCase
         $this->assertMatchesRegularExpression(
             "/\\\$_POST\['catalogo_excel_roles'\]/",
             $source,
-            'POST must read the single whitelisted catalogo_excel_roles field'
+            'POST must read the whitelisted catalogo_excel_roles field'
         );
         $this->assertSame(
-            1,
+            3,
             preg_match_all("/\\\$_POST\[/", $source),
-            'No other POST field may be read (input whitelist, scenario 11)'
+            'Only the three option fields may be read (input whitelist: multi_tariff, groups_enabled, catalogo_excel_roles)'
         );
     }
 
@@ -220,14 +233,11 @@ final class CatalogoExcelSettingsPageTest extends TestCase
         $this->assertNotFalse($source);
 
         $csrfPos = strpos($source, 'isCsrfValid()');
-        $setPos = strpos($source, '->set(');
-        $savePos = strpos($source, '->save()');
+        $writePos = strpos($source, 'setMultiTariff');
 
-        $this->assertNotFalse($csrfPos, 'POST branch must call isCsrfValid() (scenario 12)');
-        $this->assertNotFalse($setPos, 'Save pipeline must set the setting via fs_settings');
-        $this->assertNotFalse($savePos, 'Save pipeline must persist via fs_settings save()');
-        $this->assertLessThan($setPos, $csrfPos, 'CSRF check must run before the setting is written');
-        $this->assertLessThan($savePos, $csrfPos, 'CSRF check must run before persistence');
+        $this->assertNotFalse($csrfPos, 'POST branch must call isCsrfValid()');
+        $this->assertNotFalse($writePos, 'Save pipeline must persist through CatalogoOptions writers');
+        $this->assertLessThan($writePos, $csrfPos, 'CSRF check must run before persistence');
     }
 
     // ---- View (scenario 12: CSRF in the form; no |raw with user data) ----

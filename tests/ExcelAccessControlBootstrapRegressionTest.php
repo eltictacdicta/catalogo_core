@@ -41,7 +41,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ExcelAccessControlBootstrapRegressionTest extends TestCase
 {
-    private const SETTINGS_CONTROLLER_FILE = '/plugins/catalogo_core/controller/catalogo_excel_settings.php';
+    private const SETTINGS_CONTROLLER_FILE = '/plugins/catalogo_core/controller/opciones_catalogo.php';
 
     protected function setUp(): void
     {
@@ -86,7 +86,7 @@ final class ExcelAccessControlBootstrapRegressionTest extends TestCase
     }
 
     /**
-     * C-1 regression: catalogo_excel_settings::private_core() instantiates
+     * C-1 regression: opciones_catalogo::private_core() instantiates
      * ArticleExcelAccessPolicy from the controller's global-namespace scope
      * (line 88). The class lives under
      * FSFramework\Plugins\catalogo_core\Services, so the controller file needs
@@ -102,7 +102,7 @@ final class ExcelAccessControlBootstrapRegressionTest extends TestCase
     {
         require_once FS_FOLDER . self::SETTINGS_CONTROLLER_FILE;
 
-        $reflection = new \ReflectionClass('catalogo_excel_settings');
+        $reflection = new \ReflectionClass('opciones_catalogo');
         $controller = $reflection->newInstanceWithoutConstructor();
         $method = $reflection->getMethod('private_core');
 
@@ -112,7 +112,7 @@ final class ExcelAccessControlBootstrapRegressionTest extends TestCase
             $method->invoke($controller);
         } catch (\Throwable $e) {
             $this->fail(sprintf(
-                'catalogo_excel_settings::private_core() must not throw a class-resolution '
+                'opciones_catalogo::private_core() must not throw a class-resolution '
                 . 'fatal (C-1: ArticleExcelAccessPolicy in global scope): %s: %s @%s:%d',
                 get_class($e),
                 $e->getMessage(),
