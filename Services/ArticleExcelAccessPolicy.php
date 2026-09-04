@@ -229,8 +229,10 @@ final class ArticleExcelAccessPolicy
     }
 
     /**
-     * Raw setting value: test override first, then fs_settings (pure
-     * $GLOBALS['config2'] array op). Null when absent.
+     * Raw setting value: test override first, then the CatalogoOptions store
+     * (R-CO-005 shim: new `catalogo_core.excel_roles` key wins, legacy
+     * `catalogo_excel_roles` read fallback when the new key is absent).
+     * Null when absent.
      */
     private function settingRaw(): mixed
     {
@@ -238,9 +240,7 @@ final class ArticleExcelAccessPolicy
             return $this->testSettingRaw;
         }
 
-        require_once FS_FOLDER . '/base/fs_settings.php';
-
-        return (new \fs_settings())->get(self::SETTING_KEY);
+        return (new CatalogoOptions())->excelRoles();
     }
 
     /**

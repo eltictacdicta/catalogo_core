@@ -131,4 +131,33 @@ final class ExcelAccessControlBootstrapRegressionTest extends TestCase
             'With a clean config2 the granted codes must be empty (fail-closed)'
         );
     }
+
+    /**
+     * R-CO-005 shim: absent new-store key + legacy catalogo_excel_roles = "A"
+     * must grant role A (legacy read fallback through CatalogoOptions).
+     */
+    public function testShimFallsBackToLegacyKeyWhenNewStoreAbsent(): void
+    {
+        $GLOBALS['config2']['catalogo_excel_roles'] = 'A';
+
+        $policy = new ArticleExcelAccessPolicy();
+        $policy->setExistingRoles(['A']);
+
+        $this->assertSame(['A'], $policy->grantedRoles(), 'legacy key must be readable when the new store key is absent');
+    }
+
+    /**
+     * R-CO-005 shim regression: the new store is authoritative — when
+     * catalogo_core.excel_roles = "B" and legacy grants "A", only B is granted.
+     */
+    public function testShimNewStoreWinsOverLegacyKey(): void
+    {
+        $GLOBALS['config2']['catalogo_core.excel_roles'] = 'B';
+        $GLOBALS['config2']['catalogo_excel_roles'] = 'A';
+
+        $policy = new ArticleExcelAccessPolicy();
+        $policy->setExistingRoles(['A', 'B']);
+
+        $this->assertSame(['B'], $policy->grantedRoles(), 'new store key must win over the legacy key');
+    }
 }
