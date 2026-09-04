@@ -23,6 +23,8 @@ require_once FS_FOLDER . '/base/fs_settings.php';
 require_once FS_FOLDER . '/model/fs_rol.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticleExcelAccessPolicy.php';
 
+use FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy;
+
 /**
  * Normalize a raw role-list value into the persisted comma-separated list
  * (AD-6 save pipeline): split on ',', trim, drop empties, validate each
