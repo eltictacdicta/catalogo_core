@@ -54,6 +54,22 @@ class catalogo_grupo_usuario extends \fs_model
         return false;
     }
 
+    public function all_from_nick($nick)
+    {
+        $list = [];
+        $sql = 'SELECT * FROM ' . $this->table_name
+            . ' WHERE nick = ' . $this->var2str($nick)
+            . ' ORDER BY id_grupo ASC;';
+        $data = $this->db->select($sql);
+        if ($data) {
+            foreach ($data as $d) {
+                $list[] = new static($d);
+            }
+        }
+
+        return $list;
+    }
+
     public function all_from_grupo($id_grupo)
     {
         $list = [];
