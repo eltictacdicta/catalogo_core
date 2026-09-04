@@ -143,6 +143,39 @@ final class InitUpgradeTest extends TestCase
     }
 
     /**
+     * Familias-jerarquia task 1.4 (D4, R-MT-006): FK ordering must place
+     * catalogo_listas_precio before catalogo_familia_estructura, and that in
+     * turn before catalogo_articulo_familia_estructura (both depend on the
+     * lists table; the structure tables depend on each other's parents).
+     */
+    #[Test]
+    public function ensureCatalogTablesOrdersStructureTablesAfterLists(): void
+    {
+        $source = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Init.php');
+
+        $expectedOrder = [
+            'catalogo_lista_precio',
+            'catalogo_familia_estructura',
+            'catalogo_articulo_familia_estructura',
+        ];
+
+        $positions = [];
+        foreach ($expectedOrder as $name) {
+            $positions[$name] = mb_strpos($source, "'" . $name . "'");
+            $this->assertNotFalse($positions[$name], "Init.php must ensure the $name table");
+        }
+
+        for ($i = 1; $i < count($expectedOrder); $i++) {
+            $this->assertLessThan(
+                $positions[$expectedOrder[$i]],
+                $positions[$expectedOrder[$i - 1]],
+                $expectedOrder[$i - 1] . ' must be ensured before ' . $expectedOrder[$i]
+                . ' (structure install depends on lists)'
+            );
+        }
+    }
+
+    /**
      * Multitarifa task 2.4 (D4): Init::init() must register the first-party
      * GroupPermissionListener unconditionally on the permission filter event.
      */

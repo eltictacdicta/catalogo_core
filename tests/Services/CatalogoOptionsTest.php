@@ -118,4 +118,47 @@ final class CatalogoOptionsTest extends TestCase
         $this->assertTrue($override->multiTariffEnabled());
         $this->assertArrayNotHasKey('catalogo_core.multi_tariff', $GLOBALS['config2']);
     }
+
+    /**
+     * Familias-jerarquia task 1.3 (D3, R-FJ-002): family-structure capability
+     * flag. Safe default false (R-FJ-002 install precondition / D3 lifecycle
+     * gate: migration and UI stay inert until the operator opts in).
+     */
+    public function test_family_structure_flag_defaults_off_when_key_absent(): void
+    {
+        $options = new CatalogoOptions();
+
+        $this->assertFalse($options->familyStructureEnabled());
+    }
+
+    public function test_family_structure_flag_round_trip(): void
+    {
+        $options = new CatalogoOptions();
+        $this->assertFalse($options->familyStructureEnabled());
+
+        $options->setFamilyStructure(true);
+
+        $fresh = new CatalogoOptions();
+        $this->assertTrue($fresh->familyStructureEnabled());
+
+        $options->setFamilyStructure(false);
+
+        $fresh = new CatalogoOptions();
+        $this->assertFalse($fresh->familyStructureEnabled());
+    }
+
+    public function test_family_structure_flag_accepts_truthy_variants(): void
+    {
+        $this->assertTrue((new CatalogoOptions(['catalogo_core.family_structure' => 'true']))->familyStructureEnabled());
+        $this->assertTrue((new CatalogoOptions(['catalogo_core.family_structure' => '1']))->familyStructureEnabled());
+        $this->assertFalse((new CatalogoOptions(['catalogo_core.family_structure' => 'false']))->familyStructureEnabled());
+    }
+
+    public function test_family_structure_flag_is_namespaced_key(): void
+    {
+        $options = new CatalogoOptions();
+        $options->setFamilyStructure(true);
+
+        $this->assertArrayHasKey('catalogo_core.family_structure', $GLOBALS['config2']);
+    }
 }

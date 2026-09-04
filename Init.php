@@ -102,6 +102,10 @@ final class Init
             'catalogo_lista_precio',
             // Multitarifa (D5): FK definition tables before their dependents.
             'catalogo_articulo_precio',
+            // Familias-jerarquia (D4): structure tables depend on
+            // catalogo_listas_precio (installed above) and familias.
+            'catalogo_familia_estructura',
+            'catalogo_articulo_familia_estructura',
             'catalogo_grupo',
             'catalogo_grupo_roles',
             'catalogo_grupo_usuarios',

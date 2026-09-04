@@ -36,6 +36,7 @@ final class CatalogoOptions
 {
     public const KEY_MULTI_TARIFF = 'catalogo_core.multi_tariff';
     public const KEY_GROUPS_ENABLED = 'catalogo_core.groups_enabled';
+    public const KEY_FAMILY_STRUCTURE = 'catalogo_core.family_structure';
     public const KEY_EXCEL_ROLES = 'catalogo_core.excel_roles';
 
     /** Legacy setting key preserved as read-only fallback (R-CO-002). */
@@ -69,6 +70,21 @@ final class CatalogoOptions
     public function setGroupsEnabled(bool $enabled): void
     {
         $this->write(self::KEY_GROUPS_ENABLED, $enabled ? 'true' : 'false');
+    }
+
+    /**
+     * Family-structure capability flag (familias-jerarquia, D3 lifecycle
+     * gate). Safe default: false — the migration and the tree UI stay inert
+     * until the operator opts in.
+     */
+    public function familyStructureEnabled(): bool
+    {
+        return $this->readBool(self::KEY_FAMILY_STRUCTURE);
+    }
+
+    public function setFamilyStructure(bool $enabled): void
+    {
+        $this->write(self::KEY_FAMILY_STRUCTURE, $enabled ? 'true' : 'false');
     }
 
     /**
