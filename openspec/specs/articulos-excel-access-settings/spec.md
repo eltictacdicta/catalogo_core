@@ -28,40 +28,57 @@ Restricciones:
 
 ### Requirement: Ajuste de concesión de roles controlado por admin (R-CEXC-002)
 
-El sistema MUST proporcionar un ajuste solo-admin `catalogo_excel_roles` cuyo
-valor sea una lista de códigos de rol (`fs_roles.codrol`) separada por comas que
-conceda a usuarios no-admin derechos de import/export Excel del catálogo. MUST
-persistirse vía el `fs_settings` existente get/set sobre `$GLOBALS['config2']`;
-MUST NO crear tablas nuevas; y la lista concedida MUST validarse contra las
-filas `fs_roles` existentes en tiempo de evaluación.
+El sistema MUST leer la concesión de roles de Excel (lista de `codrol` separada
+por comas) a través de `Services/CatalogoOptions` (store `opciones_catalogo`,
+claves namespaced). Para compatibilidad hacia atrás, cuando la clave nueva del
+store esté ausente, la política MUST hacer fallback a la clave legacy
+`catalogo_excel_roles` (shim de lectura; sin doble escritura: `CatalogoOptions`
+es la única fuente de escritura). MUST persistirse vía el `fs_settings`
+existente get/set sobre `$GLOBALS['config2']`; MUST NO crear tablas nuevas; y
+la lista concedida MUST validarse contra las filas `fs_roles` existentes en
+tiempo de evaluación. Semántica fail-closed sin cambios: valor ausente o no
+parseable concede cero roles.
+(Previously: el ajuste se leía y escribía únicamente en la clave
+`catalogo_excel_roles` desde la página dedicada `catalogo_excel_settings`.)
 
 #### Scenario: Admin persiste una lista de roles
 
-- GIVEN un admin en la página de ajustes
+- GIVEN un admin en la página `opciones_catalogo`
 - WHEN guarda los códigos de rol `A,B`
-- THEN `catalogo_excel_roles` se lee de vuelta como la lista `A,B`
+- THEN `CatalogoOptions` lee de vuelta la lista `A,B`
 - Test scope: `host-suite`
 
 #### Scenario: Ajuste ausente no concede roles
 
-- GIVEN `catalogo_excel_roles` está ausente (instalación nueva)
+- GIVEN la clave del store y la legacy `catalogo_excel_roles` están ausentes
 - WHEN la lista de concesiones se evalúa para cualquier usuario no-admin
-- THEN cero roles se conceden (default fail-closed; acceso solo-admin según R-CEXC-001 en el spec complementario)
+- THEN cero roles se conceden (default fail-closed)
 - Test scope: `host-suite`
 
 #### Scenario: Valor de ajuste inválido o no parseable no concede roles
 
-- GIVEN `catalogo_excel_roles` contiene un valor que no es una lista separada por comas parseable
+- GIVEN la concesión contiene un valor no parseable como lista separada por comas
 - WHEN la lista de concesiones se evalúa
 - THEN cero roles se conceden (fail-closed) y la evaluación no produce error
 - Test scope: `host-suite`
 
-#### Scenario: Disciplina de nomenclatura (auditable por grep)
+#### Scenario: Fallback a la clave legacy
+
+- GIVEN la clave nueva del store ausente y legacy `catalogo_excel_roles = "A"`
+- WHEN un no-admin con el rol A se evalúa
+- THEN el usuario está concedido (shim de compatibilidad)
+- Test scope: `host-suite`
+
+#### Scenario: Nomenclatura (auditable por grep)
 
 - GIVEN los archivos introducidos por esta capacidad
 - WHEN se ejecuta `grep -riE 'grupocliente|grupo_clientes|customer[_ ]?group' <archivos nuevos>`
 - THEN devuelve cero coincidencias
 - Test scope: `host-suite`
+
+## REMOVED Requirements
+
+
 
 ### Requirement: Semántica de evaluación de concesiones (R-CEXC-006)
 
@@ -99,42 +116,4 @@ concesiones caducas entre requests).
 - GIVEN un cambio de concesión o revocación entre dos requests HTTP
 - WHEN cada request evalúa la política
 - THEN cada uno refleja el estado del ajuste y de los roles en su propio tiempo de evaluación
-- Test scope: `host-suite`
-
-### Requirement: Página de ajustes solo-admin
-
-El sistema MUST exponer una página de ajustes dedicada `catalogo_excel_settings`
-para este ajuste, siguiendo el precedente tpvmod
-(`plugins/tpvmod/controller/tpvmod_settings.php`): gate admin a nivel de
-framework (`parent::__construct(__CLASS__, ..., 'admin', TRUE, TRUE)`), POST
-protegido por CSRF, whitelist de entrada (solo se acepta el campo
-`catalogo_excel_roles`) y persistencia set+save. La página MUST NO ser
-alcanzable ni escribible por usuarios no-admin.
-
-#### Scenario: Admin puede guardar el ajuste
-
-- GIVEN un usuario admin
-- WHEN hace POST de una lista de roles a `catalogo_excel_settings` con un token CSRF válido
-- THEN el ajuste se persiste y se devuelve una respuesta de éxito
-- Test scope: `host-suite`
-
-#### Scenario: No-admin no puede guardar el ajuste
-
-- GIVEN un usuario no-admin (con o sin concesión Excel)
-- WHEN solicita la página o hace POST del ajuste
-- THEN el gate admin del framework deniega el acceso (sin render de página, sin persistencia)
-- Test scope: `host-suite`
-
-#### Scenario: Whitelist de entrada
-
-- GIVEN un POST a la página de ajustes
-- WHEN el request contiene campos distintos del campo de ajuste en whitelist
-- THEN se ignoran; solo se persiste `catalogo_excel_roles`
-- Test scope: `host-suite`
-
-#### Scenario: Mutación protegida por CSRF
-
-- GIVEN un POST sin token CSRF válido
-- WHEN llega a la página de ajustes
-- THEN el guardado se rechaza y nada se persiste
 - Test scope: `host-suite`
