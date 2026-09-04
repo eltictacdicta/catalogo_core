@@ -238,6 +238,8 @@ final class ArticleExcelAccessPolicy
             return $this->testSettingRaw;
         }
 
+        require_once FS_FOLDER . '/base/fs_settings.php';
+
         return (new \fs_settings())->get(self::SETTING_KEY);
     }
 
