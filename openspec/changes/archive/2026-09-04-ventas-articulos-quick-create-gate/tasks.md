@@ -64,7 +64,7 @@ Chain strategy: pending
 ## Phase 5: PR
 
 - [x] 5.1 Open single PR (chained: No) with work-unit commits; ~205-250 LoC. *(apply note: PR NOT opened — apply ran with "no push, no PRs"; work-unit commits are ready on the default branch for the orchestrator to open.)*
-- [ ] 5.2 Record in verify-report: 14 scenarios; baselines 4.1-4.3; D7 note — archive translates English delta into Spanish canonical at `plugins/catalogo_core/openspec/specs/articulos-quick-create-permission/spec.md`.
+- [x] 5.2 Record in verify-report: 14 scenarios; baselines 4.1-4.3; D7 note — archive translates English delta into Spanish canonical at `plugins/catalogo_core/openspec/specs/articulos-quick-create-permission/spec.md`. *(closed by verify-report.md 2026-09-04 + executed by this archive — mechanical reconciliation at archive time, see archive-report.md)*
 
 ## Traceability: 14 spec scenarios → tasks
 
