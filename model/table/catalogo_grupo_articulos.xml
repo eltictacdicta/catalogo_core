@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Artículos asignados a un grupo de acceso a precios.
+-->
+<tabla>
+    <columna>
+        <nombre>id_grupo</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_grupo_articulos_pkey</nombre>
+        <consulta>PRIMARY KEY (id_grupo, referencia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_grupo_articulos_grupo</nombre>
+        <consulta>FOREIGN KEY (id_grupo)
+            REFERENCES catalogo_grupo (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_grupo_articulos_articulo</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

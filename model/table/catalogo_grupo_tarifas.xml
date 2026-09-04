@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Listas de precio asignadas a un grupo de acceso a precios.
+-->
+<tabla>
+    <columna>
+        <nombre>id_grupo</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codlista</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_grupo_tarifas_pkey</nombre>
+        <consulta>PRIMARY KEY (id_grupo, codlista)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_grupo_tarifas_grupo</nombre>
+        <consulta>FOREIGN KEY (id_grupo)
+            REFERENCES catalogo_grupo (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_grupo_tarifas_lista</nombre>
+        <consulta>FOREIGN KEY (codlista)
+            REFERENCES catalogo_listas_precio (codlista)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>
