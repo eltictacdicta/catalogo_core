@@ -51,15 +51,15 @@ Chain strategy: pending
 
 ## Phase 4: Batch Price Update
 
-- [ ] 4.1 Create `Services/CatalogoPriceUpdateService.php`: filter resolution (codlista required + codfamilia + incluir_subfamilias via `familia::hijas()/aux_all()` recursion — no model change — + codgrupo over `catalogo_grupo_articulos`, AND-combined) and formula `round(p * (1 + pct/100), 2)` half-up. **[TDD-RED]** `tests/Services/CatalogoPriceUpdateServiceTest.php` (R-BU-002 recursion/non-recursive/list-scoping; R-BU-003 rounding incl. 10.005→11.01 and −25%→7.50).
-- [ ] 4.2 Create `controller/catalogo_actualizar_precios.php` + Twig view: preview POST (CSRF, zero write) → confirm checkbox → apply POST (CSRF); zero matches → `new_message()` warning, no write; after apply → `new_message(count)` + affected references, failures → `new_error_msg()` (R-BU-001, R-BU-004, R-BU-005). **[TDD-RED]** `tests/CatalogoActualizarPreciosControllerTest.php`: preview-does-not-persist, apply persists, missing-CSRF rejected, non-admin denied, resumen, empty-selection warning.
+- [x] 4.1 Create `Services/CatalogoPriceUpdateService.php`: filter resolution (codlista required + codfamilia + incluir_subfamilias via `familia::hijas()/aux_all()` recursion — no model change — + codgrupo over `catalogo_grupo_articulos`, AND-combined) and formula `round(p * (1 + pct/100), 2)` half-up. **[TDD-RED]** `tests/Services/CatalogoPriceUpdateServiceTest.php` (R-BU-002 recursion/non-recursive/list-scoping; R-BU-003 rounding incl. 10.005→11.01 and −25%→7.50).
+- [x] 4.2 Create `controller/catalogo_actualizar_precios.php` + Twig view: preview POST (CSRF, zero write) → confirm checkbox → apply POST (CSRF); zero matches → `new_message()` warning, no write; after apply → `new_message(count)` + affected references, failures → `new_error_msg()` (R-BU-001, R-BU-004, R-BU-005). **[TDD-RED]** `tests/CatalogoActualizarPreciosControllerTest.php`: preview-does-not-persist, apply persists, missing-CSRF rejected, non-admin denied, resumen, empty-selection warning.
 
 ## Phase 5: Regression & Verification
 
-- [ ] 5.1 Run full suite green: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`; fix fallout from excel-page removal (`CatalogoExcelWizardAccessTest`, `Services/ArticuloExcelPermissionGateTest`).
-- [ ] 5.2 Verify inert-when-off: full flow with flags off produces zero denies and zero tariff UI (R-RG-005, R-CO-003 tests green).
-- [ ] 5.3 Verify grep audits pass (D7 codlista-only naming; R-CEXC-002 naming scenario) and no core files touched outside `plugins/catalogo_core/`.
-- [ ] 5.4 Update change docs: mark spec scenarios covered by test classes; note verify-report readiness.
+- [x] 5.1 Run full suite green: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`; fix fallout from excel-page removal (`CatalogoExcelWizardAccessTest`, `Services/ArticuloExcelPermissionGateTest`).
+- [x] 5.2 Verify inert-when-off: full flow with flags off produces zero denies and zero tariff UI (R-RG-005, R-CO-003 tests green).
+- [x] 5.3 Verify grep audits pass (D7 codlista-only naming; R-CEXC-002 naming scenario) and no core files touched outside `plugins/catalogo_core/`.
+- [x] 5.4 Update change docs: mark spec scenarios covered by test classes; note verify-report readiness.
 
 ## Coverage Map
 
@@ -70,3 +70,21 @@ Chain strategy: pending
 | R-CO-001..005 | 1.4, 1.5, 2.2, 2.3, 3.4, 3.5, 3.6 |
 | R-RG-001..005 | 1.3, 2.1, 2.2, 2.4, 3.3, 5.2 |
 | R-CEXC-002 | 1.4, 1.5, 2.2, 3.5 |
+
+### Phase 5 completion notes (PR3)
+
+- 5.1: full suite 409 tests — only the 2 documented pre-existing failures
+  (VentasArticulo(s)ControllerTest::testTwigViewUsesAutoEscape, `|raw` in views
+  predating this change; present on main). No fallout from the excel-page removal
+  (CatalogoExcelWizardAccessTest, Services/ArticuloExcelPermissionGateTest green).
+- 5.2: inert-when-off verified — MultiTariffFlagInertTest, GroupPermissionListenerTest,
+  ExcelAccessControlBootstrapRegressionTest, InitUpgradeTest all green (23 tests).
+- 5.3: CodlistaNamingAuditTest fixed (path resolved one directory too high, making
+  the PR1 scan vacuous) and extended to PR1-PR3 production files; D7 + R-CEXC-002
+  pass on real scans. No files outside plugins/catalogo_core touched.
+- 5.4 spec scenario coverage: R-BU-001 → CatalogoActualizarPreciosControllerTest
+  (preview_before_apply, CSRF, resumen); R-BU-002 → CatalogoPriceUpdateServiceTest
+  (recursive/non-recursive/list-scoping/AND) + controller codlista-required test;
+  R-BU-003 → CatalogoPriceUpdateServiceTest rounding cases; R-BU-004 → controller
+  CSRF/admin-gate structural tests; R-BU-005 → summarizeApply functional test +
+  zero-match warning test. Ready for sdd-verify.
