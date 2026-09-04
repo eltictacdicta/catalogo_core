@@ -108,3 +108,18 @@ Suite mapping note: all 26 spec scenarios are `host-suite`; the single `root-sui
 - [x] 4.2 **VERIFY chain hygiene** Each merged PR diff contains only its work unit (polluted diff = base bug → retarget/rebase); every PR has stated start/end/dependencies/out-of-scope per chained-pr contract.
 - [x] 4.3 **VERIFY traceability** Re-audit the table above: 26/26 scenarios executed green; mark any escape-hatch moves (1.9 → PR2) in the PR bodies.
 - [ ] 4.4 **ARCHIVE CONSTRAINT (execute at sdd-archive)** Canonical `plugins/catalogo_core/openspec/specs/articulos-excel-import-export/spec.md` is Spanish — merge this change's MODIFIED/ADDED blocks INTO SPANISH (translate scenarios/requirement text; keep header names for unambiguous merge). SDD lives plugin-local; archive to `plugins/catalogo_core/openspec/changes/archive/YYYY-MM-DD-{name}/`; verify NO core `openspec/` entry exists.
+
+## Correction link (post-verify C-1/C-2)
+
+- [x] **C-1/C-2 correction (2026-09-04)**: post-verify CRITICAL class-resolution
+  fatals fixed and re-verified — see `verify-report.md` → "Resolution Addendum":
+  (1) `use FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy;`
+  added to `controller/catalogo_excel_settings.php` (settings page fatal for
+  admins, C-1); (2) lazy `require_once FS_FOLDER . '/base/fs_settings.php';`
+  added in `Services/ArticleExcelAccessPolicy.php::settingRaw()` (non-admin
+  policy fatal, C-2); regression tests in
+  `tests/ExcelAccessControlBootstrapRegressionTest.php` (RED class-not-found →
+  GREEN) exercise the real class-loading path (C-3); suites re-run (host
+  281/594 with only the 2 known `testTwigViewUsesAutoEscape` failures, root
+  1338/3417, tarifario 142/503) and full HTTP walkthrough a–d re-executed —
+  all PASS, fixtures deleted, DB pristine. Archive gate now clear.
