@@ -1,0 +1,126 @@
+{#
+/**
+ * Plugin: catalogo_core
+ * Batch price update page (multitarifa, R-BU-001..005).
+ *
+ * Twig nativo con autoescape (sin filtros que salteen el escape con datos de usuario).
+ * Dos fases, cada una POST con CSRF: preview (sin escritura) y apply con casilla
+ * de confirmación. codlista es obligatorio; los filtros opcionales se combinan
+ * con AND. Solo se ofrecen listas activas (R-MT-001); si la multi-tarifa está
+ * desactivada, la página entera se oculta (R-CO-003).
+ */
+#}
+{% include 'header.html.twig' %}
+
+<div class="container">
+   {% if not fsc.multi_tariff %}
+   <div class="alert alert-warning">
+      La multi-tarifa está desactivada. Actívala en <strong>Opciones de catálogo</strong> para actualizar precios por lista.
+   </div>
+   {% endif %}
+
+   <div class="page-header">
+      <h1><i class="fa fa-refresh" aria-hidden="true"></i>&nbsp; Actualizar precios</h1>
+      <p class="help-block">
+         Actualiza por lotes los precios de una lista. Flujo en dos fases:
+         primero una vista previa sin cambios, luego confirmas para aplicar.
+      </p>
+   </div>
+
+   {% if fsc.multi_tariff %}
+   <div class="panel panel-default">
+      <div class="panel-heading">
+         <h3 class="panel-title">Filtros</h3>
+      </div>
+      <div class="panel-body">
+         <form action="{{ fsc.url() }}" method="post" role="form">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="preview" />
+            <div class="form-group">
+               <label for="codlista">Lista de precio *</label>
+               <select name="codlista" id="codlista" class="form-control" required>
+                  <option value="">-- selecciona --</option>
+                  {% for lista in fsc.listas %}
+                  <option value="{{ lista.codlista }}">{{ lista.nombre }}</option>
+                  {% endfor %}
+               </select>
+            </div>
+            <div class="form-group">
+               <label for="codfamilia">Familia</label>
+               <select name="codfamilia" id="codfamilia" class="form-control">
+                  <option value="">-- todas --</option>
+                  {% for familia in fsc.familias %}
+                  <option value="{{ familia.codfamilia }}">{{ familia.descripcion }}</option>
+                  {% endfor %}
+               </select>
+            </div>
+            <div class="checkbox">
+               <label>
+                  <input type="checkbox" name="incluir_subfamilias" value="TRUE" /> Incluir subfamilias
+               </label>
+            </div>
+            <div class="form-group">
+               <label for="codgrupo">Grupo de artículos</label>
+               <select name="codgrupo" id="codgrupo" class="form-control">
+                  <option value="">-- ninguno --</option>
+                  {% for grupo in fsc.grupos %}
+                  <option value="{{ grupo.id }}">{{ grupo.nombre }}</option>
+                  {% endfor %}
+               </select>
+            </div>
+            <div class="form-group">
+               <label for="pct">Porcentaje (%)</label>
+               <input type="text" name="pct" id="pct" class="form-control" value="0" required />
+            </div>
+            <button class="btn btn-primary" type="submit">
+               <span class="glyphicon glyphicon-search"></span> &nbsp; Vista previa
+            </button>
+         </form>
+      </div>
+   </div>
+
+   {% if fsc.preview_rows %}
+   <div class="panel panel-default">
+      <div class="panel-heading">
+         <h3 class="panel-title">Vista previa: {{ fsc.preview_rows|length }} artículos</h3>
+      </div>
+      <div class="table-responsive">
+         <table class="table table-hover">
+            <thead>
+               <tr>
+                  <th>Referencia</th>
+                  <th>Precio actual</th>
+                  <th>Precio nuevo</th>
+               </tr>
+            </thead>
+            <tbody>
+               {% for row in fsc.preview_rows %}
+               <tr>
+                  <td>{{ row.referencia }}</td>
+                  <td>{{ row.precio_actual }}</td>
+                  <td>{{ row.precio_nuevo }}</td>
+               </tr>
+               {% endfor %}
+            </tbody>
+         </table>
+      </div>
+      <div class="panel-footer">
+         <form action="{{ fsc.url() }}" method="post" role="form">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="apply" />
+            <div class="checkbox">
+               <label>
+                  <input type="checkbox" name="confirm" value="TRUE" /> Confirmo aplicar estos cambios
+               </label>
+            </div>
+            <button class="btn btn-danger" type="submit">
+               <span class="glyphicon glyphicon-ok"></span> &nbsp; Aplicar
+            </button>
+         </form>
+      </div>
+   </div>
+   {% endif %}
+   {% endif %}
+
+   {% include 'footer.html.twig' %}
+</div>
