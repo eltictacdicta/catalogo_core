@@ -47,7 +47,7 @@ Chain strategy: pending
 - [x] 3.3 Modify `Controller/VentasArticulo.php` + `Controller/VentasArticulos.php` + `view/ventas_articulo.html.twig`: "Precios por lista" tab (active lists only, fallback marker), dispatch `ArticlePermissionFilterEvent` with `ACTION_EDIT_ARTICLE` + referencia on price save (D2). **[TDD-RED]** Extend `tests/ArticlePermissionFilterDispatchTest.php` (R-MT-005, R-RG-002 dispatch semantics).
 - [x] 3.4 Create `controller/opciones_catalogo.php` + `View/opciones_catalogo.html.twig`: admin gate, CSRF, whitelist (multi-tariff flag, groups master, Excel roles via `CatalogoRoleListNormalizer`). **[TDD-RED]** `tests/OpcionesCatalogoControllerTest.php` (R-CO-004: persists all fields, success message; multi-tariff off hides tariff UI per R-CO-003).
 - [x] 3.5 Update `tests/CatalogoExcelSettingsPageTest.php` to target `opciones_catalogo`; **delete** `controller/catalogo_excel_settings.php` and `view/catalogo_excel_settings.html.twig` (no redirect; menu registers new page).
-- [ ] 3.6 Hide tariff UI when multi-tariff off: `VentasArticulo` tab, `ventas_listas_precio` entry, and list selectors hidden entirely (R-MT-001 inactive-list exclusion; R-CO-003). **[TDD-RED]** inert-when-off test `tests/MultiTariffFlagInertTest.php`.
+- [x] 3.6 Hide tariff UI when multi-tariff off: `VentasArticulo` tab, `ventas_listas_precio` entry, and list selectors hidden entirely (R-MT-001 inactive-list exclusion; R-CO-003). **[TDD-RED]** inert-when-off test `tests/MultiTariffFlagInertTest.php`.
 
 ## Phase 4: Batch Price Update
 
