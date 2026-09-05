@@ -47,7 +47,7 @@ class VentasFabricante extends PageController
         return [
             'name' => 'ventas_fabricante',
             'title' => 'Fabricante',
-            'menu' => 'ventas',
+            'menu' => 'catalogo',
             'showonmenu' => false,
             'ordernum' => 110,
         ];

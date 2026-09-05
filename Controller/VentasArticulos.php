@@ -64,7 +64,7 @@ class VentasArticulos extends PageController
         return [
             'name' => 'ventas_articulos',
             'title' => 'Artículos',
-            'menu' => 'ventas',
+            'menu' => 'catalogo',
             'showonmenu' => true,
             'ordernum' => 120,
         ];

@@ -48,7 +48,7 @@ class VentasFamilias extends PageController
         return [
             'name' => 'ventas_familias',
             'title' => 'Familias',
-            'menu' => 'ventas',
+            'menu' => 'catalogo',
             'showonmenu' => true,
             'ordernum' => 110,
         ];

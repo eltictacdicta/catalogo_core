@@ -43,7 +43,7 @@ class VentasOpcionalGrupo extends PageController
         return [
             'name' => 'ventas_opcional_grupo',
             'title' => 'Grupo de opcionales',
-            'menu' => 'ventas',
+            'menu' => 'catalogo',
             'showonmenu' => false,
             'ordernum' => 107,
         ];

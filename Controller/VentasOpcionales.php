@@ -34,7 +34,7 @@ class VentasOpcionales extends PageController
         return [
             'name' => 'ventas_opcionales',
             'title' => 'Opcionales',
-            'menu' => 'ventas',
+            'menu' => 'catalogo',
             'showonmenu' => true,
             'ordernum' => 108,
         ];
