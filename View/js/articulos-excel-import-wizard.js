@@ -667,8 +667,16 @@
     window.ArticulosExcelWizard = ArticulosExcelWizard;
 
     document.addEventListener('DOMContentLoaded', function () {
-        if (typeof window.catalogoArticulosExcelConfig === 'undefined') return;
-        var wizard = new ArticulosExcelWizard(window.catalogoArticulosExcelConfig);
+        var cfgEl = document.getElementById('catalogo-articulos-excel-config');
+        if (!cfgEl) return;
+        var wizard = new ArticulosExcelWizard({
+            baseUrl: cfgEl.dataset.baseUrl,
+            priceDecimals: parseInt(cfgEl.dataset.priceDecimals, 10),
+            defaultCodimpuesto: cfgEl.dataset.defaultCodimpuesto,
+            labelNext: cfgEl.dataset.labelNext,
+            labelApply: cfgEl.dataset.labelApply,
+            labelClose: cfgEl.dataset.labelClose
+        });
         wizard.init();
         window.catalogoArticulosExcelWizard = wizard;
     });

@@ -190,16 +190,13 @@ $(document).ready(function() {
 {% if fsc.can_import_export %}
 {% include 'partials/articulos/modal_exportar_excel.html.twig' %}
 {% include 'partials/articulos/modal_importar_excel_wizard.html.twig' %}
-<script type="text/javascript">
-window.catalogoArticulosExcelConfig = {
-    baseUrl: {{ fsc.url()|json_encode|raw }},
-    priceDecimals: {{ fsc.price_decimals }},
-    defaultCodimpuesto: {{ fsc.default_codimpuesto|json_encode|raw }},
-    labelNext: {{ 'next'|trans|json_encode|raw }},
-    labelApply: {{ 'excel-import-apply'|trans|json_encode|raw }},
-    labelClose: {{ 'close'|trans|json_encode|raw }}
-};
-</script>
+<div id="catalogo-articulos-excel-config"
+     data-base-url="{{ fsc.url() }}"
+     data-price-decimals="{{ fsc.price_decimals }}"
+     data-default-codimpuesto="{{ fsc.default_codimpuesto }}"
+     data-label-next="{{ 'next'|trans }}"
+     data-label-apply="{{ 'excel-import-apply'|trans }}"
+     data-label-close="{{ 'close'|trans }}"></div>
 <script src="plugins/catalogo_core/View/js/articulos-excel-import-wizard.js"></script>
 {% endif %}
 
