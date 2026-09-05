@@ -362,22 +362,33 @@ $(document).ready(function () {
 </div>
 
 {% if fsc.articulo.referencia %}
+<div id="opcionales-i18n-config" hidden
+     data-yes="{{ 'optional-required-tpv-yes'|trans }}"
+     data-no="{{ 'optional-required-tpv-no'|trans }}"
+     data-generic-error="{{ 'optional-ajax-error'|trans|default('No se pudo completar la operación.') }}"
+     data-confirm-remove-grupo="{{ 'remove-optional-group-from-article-confirm'|trans|default('¿Quitar este grupo del artículo?') }}"
+     data-confirm-remove-opcional="{{ 'remove-optional-from-article-confirm'|trans|default('¿Quitar este opcional del artículo?') }}"
+     data-select-grupo="{{ 'optional-select-group'|trans|default('Selecciona un grupo.') }}"
+     data-select-opcional="{{ 'optional-select-optional'|trans|default('Selecciona un opcional.') }}"
+     data-attention="{{ 'attention'|trans|default('Atención') }}"></div>
 <script type="text/javascript">
 (function ($) {
     'use strict';
 
+    var cfg = document.getElementById('opcionales-i18n-config').dataset;
+
     var labels = {
-        yes: {{ 'optional-required-tpv-yes'|trans|json_encode|raw }},
-        no: {{ 'optional-required-tpv-no'|trans|json_encode|raw }}
+        yes: cfg.yes,
+        no: cfg.no
     };
 
     var i18n = {
-        genericError: {{ 'optional-ajax-error'|trans|default('No se pudo completar la operación.')|json_encode|raw }},
-        confirmRemoveGrupo: {{ 'remove-optional-group-from-article-confirm'|trans|default('¿Quitar este grupo del artículo?')|json_encode|raw }},
-        confirmRemoveOpcional: {{ 'remove-optional-from-article-confirm'|trans|default('¿Quitar este opcional del artículo?')|json_encode|raw }},
-        selectGrupo: {{ 'optional-select-group'|trans|default('Selecciona un grupo.')|json_encode|raw }},
-        selectOpcional: {{ 'optional-select-optional'|trans|default('Selecciona un opcional.')|json_encode|raw }},
-        attention: {{ 'attention'|trans|default('Atención')|json_encode|raw }}
+        genericError: cfg.genericError,
+        confirmRemoveGrupo: cfg.confirmRemoveGrupo,
+        confirmRemoveOpcional: cfg.confirmRemoveOpcional,
+        selectGrupo: cfg.selectGrupo,
+        selectOpcional: cfg.selectOpcional,
+        attention: cfg.attention
     };
 
     function getPanel() {
