@@ -58,13 +58,12 @@ final class InitFamiliasTablesTest extends TestCase
         return (string) file_get_contents($path);
     }
 
-    /** Extracts the full body of Init::ensureFamiliasTarifaTables() by brace matching. */
-    private function ensureMethodSource(string $src): string
+    /** Extracts a method body by brace matching from its signature. */
+    private function methodSource(string $src, string $signature): string
     {
-        $sig = 'public static function ensureFamiliasTarifaTables()';
-        $start = strpos($src, $sig);
+        $start = strpos($src, $signature);
         if ($start === false) {
-            self::fail('missing catalogo_core method: Init::ensureFamiliasTarifaTables()');
+            self::fail('missing catalogo_core method: ' . $signature);
         }
 
         $open = (int) strpos($src, '{', (int) $start);
@@ -81,7 +80,13 @@ final class InitFamiliasTablesTest extends TestCase
             }
         }
 
-        self::fail('ensureFamiliasTarifaTables() body is not terminated');
+        self::fail('method body is not terminated: ' . $signature);
+    }
+
+    /** Extracts the full body of Init::ensureFamiliasTarifaTables() by brace matching. */
+    private function ensureMethodSource(string $src): string
+    {
+        return $this->methodSource($src, 'public static function ensureFamiliasTarifaTables()');
     }
 
     /** Extracts the FK-safe model list from the bootstrap's foreach literal. */
@@ -137,6 +142,38 @@ final class InitFamiliasTablesTest extends TestCase
         $this->assertNotFalse($posGuard);
         $this->assertNotFalse($posNew);
         $this->assertLessThan($posNew, $posGuard, 'Instantiation must be guarded by the class_exists check');
+    }
+
+    // --- Amendment 1: plain list retirement wiring ---
+
+    public function test_upgrade_wires_ventas_familias_page_retirement(): void
+    {
+        $src = $this->initSource();
+
+        $this->assertStringContainsString(
+            'private static function retireVentasFamiliasPage(): void',
+            $src,
+            'The idempotent retirement cleanup must exist (Amendment 1)'
+        );
+
+        $upgrade = $this->methodSource($src, 'public static function upgrade(): void');
+        $this->assertStringContainsString(
+            'self::retireVentasFamiliasPage();',
+            $upgrade,
+            'upgrade() must wire the retirement cleanup (try/catch + error_log, sibling style)'
+        );
+
+        $retire = $this->methodSource($src, 'private static function retireVentasFamiliasPage(): void');
+        $this->assertStringContainsString(
+            "get('ventas_familias')",
+            $retire,
+            'Cleanup must resolve the fs_page row by name'
+        );
+        $this->assertStringContainsString(
+            '->delete()',
+            $retire,
+            'Cleanup must delete via the fs_page model (model-managed DELETE + m_fs_page_all cache clear)'
+        );
     }
 
     public function test_noop_when_model_files_absent(): void

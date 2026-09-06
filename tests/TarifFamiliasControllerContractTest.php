@@ -243,4 +243,51 @@ final class TarifFamiliasControllerContractTest extends TestCase
 
         $this->assertSame(0, $controller->count_articulos('EMPTY'), 'Empty result set must map to 0');
     }
+
+    // --- Amendment 1: menu rebrand + plain list retirement ---
+
+    public function test_constructor_registers_familias_under_catalogo_folder(): void
+    {
+        $src = $this->controllerSource();
+        $this->assertStringContainsString(
+            "parent::__construct(__CLASS__, 'Familias', 'catalogo');",
+            $src,
+            'Amendment 1: the page must register as Familias under the catalogo folder'
+        );
+        $this->assertSame(
+            0,
+            substr_count($src, "'Familias Tarifario'"),
+            'The old menu title must be gone'
+        );
+    }
+
+    public function test_moved_view_has_zero_retired_list_references(): void
+    {
+        $viewPath = FS_FOLDER . '/plugins/catalogo_core/View/tarif_familias.html.twig';
+        if (!is_file($viewPath)) {
+            self::fail('missing catalogo_core path: plugins/catalogo_core/View/tarif_familias.html.twig');
+        }
+
+        $src = (string) file_get_contents($viewPath);
+        $this->assertSame(
+            0,
+            substr_count($src, 'page=ventas_familias'),
+            'The retired plain list must not be linked from the moved view'
+        );
+    }
+
+    public function test_empty_state_link_targets_create_flow(): void
+    {
+        $viewPath = FS_FOLDER . '/plugins/catalogo_core/View/tarif_familias.html.twig';
+        if (!is_file($viewPath)) {
+            self::fail('missing catalogo_core path: plugins/catalogo_core/View/tarif_familias.html.twig');
+        }
+
+        $src = (string) file_get_contents($viewPath);
+        $this->assertStringContainsString(
+            '<a href="index.php?page=ventas_familia">Crear familias primero</a>',
+            $src,
+            'Empty state must link the singular create form (no cod) per Amendment 1'
+        );
+    }
 }

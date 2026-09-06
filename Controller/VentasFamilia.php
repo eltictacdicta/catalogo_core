@@ -156,7 +156,7 @@ class VentasFamilia extends PageController
 
         if ($fam->delete()) {
             $this->new_message('Familia ' . $fam->descripcion . ' eliminada correctamente.');
-            $this->redirect('ventas_familias');
+            $this->redirect('tarif_familias');
             return;
         }
 

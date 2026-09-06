@@ -52,6 +52,11 @@ final class Init
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Default seed failed: ' . $e->getMessage());
         }
+        try {
+            self::retireVentasFamiliasPage();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] ventas_familias page retirement failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -77,6 +82,27 @@ final class Init
             if (class_exists($fqcn, false) && is_subclass_of($fqcn, \fs_model::class)) {
                 new $fqcn();
             }
+        }
+    }
+
+    /**
+     * Retira la página plana ventas_familias (Amendment 1). Necesario porque
+     * fs_user::get_menu() no filtra páginas muertas — una fila huérfana
+     * renderizaría un item de menú roto. Idempotente: fs_page::get() devuelve
+     * FALSE si la fila no existe; delete() ejecuta el DELETE y limpia la
+     * caché m_fs_page_all.
+     */
+    private static function retireVentasFamiliasPage(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        if (!class_exists('fs_page', false)) {
+            require_once FS_FOLDER . '/model/fs_page.php';
+        }
+
+        $page = new \fs_page();
+        $existing = $page->get('ventas_familias');
+        if ($existing !== false) {
+            $existing->delete();
         }
     }
 

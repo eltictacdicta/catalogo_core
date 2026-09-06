@@ -74,7 +74,7 @@ class tarif_familias extends fbase_controller
 
     public function __construct()
     {
-        parent::__construct(__CLASS__, 'Familias Tarifario', 'tarifario');
+        parent::__construct(__CLASS__, 'Familias', 'catalogo');
     }
 
     protected function private_core()

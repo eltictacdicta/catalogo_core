@@ -88,7 +88,7 @@ class familia extends \fs_model
     public function url()
     {
         if (is_null($this->codfamilia)) {
-            return "index.php?page=ventas_familias";
+            return "index.php?page=ventas_familia";
         }
 
         return "index.php?page=ventas_familia&cod=" . urlencode($this->codfamilia);
