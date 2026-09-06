@@ -1,0 +1,480 @@
+{#
+ # Macros reutilizables para el plugin Tarifario
+ # Incluye: toolbar, selector de tarifa, modal popup, toggles, etc.
+ #}
+
+{# =====================================================
+   ESTILOS COMUNES DEL TARIFARIO
+   ===================================================== #}
+{% macro styles_common() %}
+<style>
+   /* === SELECTOR DE TARIFA === */
+   .tarifa-selector-wrapper {
+      display: inline-flex;
+      align-items: center;
+      vertical-align: middle;
+   }
+   .tarifa-selector {
+      display: inline-block;
+      min-width: 200px;
+      height: 30px;
+      padding: 2px 8px;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+   }
+   .tarifa-label {
+      background-color: #e8e8e8;
+      border: 1px solid #ccc;
+      border-right: none;
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: 4px 0 0 4px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+   }
+
+   /* === BADGES === */
+   .capitulo-badge {
+      font-family: 'Courier New', monospace;
+      background-color: #f0f0f0;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      color: #666;
+   }
+   .count-badge {
+      background-color: #e8e8e8;
+      color: #666;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+   }
+   .stat-badge {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 14px;
+      font-size: 13px;
+      background-color: #f5f5f5;
+      color: #666;
+      font-weight: 500;
+   }
+   .stat-badge.has-items {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+   }
+
+   /* === TOGGLES DE ESTADO === */
+   .status-toggle {
+      cursor: pointer;
+   }
+   .status-toggle:hover {
+      opacity: 0.8;
+   }
+
+   /* === MODAL POPUP === */
+   .modal-popup-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1050;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.5);
+   }
+   .modal-popup-overlay .modal-dialog {
+      margin: 50px auto;
+   }
+
+   /* === LOADING OVERLAY === */
+   .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255,255,255,0.8);
+      z-index: 9999;
+      display: none;
+      justify-content: center;
+      align-items: center;
+   }
+   .loading-overlay.show {
+      display: flex;
+   }
+
+   /* === EMPTY STATE === */
+   .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: #999;
+   }
+   .empty-state i {
+      font-size: 48px;
+      margin-bottom: 15px;
+      opacity: 0.5;
+   }
+
+   /* === FAMILIAS TREE === */
+   .familia-row {
+      cursor: move;
+      transition: background-color 0.2s ease;
+   }
+   .familia-row:hover {
+      background-color: #f5f5f5;
+   }
+   .familia-row.inactive {
+      opacity: 0.5;
+      background-color: #f9f9f9;
+   }
+   .familia-indent-markers {
+      color: #ccc;
+   }
+   .familia-indent {
+      display: inline-block;
+      width: 20px;
+      text-align: center;
+   }
+   .familia-icon {
+      color: #666;
+      margin-right: 8px;
+   }
+   .familia-name {
+      font-weight: 500;
+   }
+   .familia-name a {
+      color: #333;
+   }
+   .familia-name a:hover {
+      color: #0073aa;
+      text-decoration: none;
+   }
+
+   /* === CATÁLOGO CONTAINER === */
+   .catalogo-container {
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+   }
+   .catalogo-summary {
+      display: flex;
+      gap: 20px;
+      padding: 15px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      border-radius: 4px 4px 0 0;
+   }
+   .summary-stat {
+      text-align: center;
+   }
+   .summary-stat .number {
+      font-size: 28px;
+      font-weight: 600;
+   }
+   .summary-stat .label {
+      font-size: 12px;
+      opacity: 0.9;
+   }
+</style>
+{% endmacro %}
+
+{# =====================================================
+   SELECTOR DE TARIFA
+   ===================================================== #}
+{% macro tarifa_selector(tarifas, codtarifa_actual, onchange_function) %}
+<div class="tarifa-selector-wrapper">
+   <span class="tarifa-label">
+      <i class="fa fa-tag"></i>&nbsp; Tarifa:
+   </span>
+   <select id="select_tarifa" class="form-control input-sm tarifa-selector" onchange="{{ onchange_function }}()">
+      {% for tarifa in tarifas %}
+      <option value="{{ tarifa.codtarifa }}" {% if tarifa.codtarifa == codtarifa_actual %}selected{% endif %}>
+         {{ tarifa.nombre }}{% if tarifa.por_defecto %} ★{% endif %}
+      </option>
+      {% endfor %}
+   </select>
+</div>
+{% endmacro %}
+
+{# =====================================================
+   TOOLBAR COMÚN DEL TARIFARIO
+   ===================================================== #}
+{% macro toolbar(fsc, options) %}
+{% set show_refresh = options.show_refresh|default(true) %}
+{% set show_tarifas_link = options.show_tarifas_link|default(true) %}
+{% set show_articulos_link = options.show_articulos_link|default(true) %}
+{% set show_familias_link = options.show_familias_link|default(false) %}
+{% set show_catalogo_link = options.show_catalogo_link|default(false) %}
+{% set extra_buttons = options.extra_buttons|default([]) %}
+{% set right_buttons = options.right_buttons|default([]) %}
+
+<div class="container-fluid" style="margin-bottom: 10px;">
+   <div class="row">
+      <div class="col-xs-12">
+         {# Selector de Tarifa #}
+         {{ _self.tarifa_selector(fsc.tarifas, fsc.codtarifa, 'cambiarTarifa') }}
+         
+         {% if show_refresh %}
+         <div class="btn-group">
+            <a class="btn btn-sm btn-default" href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}" title="Recargar">
+               <span class="glyphicon glyphicon-refresh"></span>
+            </a>
+         </div>
+         {% endif %}
+         
+         {# Botones extra personalizados #}
+         {% for btn in extra_buttons %}
+         <div class="btn-group">
+            {% if btn.modal %}
+            <a class="btn btn-sm {{ btn.class|default('btn-default') }}" href="#" data-toggle="modal" data-target="#{{ btn.modal }}">
+               <span class="{{ btn.icon }}"></span>
+               <span class="hidden-xs">&nbsp;{{ btn.label }}</span>
+            </a>
+            {% elseif btn.onclick %}
+            <button type="button" class="btn btn-sm {{ btn.class|default('btn-default') }}" onclick="{{ btn.onclick }}">
+               <i class="{{ btn.icon }}"></i>
+               <span class="hidden-xs">&nbsp;{{ btn.label }}</span>
+            </button>
+            {% else %}
+            <a class="btn btn-sm {{ btn.class|default('btn-default') }}" href="{{ btn.href }}">
+               <span class="{{ btn.icon }}"></span>
+               <span class="hidden-xs">&nbsp;{{ btn.label }}</span>
+            </a>
+            {% endif %}
+         </div>
+         {% endfor %}
+         
+         {# Links de navegación #}
+         <div class="btn-group">
+            {% if show_tarifas_link %}
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_tarifas">
+               <span class="glyphicon glyphicon-tags"></span>
+               <span class="hidden-xs">&nbsp;Tarifas</span>
+            </a>
+            {% endif %}
+            {% if show_articulos_link %}
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_articulos&codtarifa={{ fsc.codtarifa }}">
+               <span class="glyphicon glyphicon-list"></span>
+               <span class="hidden-xs">&nbsp;Artículos</span>
+            </a>
+            {% endif %}
+            {% if show_familias_link %}
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_familias&codtarifa={{ fsc.codtarifa }}">
+               <i class="fa fa-folder-open-o"></i>
+               <span class="hidden-xs">&nbsp;Familias</span>
+            </a>
+            {% endif %}
+            {% if show_catalogo_link %}
+            <a class="btn btn-sm btn-info" href="index.php?page=tarif_catalogo_view&codtarifa={{ fsc.codtarifa }}" title="Ver catálogo">
+               <i class="fa fa-sitemap"></i>
+               <span class="hidden-xs">&nbsp;Catálogo</span>
+            </a>
+            {% endif %}
+         </div>
+         
+         {# Botones a la derecha #}
+         {% if right_buttons|length > 0 %}
+         <div class="btn-group pull-right">
+            {% for btn in right_buttons %}
+            <a class="btn btn-sm {{ btn.class|default('btn-default') }}" href="{{ btn.href }}" title="{{ btn.title|default('') }}">
+               <i class="{{ btn.icon }}"></i>
+               <span class="hidden-xs">&nbsp;{{ btn.label }}</span>
+            </a>
+            {% endfor %}
+         </div>
+         {% endif %}
+      </div>
+   </div>
+</div>
+{% endmacro %}
+
+{# =====================================================
+   LOADING OVERLAY
+   ===================================================== #}
+{% macro loading_overlay() %}
+<div class="loading-overlay">
+   <div class="text-center">
+      <i class="fa fa-spinner fa-spin fa-3x"></i>
+      <p class="text-muted" style="margin-top: 10px;">Guardando...</p>
+   </div>
+</div>
+{% endmacro %}
+
+{# =====================================================
+   MODAL POPUP BASE
+   ===================================================== #}
+{% macro modal_popup_start(id, title, close_url) %}
+<div class="modal fade in modal-popup-overlay" id="{{ id }}" tabindex="-1" role="dialog" style="display: block;">
+   <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <div class="modal-header">
+            <a href="{{ close_url }}" class="close">&times;</a>
+            <h4 class="modal-title">{{ title|raw }}</h4>
+         </div>
+{% endmacro %}
+
+{% macro modal_popup_end(close_url, submit_label) %}
+         <div class="modal-footer">
+            <a href="{{ close_url }}" class="btn btn-default">
+               <i class="fa fa-times"></i> Cancelar
+            </a>
+            <button class="btn btn-primary" type="submit">
+               <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ submit_label|default('Guardar') }}
+            </button>
+         </div>
+      </div>
+   </div>
+</div>
+{% endmacro %}
+
+{# =====================================================
+   TOGGLE BUTTONS (en_catalogo, en_tarifa, activa)
+   ===================================================== #}
+{% macro toggle_button_group(item, options) %}
+{% set show_catalogo = options.show_catalogo|default(true) %}
+{% set show_en_tarifa = options.show_en_tarifa|default(true) %}
+{% set show_activa = options.show_activa|default(true) %}
+{% set size = options.size|default('sm') %}
+
+<div class="btn-group" data-toggle="buttons">
+   {% if show_catalogo %}
+   <label class="btn btn-{{ size }} {% if item.en_catalogo %}btn-success active{% else %}btn-default{% endif %}" title="Mostrar en el catálogo">
+      <input type="checkbox" name="en_catalogo" autocomplete="off" {% if item.en_catalogo %}checked{% endif %}/>
+      <i class="fa fa-eye"></i> En catálogo
+   </label>
+   {% endif %}
+   {% if show_en_tarifa %}
+   <label class="btn btn-{{ size }} {% if item.en_tarifa %}btn-info active{% else %}btn-default{% endif %}" title="Incluir al exportar la tarifa">
+      <input type="checkbox" name="en_tarifa" autocomplete="off" {% if item.en_tarifa %}checked{% endif %}/>
+      <i class="fa fa-file-text-o"></i> En tarifa
+   </label>
+   {% endif %}
+   {% if show_activa %}
+   <label class="btn btn-{{ size }} {% if item.activa %}btn-success active{% else %}btn-default{% endif %}" title="Activo/a">
+      <input type="checkbox" name="activa" autocomplete="off" {% if item.activa %}checked{% endif %}/>
+      <i class="fa fa-check"></i> Activa
+   </label>
+   {% endif %}
+</div>
+{% endmacro %}
+
+{# =====================================================
+   JAVASCRIPT COMÚN
+   ===================================================== #}
+{% macro js_common(fsc) %}
+<script type="text/javascript">
+   var codtarifa = '{{ fsc.codtarifa }}';
+   
+   function baseUrl() {
+      return '{{ fsc.url() }}&codtarifa=' + encodeURIComponent(codtarifa);
+   }
+   
+   function showLoading() {
+      $('.loading-overlay').addClass('show');
+   }
+   
+   function hideLoading() {
+      $('.loading-overlay').removeClass('show');
+   }
+   
+   function showMessage(msg, type) {
+      type = type || 'success';
+      var $msg = $('<div class="alert alert-' + type + ' alert-dismissible" style="position:fixed;top:70px;right:20px;z-index:9999;"><button type="button" class="close" data-dismiss="alert">&times;</button><i class="fa fa-' + (type == 'success' ? 'check' : 'exclamation-circle') + '"></i> ' + msg + '</div>');
+      $('body').append($msg);
+      setTimeout(function() { $msg.fadeOut(function() { $msg.remove(); }); }, 3000);
+   }
+</script>
+{% endmacro %}
+
+{# =====================================================
+   FAMILIA ITEM (para tabla y árbol)
+   ===================================================== #}
+{% macro familia_item_row(fam, fsc, options) %}
+{% set show_drag = options.show_drag|default(true) %}
+{% set show_nivel_buttons = options.show_nivel_buttons|default(true) %}
+{% set nivel = fam.nivel_visual|default(0) %}
+
+<tr class="familia-row nivel-{{ nivel }} {% if not fam.activa %}inactive{% endif %}" 
+    data-codfamilia="{{ fam.codfamilia }}" 
+    data-madre="{{ fam.madre }}"
+    data-nivel="{{ nivel }}">
+   {% if show_drag %}
+   <td>
+      <span class="drag-handle">
+         <i class="fa fa-bars"></i>
+      </span>
+   </td>
+   {% endif %}
+   <td>
+      <span class="capitulo-badge">{{ fam.capitulo }}</span>
+   </td>
+   <td class="familia-name">
+      <span class="familia-indent-markers">
+         {% if nivel > 0 %}
+         {% for i in 1..nivel %}
+         <span class="familia-indent">—</span>
+         {% endfor %}
+         {% endif %}
+      </span>
+      {% if fam.madre %}
+      <i class="fa fa-folder-o familia-icon"></i>
+      {% else %}
+      <i class="fa fa-folder familia-icon"></i>
+      {% endif %}
+      <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ fam.codfamilia }}">
+         {{ fam.descripcion }}
+      </a>
+      <small class="text-muted">({{ fam.codfamilia }})</small>
+   </td>
+   {% if show_nivel_buttons %}
+   <td class="text-center level-actions">
+      <button type="button" class="btn btn-default btn-level" onclick="promoverFamilia('{{ fam.codfamilia }}', '{{ fam.descripcion }}')" title="Subir de nivel" {% if not fam.madre %}disabled{% endif %}>
+         <i class="fa fa-outdent"></i>
+      </button>
+      <button type="button" class="btn btn-default btn-level" onclick="degradarFamilia('{{ fam.codfamilia }}', '{{ fam.descripcion }}')" title="Bajar de nivel">
+         <i class="fa fa-indent"></i>
+      </button>
+   </td>
+   {% endif %}
+   <td class="text-center">
+      <span class="count-badge">{{ fsc.count_articulos(fam.codfamilia) }}</span>
+   </td>
+   <td class="text-center">
+      <button type="button" class="btn btn-xs status-toggle {% if fam.en_catalogo %}btn-success{% else %}btn-default{% endif %}" 
+              data-toggle-catalogo="{{ fam.codfamilia }}"
+              onclick="toggleCatalogo('{{ fam.codfamilia }}')" 
+              title="{% if fam.en_catalogo %}En catálogo{% else %}Oculta del catálogo{% endif %}">
+         <i class="fa {% if fam.en_catalogo %}fa-eye{% else %}fa-eye-slash{% endif %}"></i>
+      </button>
+   </td>
+   <td class="text-center">
+      <button type="button" class="btn btn-xs status-toggle {% if fam.en_tarifa %}btn-info{% else %}btn-default{% endif %}" 
+              data-toggle-en-tarifa="{{ fam.codfamilia }}"
+              onclick="toggleEnTarifa('{{ fam.codfamilia }}')" 
+              title="{% if fam.en_tarifa %}Incluida en exportación{% else %}No incluida{% endif %}">
+         <i class="fa {% if fam.en_tarifa %}fa-file-text-o{% else %}fa-file-o{% endif %}"></i>
+      </button>
+   </td>
+   <td class="text-center">
+      <button type="button" class="btn btn-xs status-toggle {% if fam.activa %}btn-success{% else %}btn-default{% endif %}" 
+              data-toggle-activa="{{ fam.codfamilia }}"
+              onclick="toggleActiva('{{ fam.codfamilia }}')" 
+              title="{% if fam.activa %}Activa{% else %}Inactiva{% endif %}">
+         <i class="fa {% if fam.activa %}fa-check{% else %}fa-ban{% endif %}"></i>
+      </button>
+   </td>
+   <td class="text-right">
+      <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ fam.codfamilia }}" class="btn btn-xs btn-default" title="Editar">
+         <i class="fa fa-pencil"></i>
+      </a>
+      {% if fsc.allow_delete %}
+      <a href="#" onclick="eliminar_familia('{{ fam.codfamilia }}', '{{ fam.descripcion }}')" class="btn btn-xs btn-danger" title="Quitar de tarifa">
+         <i class="fa fa-trash"></i>
+      </a>
+      {% endif %}
+   </td>
+</tr>
+{% endmacro %}

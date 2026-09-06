@@ -26,6 +26,11 @@ final class Init
         $this->cleanupOrphanWizardFiles();
         self::migrateLegacyTables();
         self::ensureArticuloOpcionalGrupoTable();
+        try {
+            self::ensureFamiliasTarifaTables();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] familias tarifa tables ensure failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -40,11 +45,38 @@ final class Init
         try {
             self::migrateLegacyTables();
             self::ensureCatalogTables();
+            self::ensureFamiliasTarifaTables();
             foreach (self::DEFAULT_SEED_MODELS as $modelName) {
                 self::seedNamespacedModel($modelName);
             }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Default seed failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Asegura las cuatro tablas del paquete familias-tarifa absorbido desde
+     * tarifario cuando el plugin tarifario NO está activo (instalación
+     * standalone). Idempotente: require_once + fs_model solo crea la tabla
+     * si falta. Orden FK-seguro, espejo de tarifario_init.php.
+     */
+    public static function ensureFamiliasTarifaTables(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        foreach ([                       // FK-safe order, mirrors tarifario_init.php:57-59, :93-95, :103-105, :118-120
+            'tarif_tarifa',              // tarif_tarifas — no plugin FK deps
+            'tarif_familia_ext',         // extends core familias
+            'tarif_tarifa_etiqueta_familia',
+            'tarif_tarifa_familia',      // FK → tarif_tarifas; install() also re-creates tarif_tarifas (model:128, defense in depth)
+        ] as $modelName) {
+            $file = FS_FOLDER . '/plugins/catalogo_core/model/' . $modelName . '.php';
+            if (is_file($file)) {
+                require_once $file;
+            }
+            $fqcn = 'FSFramework\\model\\' . $modelName;
+            if (class_exists($fqcn, false) && is_subclass_of($fqcn, \fs_model::class)) {
+                new $fqcn();
+            }
         }
     }
 

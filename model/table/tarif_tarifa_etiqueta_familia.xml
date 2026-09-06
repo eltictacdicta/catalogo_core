@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_tarifa_etiqueta_familia: Etiquetas disponibles por familia y tarifa.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>etiqueta</nombre>
+        <tipo>character varying(60)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>visible</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_etiqueta_familia_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, codfamilia, etiqueta)</consulta>
+    </restriccion>
+</tabla>

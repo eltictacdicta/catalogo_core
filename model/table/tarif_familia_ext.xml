@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_familia_ext: Extensión de familias para el tarifario
+    Relación 1:1 con familias para añadir campos de capítulo y nivel
+-->
+<tabla>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>capitulo</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <columna>
+        <nombre>nivel</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_familia_ext_pkey</nombre>
+        <consulta>PRIMARY KEY (codfamilia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_familia_ext_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

@@ -1,0 +1,102 @@
+{#
+ # Modal para importar familias desde Excel
+ # Requiere: fsc (controlador), Resumable.js cargado externamente
+ #}
+<div class="modal" id="modal_importar_excel_familias" data-backdrop="static">
+   <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+         <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-hidden="true" id="btn_close_familias_excel">&times;</button>
+            <h4 class="modal-title">
+               <i class="fa fa-file-excel-o text-info"></i> Importar Familias desde Excel
+            </h4>
+         </div>
+         <div class="modal-body">
+            {# Paso 1: Subir archivo #}
+            <div id="familias_excel_step_upload">
+               <div class="alert alert-info">
+                  <i class="fa fa-info-circle"></i>
+                  <strong>Importación desde Excel:</strong>
+                  <p style="margin-top: 10px; margin-bottom: 0;">
+                     Sube un archivo Excel (.xlsx, .xls) con las familias a importar.
+                     <br><strong>Obligatorio:</strong> La columna <code>Codigo</code> con el código de la familia.
+                     <br><strong>Opcional:</strong> Descripcion, Madre, En Catalogo, En Tarifa, Activa, Etiquetas.
+                     <br><strong>Nota:</strong> Los capítulos se recalculan automáticamente según el orden y la jerarquía.
+                  </p>
+               </div>
+
+               <div class="form-group">
+                  <label>Tarifa de destino:</label>
+                  <p class="form-control-static">
+                     <strong>{{ fsc.get_tarifa_actual().nombre }}</strong>
+                     <span class="text-muted">({{ fsc.codtarifa }})</span>
+                  </p>
+                  <input type="hidden" id="import_familias_excel_tarifa" value="{{ fsc.codtarifa }}">
+               </div>
+
+               <div id="familias-excel-drop-zone" style="border: 2px dashed #5bc0de; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; background: #f8f9fa; transition: all 0.3s;">
+                  <i class="fa fa-file-excel-o" style="font-size: 48px; color: #217346;"></i>
+                  <h4>Arrastra el archivo Excel aquí</h4>
+                  <p class="text-muted">o haz clic para seleccionar</p>
+                  <input type="file" id="familias_excel_file_input" accept=".xlsx,.xls" style="display: none;">
+                  <button type="button" class="btn btn-info" onclick="document.getElementById('familias_excel_file_input').click()">
+                     <i class="fa fa-folder-open"></i> Seleccionar Archivo
+                  </button>
+               </div>
+
+               <div id="familias_excel_file_info" style="display: none; margin-top: 10px;" class="well well-sm">
+                  <i class="fa fa-file-excel-o text-success"></i>
+                  <strong id="familias_excel_file_name"></strong>
+                  <span class="text-muted" id="familias_excel_file_size"></span>
+                  <button type="button" class="btn btn-xs btn-danger pull-right" onclick="window.familiasExcelImport.clearFile()">
+                     <i class="fa fa-times"></i> Quitar
+                  </button>
+               </div>
+
+               <div style="margin-top: 15px;">
+                  <ul class="list-inline text-muted">
+                     <li><i class="fa fa-check text-success"></i> Formatos: <strong>.xlsx</strong>, <strong>.xls</strong></li>
+                     <li><i class="fa fa-check text-success"></i> Columnas flexibles</li>
+                     <li><i class="fa fa-check text-success"></i> Capítulos automáticos</li>
+                  </ul>
+               </div>
+            </div>
+
+            {# Paso 2: Progreso #}
+            <div id="familias_excel_step_progress" style="display: none;">
+               <h4><i class="fa fa-spinner fa-spin"></i> Procesando importación...</h4>
+               <div class="progress" style="height: 25px; margin-top: 20px;">
+                  <div id="familias_excel_progress_bar" class="progress-bar progress-bar-info progress-bar-striped active" role="progressbar" style="width: 100%; line-height: 25px;">
+                     Procesando...
+                  </div>
+               </div>
+            </div>
+
+            {# Paso 3: Resultado #}
+            <div id="familias_excel_step_result" style="display: none;">
+               <div id="familias_excel_result_success" class="alert alert-success" style="display: none;">
+                  <h4><i class="fa fa-check-circle"></i> Importación completada</h4>
+                  <div id="familias_excel_result_stats"></div>
+               </div>
+               <div id="familias_excel_result_error" class="alert alert-danger" style="display: none;">
+                  <h4><i class="fa fa-times-circle"></i> Error en la importación</h4>
+                  <p id="familias_excel_result_error_msg"></p>
+               </div>
+               <div id="familias_excel_result_details" style="display: none; max-height: 200px; overflow-y: auto; margin-top: 10px;" class="well well-sm">
+               </div>
+            </div>
+         </div>
+         <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal" id="btn_cancel_familias_excel">
+               <i class="fa fa-times"></i> Cancelar
+            </button>
+            <button type="button" class="btn btn-primary" id="btn_start_familias_excel_import" onclick="window.familiasExcelImport.startImport()" disabled>
+               <i class="fa fa-upload"></i> Importar
+            </button>
+            <button type="button" class="btn btn-success" id="btn_finish_familias_excel" style="display: none;" onclick="window.familiasExcelImport.finishAndReload()">
+               <i class="fa fa-check"></i> Cerrar y Recargar
+            </button>
+         </div>
+      </div>
+   </div>
+</div>

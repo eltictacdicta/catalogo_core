@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_tarifas: Tarifas disponibles para precios de artículos
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>nombre</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>activa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>YES</nulo>
+        <defecto>true</defecto>
+    </columna>
+    <columna>
+        <nombre>por_defecto</nombre>
+        <tipo>boolean</tipo>
+        <nulo>YES</nulo>
+        <defecto>false</defecto>
+    </columna>
+    <columna>
+        <nombre>coddivisa</nombre>
+        <tipo>character varying(3)</tipo>
+        <nulo>NO</nulo>
+        <defecto>EUR</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifas_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa)</consulta>
+    </restriccion>
+</tabla>

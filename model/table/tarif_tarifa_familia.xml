@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_tarifa_familia: Configuración de familias por tarifa
+    Permite que cada tarifa tenga su propia estructura de familias
+    (orden, jerarquía, inclusión) mientras las descripciones son compartidas.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>madre</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>capitulo</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <columna>
+        <nombre>nivel</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <columna>
+        <nombre>activa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_familia_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, codfamilia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_familia_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_familia_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

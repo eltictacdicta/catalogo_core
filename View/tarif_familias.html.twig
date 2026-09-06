@@ -1,0 +1,767 @@
+{#
+ # Gestión de Familias del Tarifario
+ # Vista Twig nativa con componentes reutilizables
+ #}
+{% import 'Macro/TarifarioComponents.html.twig' as tarif %}
+
+{% include 'header.html.twig' %}
+
+{# Estilos comunes + específicos de familias #}
+{{ tarif.styles_common() }}
+<style>
+   .familia-row.ui-sortable-helper {
+      background-color: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      border: 1px solid #ddd;
+   }
+   .familia-row.ui-sortable-placeholder {
+      background-color: #e8f4fc;
+      border: 2px dashed #3498db;
+      visibility: visible !important;
+      height: 45px;
+   }
+   .familia-row.sortable-ghost {
+      opacity: 0.4;
+   }
+   .drag-handle {
+      color: #ccc;
+      cursor: move;
+      padding: 5px;
+   }
+   .drag-handle:hover {
+      color: #666;
+   }
+   .btn-familia-action {
+      padding: 2px 8px;
+      font-size: 12px;
+   }
+   .table-familias {
+      margin-bottom: 0;
+   }
+   .table-familias > tbody > tr > td {
+      vertical-align: middle;
+      padding: 10px 8px;
+   }
+   .save-order-bar {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 10px 15px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+      display: none;
+   }
+   .save-order-bar.show {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+   }
+   .btn-level {
+      padding: 2px 6px;
+      font-size: 11px;
+      margin-right: 2px;
+   }
+   .btn-level:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+   }
+   .dragging-group {
+      background-color: #e3f2fd !important;
+   }
+   .level-actions {
+      white-space: nowrap;
+   }
+</style>
+
+{# JavaScript común #}
+{{ tarif.js_common(fsc) }}
+
+<script type="text/javascript">
+   var originalOrder = [];
+   var hasChanges = false;
+   var soloActivas = {% if fsc.b_solo_activas %}true{% else %}false{% endif %};
+   
+   function cambiarTarifa() {
+      var nuevaTarifa = $('#select_tarifa').val();
+      window.location.href = '{{ fsc.url() }}&codtarifa=' + encodeURIComponent(nuevaTarifa) + '&b_solo_activas=' + (soloActivas ? 'TRUE' : 'FALSE');
+   }
+   
+   function showSaveBar() {
+      hasChanges = true;
+      $('.save-order-bar').addClass('show');
+   }
+   
+   function hideSaveBar() {
+      hasChanges = false;
+      $('.save-order-bar').removeClass('show');
+   }
+   
+   function getDescendants(codfamilia) {
+      var descendants = [];
+      $('.familia-row').each(function() {
+         if ($(this).data('madre') == codfamilia) {
+            descendants.push($(this));
+            var childDescendants = getDescendants($(this).data('codfamilia'));
+            descendants = descendants.concat(childDescendants);
+         }
+      });
+      return descendants;
+   }
+   
+   function calculateCapitulo($row, globalIndex) {
+      var madre = $row.data('madre') || null;
+      
+      if (madre === null || madre === '') {
+         var rootCount = 0;
+         $('.familia-row').each(function(i) {
+            if (i >= globalIndex) return false;
+            var m = $(this).data('madre') || null;
+            if (m === null || m === '') {
+               rootCount++;
+            }
+         });
+         return String(rootCount + 1);
+      } else {
+         var madreCapitulo = '';
+         var siblingIndex = 0;
+         
+         $('.familia-row').each(function(i) {
+            var $current = $(this);
+            var currentCod = $current.data('codfamilia');
+            var currentMadre = $current.data('madre') || null;
+            
+            if (currentCod == madre) {
+               madreCapitulo = $current.find('.capitulo-badge').text();
+            }
+            
+            if (i < globalIndex && currentMadre == madre) {
+               siblingIndex++;
+            }
+         });
+         
+         if (madreCapitulo === '') {
+            $('[data-codfamilia="' + madre + '"]').each(function() {
+               madreCapitulo = $(this).find('.capitulo-badge').text();
+            });
+         }
+         
+         return madreCapitulo + '.' + (siblingIndex + 1);
+      }
+   }
+   
+    function saveOrder() {
+       // Usar los niveles recalculados después del drag
+       var order = [];
+       var rows = $('.familia-row').toArray();
+       
+       // Agrupar por nueva madre (new-madre si existe, sino usar la original)
+       var positionByMadre = {};
+       
+       for (var i = 0; i < rows.length; i++) {
+          var $row = $(rows[i]);
+          var codfamilia = $row.data('codfamilia');
+          
+          // Usar new-madre si está disponible (calculado después del drag)
+          var madre = $row.data('new-madre');
+          if (madre === undefined || madre === null) {
+             madre = $row.data('madre') || '';
+          }
+          
+          // Inicializar contador para esta madre
+          if (!positionByMadre[madre]) {
+             positionByMadre[madre] = 0;
+          }
+          positionByMadre[madre]++;
+          
+          order.push({
+             codfamilia: codfamilia,
+             madre: madre,
+             posicion: positionByMadre[madre]
+          });
+       }
+       
+       console.log('Enviando orden:', order);
+       
+       showLoading();
+       $.ajax({
+          type: 'POST',
+          url: baseUrl() + '&action=reorder',
+          data: { order: JSON.stringify(order) },
+          dataType: 'json',
+          success: function(response) {
+             hideLoading();
+             console.log('Respuesta:', response);
+             if (response.success) {
+                hideSaveBar();
+                showMessage(response.message);
+                // Recargar para mostrar los nuevos capítulos
+                setTimeout(function() { location.reload(); }, 500);
+             } else {
+                showMessage('Error: ' + response.error, 'danger');
+             }
+          },
+          error: function(xhr, status, error) {
+             hideLoading();
+             console.error('Error AJAX:', xhr.responseText);
+             showMessage('Error de conexión al guardar el orden.', 'danger');
+          }
+       });
+    }
+   
+   function cancelOrder() {
+      location.reload();
+   }
+   
+   function eliminar_familia(cod, nombre) {
+      bootbox.confirm({
+         message: '¿Eliminar la familia "' + nombre + '" de esta tarifa?<br><br><small class="text-muted">Nota: La familia base no se eliminará, solo su configuración en esta tarifa.</small>',
+         title: '<b>Atención</b>',
+         callback: function(result) {
+            if (result) {
+               window.location.href = baseUrl() + '&delete=' + encodeURIComponent(cod);
+            }
+         }
+      });
+   }
+   
+   function promoverFamilia(codfamilia, nombre) {
+      bootbox.confirm({
+         message: '¿Subir de nivel la familia "' + nombre + '"?',
+         title: '<b>Subir de nivel</b>',
+         callback: function(result) {
+            if (result) {
+               showLoading();
+               $.ajax({
+                  type: 'POST',
+                  url: baseUrl() + '&action=promote',
+                  data: { codfamilia: codfamilia },
+                  dataType: 'json',
+                  success: function(response) {
+                     hideLoading();
+                     if (response.success) {
+                        showMessage(response.message);
+                        setTimeout(function() { location.reload(); }, 1000);
+                     } else {
+                        showMessage(response.error, 'danger');
+                     }
+                  },
+                  error: function() {
+                     hideLoading();
+                     showMessage('Error de conexión', 'danger');
+                  }
+               });
+            }
+         }
+      });
+   }
+   
+   function degradarFamilia(codfamilia, nombre) {
+      bootbox.confirm({
+         message: '¿Bajar de nivel la familia "' + nombre + '"?',
+         title: '<b>Bajar de nivel</b>',
+         callback: function(result) {
+            if (result) {
+               showLoading();
+               $.ajax({
+                  type: 'POST',
+                  url: baseUrl() + '&action=demote',
+                  data: { codfamilia: codfamilia },
+                  dataType: 'json',
+                  success: function(response) {
+                     hideLoading();
+                     if (response.success) {
+                        showMessage(response.message);
+                        setTimeout(function() { location.reload(); }, 1000);
+                     } else {
+                        showMessage(response.error, 'danger');
+                     }
+                  },
+                  error: function() {
+                     hideLoading();
+                     showMessage('Error de conexión', 'danger');
+                  }
+               });
+            }
+         }
+      });
+   }
+   
+   function toggleCatalogo(codfamilia) {
+      $.ajax({
+         type: 'POST',
+         url: baseUrl() + '&action=toggle_catalogo',
+         data: { codfamilia: codfamilia },
+         dataType: 'json',
+         success: function(response) {
+            if (response.success) {
+               var $btn = $('[data-toggle-catalogo="' + codfamilia + '"]');
+               if (response.en_catalogo) {
+                  $btn.removeClass('btn-default').addClass('btn-success');
+                  $btn.find('i').removeClass('fa-eye-slash').addClass('fa-eye');
+               } else {
+                  $btn.removeClass('btn-success').addClass('btn-default');
+                  $btn.find('i').removeClass('fa-eye').addClass('fa-eye-slash');
+               }
+            } else {
+               showMessage(response.error, 'danger');
+            }
+         }
+      });
+   }
+   
+   function toggleEnTarifa(codfamilia) {
+      $.ajax({
+         type: 'POST',
+         url: baseUrl() + '&action=toggle_en_tarifa',
+         data: { codfamilia: codfamilia },
+         dataType: 'json',
+         success: function(response) {
+            if (response.success) {
+               var $btn = $('[data-toggle-en-tarifa="' + codfamilia + '"]');
+               if (response.en_tarifa) {
+                  $btn.removeClass('btn-default').addClass('btn-info');
+                  $btn.find('i').removeClass('fa-file-o').addClass('fa-file-text-o');
+               } else {
+                  $btn.removeClass('btn-info').addClass('btn-default');
+                  $btn.find('i').removeClass('fa-file-text-o').addClass('fa-file-o');
+               }
+            } else {
+               showMessage(response.error, 'danger');
+            }
+         }
+      });
+   }
+   
+   function toggleActiva(codfamilia) {
+      $.ajax({
+         type: 'POST',
+         url: baseUrl() + '&action=toggle_activa',
+         data: { codfamilia: codfamilia },
+         dataType: 'json',
+         success: function(response) {
+            if (response.success) {
+               var $row = $('[data-codfamilia="' + codfamilia + '"]');
+               var $btn = $('[data-toggle-activa="' + codfamilia + '"]');
+               if (response.activa) {
+                  $row.removeClass('inactive');
+                  $btn.removeClass('btn-default').addClass('btn-success');
+                  $btn.find('i').removeClass('fa-ban').addClass('fa-check');
+               } else {
+                  $row.addClass('inactive');
+                  $btn.removeClass('btn-success').addClass('btn-default');
+                  $btn.find('i').removeClass('fa-check').addClass('fa-ban');
+               }
+            } else {
+               showMessage(response.error, 'danger');
+            }
+         }
+      });
+   }
+   
+   function updateCapituloSugerido() {
+      var madre = $('#madre').val() || '';
+      $.ajax({
+         type: 'GET',
+         url: baseUrl() + '&action=get_next_capitulo&madre=' + encodeURIComponent(madre),
+         dataType: 'json',
+         success: function(response) {
+            $('#capitulo').val(response.capitulo);
+         }
+      });
+   }
+   
+   $(document).ready(function() {
+      $('.familia-row').each(function() {
+         originalOrder.push($(this).data('codfamilia'));
+      });
+      
+       $('#familias-tbody').sortable({
+          handle: '.drag-handle',
+          placeholder: 'familia-row ui-sortable-placeholder',
+          helper: function(e, tr) {
+             var $originals = tr.children();
+             var $helper = tr.clone();
+             $helper.children().each(function(index) {
+                $(this).width($originals.eq(index).width());
+             });
+             return $helper;
+          },
+          start: function(event, ui) {
+             var codfamilia = ui.item.data('codfamilia');
+             var descendants = getDescendants(codfamilia);
+             ui.item.data('descendants', descendants);
+             descendants.forEach(function($desc) {
+                $desc.addClass('dragging-group');
+             });
+          },
+          stop: function(event, ui) {
+             var descendants = ui.item.data('descendants') || [];
+             var $lastItem = ui.item;
+             descendants.forEach(function($desc) {
+                $desc.removeClass('dragging-group');
+                $desc.insertAfter($lastItem);
+                $lastItem = $desc;
+             });
+             
+             // Recalcular niveles después del drop
+             recalculateLevels();
+          },
+          update: function(event, ui) {
+             showSaveBar();
+          }
+       });
+       
+       // Función para recalcular los niveles basándose en el orden visual
+       function recalculateLevels() {
+          var stack = []; // Pila de {codfamilia, nivel}
+          var nivel = 0;
+          
+          $('.familia-row').each(function() {
+             var $row = $(this);
+             var rowNivel = parseInt($row.data('nivel') || 0);
+             
+             // Ajustar la pila
+             while (stack.length > 0 && stack[stack.length - 1].nivel >= rowNivel) {
+                stack.pop();
+             }
+             
+             // Si la pila no está vacía, el anterior es el padre
+             if (stack.length > 0) {
+                var padre = stack[stack.length - 1];
+                $row.data('new-madre', padre.codfamilia);
+                $row.data('new-nivel', padre.nivel + 1);
+             } else {
+                $row.data('new-madre', '');
+                $row.data('new-nivel', 0);
+             }
+             
+             // Agregar este elemento a la pila
+             stack.push({ codfamilia: $row.data('codfamilia'), nivel: $row.data('new-nivel') });
+          });
+       }
+      
+      $('#madre').change(function() {
+         updateCapituloSugerido();
+      });
+      
+      $('#add_madre').change(function() {
+         var madre = $(this).val() || '';
+         $.ajax({
+            type: 'GET',
+            url: baseUrl() + '&action=get_next_capitulo&madre=' + encodeURIComponent(madre),
+            dataType: 'json',
+            success: function(response) {
+               $('#add_capitulo_preview').text(response.capitulo);
+            }
+         });
+      });
+   });
+</script>
+
+{# Loading overlay #}
+{{ tarif.loading_overlay() }}
+
+{# Toolbar #}
+{% set extra_buttons = [] %}
+{% if fsc.familias_disponibles|length > 0 %}
+   {% set extra_buttons = [{
+      'modal': 'modal_add_familia',
+      'class': 'btn-success',
+      'icon': 'glyphicon glyphicon-plus',
+      'label': 'Añadir familia'
+   }] %}
+{% endif %}
+
+{# Botones de Excel #}
+{% set extra_buttons = extra_buttons|merge([
+   {'modal': 'modal_exportar_excel_familias', 'icon': 'fa fa-file-excel-o', 'label': 'Exportar Excel', 'class': 'btn-success'},
+   {'modal': 'modal_importar_excel_familias', 'icon': 'fa fa-file-excel-o', 'label': 'Importar Excel', 'class': 'btn-info'},
+   {'onclick': 'descargarPlantillaExcel()', 'icon': 'fa fa-file-o', 'label': 'Plantilla', 'class': 'btn-default'}
+]) %}
+
+{% set right_filter = {} %}
+{% if fsc.b_solo_activas %}
+   {% set right_filter = {
+      'href': fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&b_solo_activas=FALSE',
+      'class': 'btn-info',
+      'icon': 'fa fa-check-circle',
+      'label': 'Solo activas',
+      'title': 'Mostrar todas las familias'
+   } %}
+{% else %}
+   {% set right_filter = {
+      'href': fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&b_solo_activas=TRUE',
+      'class': 'btn-default',
+      'icon': 'fa fa-circle-o',
+      'label': 'Todas',
+      'title': 'Mostrar solo familias activas'
+   } %}
+{% endif %}
+
+{{ tarif.toolbar(fsc, {
+   'show_catalogo_link': true,
+   'extra_buttons': extra_buttons,
+   'right_buttons': [right_filter]
+}) }}
+
+{# Barra de guardar orden #}
+<div class="container-fluid">
+   <div class="save-order-bar">
+      <div>
+         <i class="fa fa-exclamation-triangle text-warning"></i>
+         <strong>Has modificado el orden.</strong> Pulsa "Guardar" para aplicar los cambios.
+      </div>
+      <div>
+         <button type="button" class="btn btn-default btn-sm" onclick="cancelOrder()">
+            <i class="fa fa-times"></i> Cancelar
+         </button>
+         <button type="button" class="btn btn-primary btn-sm" onclick="saveOrder()">
+            <i class="fa fa-save"></i> Guardar orden
+         </button>
+      </div>
+   </div>
+</div>
+
+{# Contenido principal #}
+{% if not fsc.codtarifa %}
+<div class="container-fluid">
+   <div class="alert alert-warning">
+      <i class="fa fa-exclamation-triangle"></i>
+      No hay tarifas definidas. <a href="index.php?page=tarif_tarifas">Crear una tarifa</a> primero.
+   </div>
+</div>
+{% else %}
+<div class="container-fluid">
+   <div class="panel panel-default">
+      <div class="panel-heading">
+         <h4 class="panel-title">
+            <i class="fa fa-folder-open-o"></i> Familias de: <strong>{{ fsc.get_tarifa_actual().nombre }}</strong>
+            <small class="text-muted">&nbsp;- Arrastra para reordenar</small>
+         </h4>
+      </div>
+      <div class="table-responsive">
+         <table class="table table-familias">
+            <thead>
+               <tr>
+                  <th style="width: 40px;"></th>
+                  <th style="width: 80px;">Capítulo</th>
+                  <th>Nombre</th>
+                  <th style="width: 80px;" class="text-center">Nivel</th>
+                  <th style="width: 70px;" class="text-center" title="Artículos">Art.</th>
+                  <th style="width: 60px;" class="text-center" title="En catálogo">Cat.</th>
+                  <th style="width: 60px;" class="text-center" title="En tarifa (exportación)">Tar.</th>
+                  <th style="width: 60px;" class="text-center" title="Activa">Act.</th>
+                  <th style="width: 100px;" class="text-right">Acciones</th>
+               </tr>
+            </thead>
+            <tbody id="familias-tbody">
+               {% for fam in fsc.get_familias_flat() %}
+               {{ tarif.familia_item_row(fam, fsc, {'show_drag': true, 'show_nivel_buttons': true}) }}
+               {% else %}
+               <tr class="warning">
+                  <td colspan="9">
+                     No hay familias en esta tarifa.
+                     {% if fsc.familias_disponibles|length > 0 %}
+                     <a href="#" data-toggle="modal" data-target="#modal_add_familia">Añadir familias</a>
+                     {% else %}
+                     <a href="index.php?page=ventas_familias">Crear familias primero</a>
+                     {% endif %}
+                  </td>
+               </tr>
+               {% endfor %}
+            </tbody>
+         </table>
+      </div>
+   </div>
+</div>
+{% endif %}
+
+{# Modal Editar Familia (popup) #}
+{% if fsc.editing_familia %}
+{% set close_url = fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa %}
+<form class="form-horizontal" role="form" action="{{ close_url }}" method="post">
+   <input type="hidden" name="save_familia" value="1"/>
+   <input type="hidden" name="codfamilia" value="{{ fsc.editing_familia.codfamilia }}"/>
+   
+   {{ tarif.modal_popup_start('modal_editar_familia', '<i class="fa fa-folder-open-o"></i> Editar: ' ~ fsc.editing_familia.descripcion, close_url) }}
+   <div class="modal-body">
+      <div class="form-group">
+         <label class="col-sm-3 control-label">Código</label>
+         <div class="col-sm-9">
+            <p class="form-control-static"><b>{{ fsc.editing_familia.codfamilia }}</b></p>
+         </div>
+      </div>
+      <div class="form-group">
+         <label class="col-sm-3 control-label">Descripción</label>
+         <div class="col-sm-9">
+            <input class="form-control" type="text" name="descripcion"
+                   value="{{ fsc.editing_familia.descripcion }}"
+                   maxlength="100" required/>
+            <p class="help-block text-muted">Este cambio actualiza la descripción de la familia base.</p>
+         </div>
+      </div>
+      <div class="form-group">
+         <label class="col-sm-3 control-label">Familia madre</label>
+         <div class="col-sm-9">
+            <select class="form-control" name="madre" id="madre">
+               <option value="">-- Raíz (sin madre) --</option>
+               {% for posible_madre in fsc.get_posibles_madres(fsc.editing_familia.codfamilia) %}
+               <option value="{{ posible_madre.codfamilia }}" {% if posible_madre.codfamilia == fsc.editing_familia.madre %}selected{% endif %}>
+                  {{ posible_madre.nivel }}{{ posible_madre.descripcion }}
+               </option>
+               {% endfor %}
+            </select>
+         </div>
+      </div>
+      <div class="form-group">
+         <label class="col-sm-3 control-label">Capítulo</label>
+         <div class="col-sm-9">
+            <input class="form-control" type="text" name="capitulo" id="capitulo"
+                   value="{{ fsc.editing_familia.capitulo }}" 
+                   maxlength="20" placeholder="Ej: 1, 1.1, 2"/>
+         </div>
+      </div>
+      <div class="form-group">
+         <label class="col-sm-3 control-label">Visibilidad</label>
+         <div class="col-sm-9">
+            {{ tarif.toggle_button_group(fsc.editing_familia, {'show_catalogo': true, 'show_en_tarifa': true, 'show_activa': true}) }}
+            <p class="help-block text-muted" style="margin-top: 10px;">
+               <small>"En tarifa" marca las familias que se incluirán al exportar la tarifa para clientes.</small>
+            </p>
+         </div>
+      </div>
+      <div class="form-group">
+         <label class="col-sm-3 control-label">Etiquetas</label>
+         <div class="col-sm-9">
+            <input class="form-control" type="text" name="etiquetas"
+                   value="{{ fsc.get_etiquetas_familia_text(fsc.editing_familia.codfamilia) }}"
+                   placeholder="Ej: sobredimensionado, premium, outlet"/>
+            <p class="help-block text-muted" style="margin-top: 8px;">
+               <small>Separa por comas. Las etiquetas se aplican solo a esta familia en esta tarifa; el mismo nombre puede repetirse en otras familias sin relación.</small>
+            </p>
+            {% set etiquetas_full = fsc.get_etiquetas_familia_full(fsc.editing_familia.codfamilia) %}
+            {% if etiquetas_full|length > 0 %}
+            <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px;">
+               <label style="font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; display: block;">
+                  <i class="fa fa-eye"></i> Visibilidad en catálogo agrupado
+               </label>
+               <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">
+                  Marca las etiquetas cuyo nombre debe mostrarse como encabezado en la vista agrupada del catálogo.
+               </p>
+               {% for tag in etiquetas_full %}
+               <label style="display: inline-flex; align-items: center; margin-right: 12px; margin-bottom: 4px; font-weight: normal; cursor: pointer;">
+                  <input type="checkbox" name="etiqueta_visible[]" value="{{ tag.etiqueta }}"
+                         {% if tag.visible %}checked{% endif %}
+                         style="margin-right: 5px;">
+                  <span style="font-size: 13px;">{{ tag.etiqueta }}</span>
+               </label>
+               {% endfor %}
+            </div>
+            {% endif %}
+         </div>
+      </div>
+   </div>
+   {{ tarif.modal_popup_end(close_url, 'Guardar') }}
+</form>
+<script>
+   $(document).keyup(function(e) {
+      if (e.key === "Escape") {
+         window.location.href = '{{ close_url }}';
+      }
+   });
+   $('#modal_editar_familia').on('click', function(e) {
+      if ($(e.target).is('.modal-popup-overlay')) {
+         window.location.href = '{{ close_url }}';
+      }
+   });
+</script>
+{% endif %}
+
+{# Modal Añadir Familia #}
+{% if fsc.familias_disponibles|length > 0 %}
+<form class="form-horizontal" role="form" action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}" method="post">
+   <input type="hidden" name="add_familia" value="1"/>
+   
+   <div class="modal fade" id="modal_add_familia">
+      <div class="modal-dialog">
+         <div class="modal-content">
+            <div class="modal-header">
+               <button type="button" class="close" data-dismiss="modal">&times;</button>
+               <h4 class="modal-title">
+                  <i class="fa fa-plus"></i> Añadir familia a la tarifa
+               </h4>
+            </div>
+            <div class="modal-body">
+               <div class="form-group">
+                  <label class="col-sm-3 control-label">Familia</label>
+                  <div class="col-sm-9">
+                     <select class="form-control" name="codfamilia" required>
+                        <option value="">-- Seleccionar --</option>
+                        {% for fam_disp in fsc.familias_disponibles %}
+                        <option value="{{ fam_disp.codfamilia }}">{{ fam_disp.descripcion }} ({{ fam_disp.codfamilia }})</option>
+                        {% endfor %}
+                     </select>
+                  </div>
+               </div>
+               <div class="form-group">
+                  <label class="col-sm-3 control-label">Familia madre</label>
+                  <div class="col-sm-9">
+                     <select class="form-control" name="madre" id="add_madre">
+                        <option value="">-- Raíz (sin madre) --</option>
+                        {% for fam_flat in fsc.get_familias_flat() %}
+                        <option value="{{ fam_flat.codfamilia }}">{{ fam_flat.nivel }}{{ fam_flat.descripcion }}</option>
+                        {% endfor %}
+                     </select>
+                  </div>
+               </div>
+               <div class="form-group">
+                  <label class="col-sm-3 control-label">Capítulo</label>
+                  <div class="col-sm-9">
+                     <p class="form-control-static">
+                        Se asignará automáticamente: <strong id="add_capitulo_preview">1</strong>
+                     </p>
+                  </div>
+               </div>
+            </div>
+            <div class="modal-footer">
+               <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+               <button class="btn btn-primary" type="submit">
+                  <span class="glyphicon glyphicon-plus"></span>&nbsp; Añadir
+               </button>
+            </div>
+         </div>
+      </div>
+   </div>
+</form>
+{% endif %}
+
+{# Modales de importación/exportación Excel #}
+{% if fsc.codtarifa %}
+{# Meta tag CSRF para peticiones AJAX #}
+{{ csrf_meta() }}
+
+{# Resumable.js para subida por chunks #}
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/resumablejs@1.1.0/resumable.min.js"></script>
+
+{# Configuración para los módulos JS #}
+<script type="text/javascript">
+window.familiasConfig = {
+    codtarifa: '{{ fsc.codtarifa }}',
+    baseUrl: '{{ fsc.url() }}'
+};
+
+function descargarPlantillaExcel() {
+    window.location.href = baseUrl() + '&action=export_excel_template';
+}
+</script>
+
+{# Cargar módulos JS de familias #}
+<script type="module" src="plugins/catalogo_core/View/js/familias/index.js"></script>
+
+{# Modal Exportar Excel #}
+{% include 'partials/familias/modal_exportar_excel.html.twig' %}
+
+{# Modal Importar Excel #}
+{% include 'partials/familias/modal_importar_excel.html.twig' %}
+{% endif %}
+
+{% include 'footer.html.twig' %}
