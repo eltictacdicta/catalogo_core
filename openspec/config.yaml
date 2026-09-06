@@ -1,15 +1,55 @@
+# OpenSpec — plugin catalogo_core
+# Canonical model: plugins/tarifario/openspec/config.yaml
+# Initialized: 2026-09-05
+
 project: catalogo-core-plugin
 scope: plugins/catalogo_core/
 parent_project: fs-framework
+parent_openspec: ../../openspec/   # reference only, NOT a tracker — never create changes here
+artifact_store: openspec
+
+# =============================================================================
+# OpenSpec per plugin — this is the ONLY SDD location for the plugin.
+# =============================================================================
+# Project architectural rule (see AGENTS.md -> "OpenSpec per Plugin"):
+#
+#   - Plugin openspec (this file): source of truth for ALL plugin SDD
+#     artifacts (proposal, specs, tasks, verify-report, archive-report).
+#
+#   - Core openspec (../../openspec/): ONLY for changes touching core code
+#     (base/, src/, root controller/, root model/, or cross-plugin
+#     conventions).
+#
+#   - NEVER create entries in core openspec for changes that are 100%
+#     internal to this plugin. The core must stay clean of plugin remains.
+# =============================================================================
+
 ownership: plugin-local
 change_root: plugins/catalogo_core/openspec/changes/{name}/
 archive_root: plugins/catalogo_core/openspec/changes/archive/{YYYY-MM-DD}-{name}/
 
 context: >
-  Plugin core de catálogo (artículos, familias, fabricantes). SDD interno al plugin.
+  Core catalog plugin (articulos, familias, fabricantes) for FSFramework.
+  All plugin-internal SDD lifecycle artifacts live in this tree. Reference
+  the core openspec/ only when a change touches framework services or
+  cross-plugin conventions. Consumers (e.g. tarifario) depend on this
+  plugin; the dependency direction is consumer -> catalogo_core.
 
 strict_tdd: true
 
 testing:
   runner: ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml
-  plugin_tests: true
+  plugin_tests: true  # PHPUnit suite under plugins/catalogo_core/tests/
+  linter: ddev exec composer phpstan
+
+phase_rules:
+  proposal: require intent, scope, and approach before spec/design
+  spec: use delta specs under changes/<name>/specs/
+  tasks: break into implementation units with dependencies
+  apply: implement tasks; run plugin suite + root PHPUnit for regression
+  verify: grep audit + phpstan + manual smoke checklist
+  archive: >
+    Sync delta specs into openspec/specs/ (this plugin's specs/) and move
+    the change dir to changes/archive/YYYY-MM-DD-<name>/ inside THIS
+    plugin's archive/, never the core's. See AGENTS.md
+    "OpenSpec per Plugin (SDD ownership)" for the full convention.
