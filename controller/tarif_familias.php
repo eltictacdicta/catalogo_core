@@ -182,13 +182,13 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
                 $this->action_demote();
                 break;
             case 'toggle_catalogo':
-                $this->action_toggle('toggle_catalogo');
+                $this->action_toggle('ajax_toggle_catalogo');
                 break;
             case 'toggle_en_tarifa':
-                $this->action_toggle('toggle_en_tarifa');
+                $this->action_toggle('ajax_toggle_en_tarifa');
                 break;
             case 'toggle_activa':
-                $this->action_toggle('toggle_activa');
+                $this->action_toggle('ajax_toggle_activa');
                 break;
             case 'delete':
                 $this->delete_familia();
@@ -202,6 +202,17 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     // ------------------------------------------------------------------
     // Fragment actions
     // ------------------------------------------------------------------
+
+    /**
+     * PRG fallback target — list URL with the current tarifa selected.
+     */
+    protected function listUrl(): string
+    {
+        $url = $this->url();
+        return $this->codtarifa
+            ? $url . '&codtarifa=' . urlencode($this->codtarifa)
+            : $url;
+    }
 
     /**
      * Server-authoritative reorder — accepts flat JSON array of codes,
@@ -381,6 +392,11 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
         if ($result['success']) {
             $this->new_message('Familia actualizada.');
+            if (!$this->requireHtmx()) {
+                // No-htmx fallback: full POST + PRG redirect (CRD-02).
+                header('Location: ' . $this->listUrl());
+                exit;
+            }
             // Re-fetch the updated model for the row fragment
             $codfamilia = $_POST['codfamilia'] ?? '';
             $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
@@ -391,6 +407,10 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             }
         } else {
             $this->new_error_msg($result['error'] ?? 'Error al guardar.');
+            if (!$this->requireHtmx()) {
+                header('Location: ' . $this->listUrl());
+                exit;
+            }
             $this->noContentWithFlash();
         }
     }
