@@ -1,0 +1,132 @@
+{#
+ # Single row partial for tarif_familias table.
+ # Rendered both in initial page load and as fragment responses.
+ # Expects: row (tarif_tarifa_familia object with nivel_visual, nivel_tree),
+ #          fsc (controller instance)
+ #}
+{% set nivel = row.nivel_visual|default(row.nivel_tree|default(0)) %}
+<tr class="familia-row nivel-{{ nivel }} {% if not row.activa %}inactive{% endif %}"
+    data-codfamilia="{{ row.codfamilia }}"
+    data-madre="{{ row.madre|default('') }}"
+    data-nivel="{{ nivel }}">
+   <td>
+      <span class="drag-handle">
+         <i class="fa fa-bars"></i>
+      </span>
+   </td>
+   <td>
+      <span class="capitulo-badge">{{ row.capitulo }}</span>
+   </td>
+   <td class="familia-name">
+      <span class="familia-indent-markers">
+         {% if nivel > 0 %}
+         {% for i in 1..nivel %}
+         <span class="familia-indent">&mdash;</span>
+         {% endfor %}
+         {% endif %}
+      </span>
+      {% if row.madre %}
+      <i class="fa fa-folder-o familia-icon"></i>
+      {% else %}
+      <i class="fa fa-folder familia-icon"></i>
+      {% endif %}
+      <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ row.codfamilia }}">
+         {{ row.descripcion }}
+      </a>
+      <small class="text-muted">({{ row.codfamilia }})</small>
+   </td>
+   <td class="text-center level-actions">
+      <form method="post"
+            action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=promote"
+            hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=promote"
+            hx-target="closest tr" hx-swap="outerHTML"
+            data-fs-csrf-strip>
+         {{ csrf_field() }}
+         <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
+         <button type="submit" class="btn btn-default btn-level"
+                 title="Subir de nivel" {% if not row.madre %}disabled{% endif %}>
+            <i class="fa fa-outdent"></i>
+         </button>
+      </form>
+      <form method="post"
+            action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=demote"
+            hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=demote"
+            hx-target="closest tr" hx-swap="outerHTML"
+            data-fs-csrf-strip>
+         {{ csrf_field() }}
+         <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
+         <button type="submit" class="btn btn-default btn-level"
+                 title="Bajar de nivel">
+            <i class="fa fa-indent"></i>
+         </button>
+      </form>
+   </td>
+   <td class="text-center">
+      <span class="count-badge">{{ fsc.count_articulos(row.codfamilia) }}</span>
+   </td>
+   <td class="text-center">
+      <form method="post"
+            action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=toggle_catalogo"
+            hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=toggle_catalogo"
+            hx-target="closest tr" hx-swap="outerHTML"
+            data-fs-csrf-strip>
+         {{ csrf_field() }}
+         <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
+         <button type="submit"
+                 class="btn btn-xs status-toggle {% if row.en_catalogo %}btn-success{% else %}btn-default{% endif %}"
+                 title="{% if row.en_catalogo %}En catálogo{% else %}Oculta del catálogo{% endif %}">
+            <i class="fa {% if row.en_catalogo %}fa-eye{% else %}fa-eye-slash{% endif %}"></i>
+         </button>
+      </form>
+   </td>
+   <td class="text-center">
+      <form method="post"
+            action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=toggle_en_tarifa"
+            hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=toggle_en_tarifa"
+            hx-target="closest tr" hx-swap="outerHTML"
+            data-fs-csrf-strip>
+         {{ csrf_field() }}
+         <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
+         <button type="submit"
+                 class="btn btn-xs status-toggle {% if row.en_tarifa %}btn-info{% else %}btn-default{% endif %}"
+                 title="{% if row.en_tarifa %}Incluida en exportación{% else %}No incluida{% endif %}">
+            <i class="fa {% if row.en_tarifa %}fa-file-text-o{% else %}fa-file-o{% endif %}"></i>
+         </button>
+      </form>
+   </td>
+   <td class="text-center">
+      <form method="post"
+            action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=toggle_activa"
+            hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=toggle_activa"
+            hx-target="closest tr" hx-swap="outerHTML"
+            data-fs-csrf-strip>
+         {{ csrf_field() }}
+         <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
+         <button type="submit"
+                 class="btn btn-xs status-toggle {% if row.activa %}btn-success{% else %}btn-default{% endif %}"
+                 title="{% if row.activa %}Activa{% else %}Inactiva{% endif %}">
+            <i class="fa {% if row.activa %}fa-check{% else %}fa-ban{% endif %}"></i>
+         </button>
+      </form>
+   </td>
+   <td class="text-right">
+      <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ row.codfamilia }}"
+         class="btn btn-xs btn-default" title="Editar">
+         <i class="fa fa-pencil"></i>
+      </a>
+      {% if fsc.allow_delete %}
+      <form method="post"
+            action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=delete"
+            hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=delete"
+            hx-confirm="¿Eliminar la familia &quot;{{ row.descripcion }}&quot; de esta tarifa?"
+            hx-target="#familias-tbody" hx-swap="outerHTML"
+            data-fs-csrf-strip>
+         {{ csrf_field() }}
+         <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
+         <button type="submit" class="btn btn-xs btn-danger" title="Quitar de tarifa">
+            <i class="fa fa-trash"></i>
+         </button>
+      </form>
+      {% endif %}
+   </td>
+</tr>

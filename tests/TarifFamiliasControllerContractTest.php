@@ -90,9 +90,9 @@ final class TarifFamiliasControllerContractTest extends TestCase
     {
         $src = $this->controllerSource();
         $this->assertMatchesRegularExpression(
-            '/class tarif_familias extends fbase_controller\b/',
+            '/class tarif_familias extends \\\\FSFramework\\\\Controller\\\\HtmxCrudController\b/',
             $src,
-            'The moved controller must extend fbase_controller (design D1)'
+            'The pilot controller must extend HtmxCrudController (design D1)'
         );
         $this->assertDoesNotMatchRegularExpression('/extends tarif_controller\b/', $src);
     }

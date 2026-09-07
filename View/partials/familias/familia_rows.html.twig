@@ -1,0 +1,21 @@
+{#
+ # Rows partial — renders multiple familia rows inside a tbody.
+ # Used by renderTbodyFragment for structural changes (save, add, delete, reorder).
+ # Expects: rows (array of familia objects), fsc (controller instance)
+ #}
+<tbody id="familias-tbody">
+   {% for fam in rows %}
+   {% include 'partials/familias/familia_row.html.twig' with {row: fam, fsc: fsc} %}
+   {% else %}
+   <tr class="warning">
+      <td colspan="9">
+         No hay familias en esta tarifa.
+         {% if fsc.familias_disponibles|length > 0 %}
+         <a href="#" data-toggle="modal" data-target="#modal_add_familia">Añadir familias</a>
+         {% else %}
+         <a href="index.php?page=ventas_familia">Crear familias primero</a>
+         {% endif %}
+      </td>
+   </tr>
+   {% endfor %}
+</tbody>

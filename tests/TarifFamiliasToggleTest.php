@@ -268,14 +268,14 @@ final class TarifFamiliasToggleTest extends TestCase
         $this->assertArrayHasKey('error', $result);
     }
 
-    public function test_process_action_json_encodes_toggle_actions(): void
+    public function test_process_action_dispatches_toggle_actions(): void
     {
         $src = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_PATH);
-        foreach (['ajax_toggle_catalogo', 'ajax_toggle_en_tarifa', 'ajax_toggle_activa'] as $toggle) {
+        foreach (['toggle_catalogo', 'toggle_en_tarifa', 'toggle_activa'] as $toggle) {
             $this->assertStringContainsString(
-                'echo json_encode($this->' . $toggle . '())',
+                "case '" . $toggle . "'",
                 $src,
-                $toggle . ' must be JSON-encoded by process_action — the no-HTML guarantee'
+                $toggle . ' must be registered in the action dispatch switch'
             );
         }
     }
