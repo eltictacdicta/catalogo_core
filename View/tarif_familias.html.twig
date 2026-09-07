@@ -4,16 +4,20 @@
  #}
 {% import 'Macro/TarifarioComponents.html.twig' as tarif %}
 {% import 'Macro/HtmxCrud.html.twig' as crud %}
+{% import 'Macro/Htmx.html.twig' as htmx %}
 
 {% include 'header.html.twig' %}
 
+{# htmx core boot (htmx.min.js) — htmx-crud.js expects window.htmx to be present #}
+{{ htmx.boot() }}
 {# HTMX CRUD boot — loads Sortable, fs-dialogs, htmx-crud.js #}
 {{ crud.boot({
    sortable: {
       tbody: '#familias-tbody',
       url: fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&action=reorder',
       handle: '.drag-handle',
-      guard: 'same-madre'
+      guard: 'same-madre',
+      saveBar: 'familias'
    }
 }) }}
 
@@ -123,7 +127,7 @@
 {# Save order bar #}
 <div class="container-fluid">
    {{ crud.saveBar('familias', {
-      url: fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&action=reorder'
+      saveUrl: fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&action=reorder'
    }) }}
 </div>
 

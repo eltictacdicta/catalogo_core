@@ -609,12 +609,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             $this->new_message('Familia guardada correctamente.');
 
             if ($this->requireHtmx()) {
-                $this->renderTbodyFragment($this->get_familias_flat());
-                // Signal modal close via HX-Trigger (appended to flash payload)
-                header('HX-Trigger: ' . json_encode([
-                    'fs:flash' => $this->flashPayload(),
-                    'fs:modal-close' => [],
-                ], JSON_UNESCAPED_UNICODE));
+                $this->renderTbodyFragment($this->get_familias_flat(), ['events' => ['fs:modal-close' => []]]);
             } else {
                 header('Location: ' . $this->listUrl());
                 exit;
@@ -669,11 +664,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         if ($tf) {
             $this->new_message('Familia añadida a la tarifa correctamente.');
             if ($this->requireHtmx()) {
-                $this->renderTbodyFragment($this->get_familias_flat());
-                header('HX-Trigger: ' . json_encode([
-                    'fs:flash' => $this->flashPayload(),
-                    'fs:modal-close' => [],
-                ], JSON_UNESCAPED_UNICODE));
+                $this->renderTbodyFragment($this->get_familias_flat(), ['events' => ['fs:modal-close' => []]]);
             } else {
                 header('Location: ' . $this->listUrl());
                 exit;

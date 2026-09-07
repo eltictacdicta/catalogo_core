@@ -39,7 +39,7 @@
       <form method="post"
             action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=promote"
             hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=promote"
-            hx-target="closest tr" hx-swap="outerHTML"
+            hx-target="#familias-tbody" hx-swap="outerHTML"
             data-fs-csrf-strip>
          {{ csrf_field() }}
          <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
@@ -51,7 +51,7 @@
       <form method="post"
             action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=demote"
             hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=demote"
-            hx-target="closest tr" hx-swap="outerHTML"
+            hx-target="#familias-tbody" hx-swap="outerHTML"
             data-fs-csrf-strip>
          {{ csrf_field() }}
          <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
