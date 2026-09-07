@@ -23,6 +23,7 @@ require_once 'plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
 use FSFramework\model\tarif_tarifa_familia;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa;
+use FSFramework\Plugins\catalogo_core\Services\TarifaFamiliaReorder;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -168,6 +169,9 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         }
 
         switch ($action) {
+            case 'reorder':
+                $this->action_reorder();
+                break;
             case 'get_next_capitulo':
                 $this->action_get_next_capitulo();
                 break;
@@ -200,6 +204,46 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     // ------------------------------------------------------------------
 
     /**
+     * Server-authoritative reorder — accepts flat JSON array of codes,
+     * validates permutation, recomputes chapters, saves only changed rows.
+     */
+    private function action_reorder(): void
+    {
+        $orderRaw = $_POST['order'] ?? '[]';
+        $flatCodes = json_decode($orderRaw, true);
+        if (!is_array($flatCodes)) {
+            $this->new_error_msg('Payload de orden inválido.');
+            $this->noContentWithFlash();
+            return;
+        }
+
+        // Build current madre map from DB
+        $allFamilias = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $madreByCode = [];
+        foreach ($allFamilias as $fam) {
+            $madreByCode[$fam->codfamilia] = $fam->madre;
+        }
+
+        $result = TarifaFamiliaReorder::plan($flatCodes, $madreByCode);
+
+        if (!$result['ok']) {
+            $this->new_error_msg('Error en el orden: ' . $result['error']);
+            $this->noContentWithFlash();
+            return;
+        }
+
+        if ($this->tarifa_familia->apply_chapter_map($this->codtarifa, $result['chapters'])) {
+            $this->new_message('Orden guardado correctamente.');
+            // Reload tree and render full tbody with fresh data
+            $this->load_familias_tree();
+            $this->renderTbodyFragment($this->get_familias_flat());
+        } else {
+            $this->new_error_msg('Error al guardar el orden.');
+            $this->noContentWithFlash();
+        }
+    }
+
+    /**
      * GET next capítulo preview — returns a <span> fragment.
      */
     private function action_get_next_capitulo(): void
@@ -217,7 +261,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     /**
      * Promote — moves a familia up one level (to its grandmother).
-     * Kept-intact private logic, wrapped with renderRowFragment.
+     * Re-derives flatOrder and madreMap server-side, reuses plan().
      */
     private function action_promote(): void
     {
@@ -249,22 +293,29 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         }
 
         $fam->madre = $nueva_madre;
-        $fam->capitulo = $this->tarifa_familia->suggest_capitulo($this->codtarifa, $nueva_madre);
+        $fam->save();
 
-        if ($fam->save()) {
-            $this->recalculate_children_capitulos($fam->codfamilia, $fam->capitulo);
-            $this->new_message('Familia promovida correctamente.');
-            // Reload to get fresh data after structural change
-            $this->renderTbodyFragment($this->get_familias_flat());
-        } else {
-            $this->new_error_msg('Error al guardar los cambios.');
-            $this->noContentWithFlash();
+        // Re-derive the full order and structure server-side
+        $allFamilias = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $flatOrder = array_map(fn($f) => $f->codfamilia, $allFamilias);
+        $madreMapAfter = [];
+        foreach ($allFamilias as $f) {
+            $madreMapAfter[$f->codfamilia] = $f->madre;
         }
+
+        $result = TarifaFamiliaReorder::plan($flatOrder, $madreMapAfter);
+        if ($result['ok']) {
+            $this->tarifa_familia->apply_chapter_map($this->codtarifa, $result['chapters']);
+        }
+
+        $this->new_message('Familia promovida correctamente.');
+        $this->load_familias_tree();
+        $this->renderTbodyFragment($this->get_familias_flat());
     }
 
     /**
      * Demote — moves a familia down one level (child of previous sibling).
-     * Kept-intact private logic, wrapped with renderTbodyFragment.
+     * Re-derives flatOrder and madreMap server-side, reuses plan().
      */
     private function action_demote(): void
     {
@@ -299,16 +350,24 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         }
 
         $fam->madre = $hermano_anterior->codfamilia;
-        $fam->capitulo = $this->tarifa_familia->suggest_capitulo($this->codtarifa, $hermano_anterior->codfamilia);
+        $fam->save();
 
-        if ($fam->save()) {
-            $this->recalculate_children_capitulos($fam->codfamilia, $fam->capitulo);
-            $this->new_message('Familia degradada correctamente.');
-            $this->renderTbodyFragment($this->get_familias_flat());
-        } else {
-            $this->new_error_msg('Error al guardar los cambios.');
-            $this->noContentWithFlash();
+        // Re-derive the full order and structure server-side
+        $allFamilias = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $flatOrder = array_map(fn($f) => $f->codfamilia, $allFamilias);
+        $madreMapAfter = [];
+        foreach ($allFamilias as $f) {
+            $madreMapAfter[$f->codfamilia] = $f->madre;
         }
+
+        $result = TarifaFamiliaReorder::plan($flatOrder, $madreMapAfter);
+        if ($result['ok']) {
+            $this->tarifa_familia->apply_chapter_map($this->codtarifa, $result['chapters']);
+        }
+
+        $this->new_message('Familia degradada correctamente.');
+        $this->load_familias_tree();
+        $this->renderTbodyFragment($this->get_familias_flat());
     }
 
     /**
@@ -432,18 +491,6 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             }
         }
         return $siblings;
-    }
-
-    private function recalculate_children_capitulos($codfamilia, $parent_capitulo)
-    {
-        $hijas = $this->tarifa_familia->hijas($this->codtarifa, $codfamilia);
-        $index = 1;
-        foreach ($hijas as $hija) {
-            $hija->capitulo = $parent_capitulo . '.' . $index;
-            $hija->save();
-            $this->recalculate_children_capitulos($hija->codfamilia, $hija->capitulo);
-            $index++;
-        }
     }
 
     private function load_familias_tree()

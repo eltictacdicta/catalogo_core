@@ -835,4 +835,26 @@ class tarif_tarifa_familia extends \fs_model
 
         return false;
     }
+
+    /**
+     * Apply a chapter map — saves only rows whose capitulo actually changed.
+     *
+     * @param string $codtarifa
+     * @param array<string, string> $chapters  codfamilia => new capitulo
+     * @return bool true if all changes saved successfully
+     */
+    public function apply_chapter_map(string $codtarifa, array $chapters): bool
+    {
+        $allSaved = true;
+        foreach ($chapters as $codfamilia => $newCapitulo) {
+            $fam = $this->get($codtarifa, $codfamilia);
+            if ($fam && $fam->capitulo !== $newCapitulo) {
+                $fam->capitulo = $newCapitulo;
+                if (!$fam->save()) {
+                    $allSaved = false;
+                }
+            }
+        }
+        return $allSaved;
+    }
 }
