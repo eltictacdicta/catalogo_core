@@ -76,6 +76,21 @@ final class TarifaFamiliaReorderTest extends TestCase
         ], $result['chapters']);
     }
 
+    public function test_numeric_code_keys_are_not_cast_to_int(): void
+    {
+        // Regression: PHP casts numeric-string array keys to int. A madre map
+        // keyed by '14164907' must not make plan() compare ints against the
+        // string codes coming from the JSON payload (CRD-03).
+        $numeric = '14164907';
+        $flatCodes = [$numeric, 'A'];
+        $madreByCode = [$numeric => null, 'A' => $numeric];
+
+        $result = TarifaFamiliaReorder::plan($flatCodes, $madreByCode);
+
+        $this->assertTrue($result['ok'], $result['error'] ?? '');
+        $this->assertSame([$numeric => '1', 'A' => '1.1'], $result['chapters']);
+    }
+
     public function test_reorder_changes_chapters_but_preserves_structure(): void
     {
         // B moves before A in the flat list — B gets chapter 1, A gets 2

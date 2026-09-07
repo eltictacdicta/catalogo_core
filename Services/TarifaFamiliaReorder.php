@@ -40,8 +40,17 @@ final class TarifaFamiliaReorder
      */
     public static function plan(array $flatCodes, array $madreByCode): array
     {
+        // PHP casts numeric-string array keys to int (e.g. '14164907' -> 14164907).
+        // Stringify the map keys up front so every comparison, madre lookup and
+        // chapter-map key stays a string for the whole pipeline.
+        $madreByCode = array_combine(
+            array_map('strval', array_keys($madreByCode)),
+            array_values($madreByCode)
+        );
+
         // 1. Permutation validation — non-empty, set-equal, no duplicates
-        $codes = array_keys($madreByCode);
+        $codes = array_map('strval', array_keys($madreByCode));
+        $flatCodes = array_map('strval', $flatCodes);
         $flatSet = array_values(array_unique($flatCodes));
 
         if (empty($flatCodes)) {
@@ -65,7 +74,10 @@ final class TarifaFamiliaReorder
         }
 
         // 2. Structure sanity — every madre resolves inside the set, cycle detection
-        foreach ($madreByCode as $cod => $madre) {
+        // NB: madre map keys for numeric codes are ints (PHP key cast); cast
+        // back to string on every iteration so lookups stay consistent.
+        foreach ($madreByCode as $codKey => $madre) {
+            $cod = (string) $codKey;
             if ($madre !== null && !array_key_exists($madre, $madreByCode)) {
                 return ['ok' => false, 'error' => "Unknown madre reference '$madre' for code '$cod'", 'chapters' => []];
             }
@@ -91,7 +103,8 @@ final class TarifaFamiliaReorder
             return false;
         };
 
-        foreach ($madreByCode as $cod => $_) {
+        foreach ($madreByCode as $codKey => $_) {
+            $cod = (string) $codKey;
             if (isset($visited[$cod])) {
                 continue;
             }
@@ -113,7 +126,8 @@ final class TarifaFamiliaReorder
             }
         }
         // Also include codes not in flatCodes (untouched descendants)
-        foreach ($madreByCode as $cod => $madre) {
+        foreach ($madreByCode as $codKey => $madre) {
+            $cod = (string) $codKey;
             $key = $madre ?? '__ROOT__';
             $childrenByMadre[$key] = $childrenByMadre[$key] ?? [];
             if (!in_array($cod, $childrenByMadre[$key], true)) {
