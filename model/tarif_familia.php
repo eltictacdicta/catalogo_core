@@ -22,6 +22,11 @@ require_once 'plugins/catalogo_core/model/core/familia.php';
 
 /**
  * Familia/Categoría de artículos del tarifario.
+ *
+ * @deprecated Read-only wrapper over familias rows hydrated with historical
+ * tarif_familia_ext columns. Write operations have been removed — use
+ * \FSFramework\model\familia + tarif_tarifa_familia for all writes.
+ *
  * Extiende la familia base usando tabla separada (tarif_familia_ext)
  * para añadir campos de capítulo y nivel sin modificar la tabla original.
  */
@@ -50,64 +55,6 @@ class tarif_familia extends \FSFramework\model\familia
         } else {
             $this->capitulo = '';
         }
-    }
-
-    /**
-     * Carga los datos de extensión desde tarif_familia_ext.
-     */
-    protected function load_extension()
-    {
-        if (!is_null($this->codfamilia)) {
-            $data = $this->db->select("SELECT * FROM " . $this->ext_table
-                . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";");
-            if ($data) {
-                $this->capitulo = isset($data[0]['capitulo']) ? $data[0]['capitulo'] : '';
-                $this->nivel = isset($data[0]['nivel']) ? $data[0]['nivel'] : '';
-            }
-        }
-    }
-
-    /**
-     * Verifica si existe el registro de extensión.
-     * @return bool
-     */
-    protected function ext_exists()
-    {
-        if (is_null($this->codfamilia)) {
-            return FALSE;
-        }
-        return $this->db->select("SELECT * FROM " . $this->ext_table
-            . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";");
-    }
-
-    /**
-     * Guarda los datos de extensión.
-     * @return bool
-     */
-    protected function save_extension()
-    {
-        if ($this->ext_exists()) {
-            $sql = "UPDATE " . $this->ext_table . " SET "
-                . "capitulo = " . $this->var2str($this->capitulo)
-                . ", nivel = " . $this->var2str($this->nivel)
-                . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";";
-        } else {
-            $sql = "INSERT INTO " . $this->ext_table . " (codfamilia, capitulo, nivel) VALUES ("
-                . $this->var2str($this->codfamilia) . ","
-                . $this->var2str($this->capitulo) . ","
-                . $this->var2str($this->nivel) . ");";
-        }
-        return $this->db->exec($sql);
-    }
-
-    /**
-     * Elimina los datos de extensión.
-     * @return bool
-     */
-    protected function delete_extension()
-    {
-        return $this->db->exec("DELETE FROM " . $this->ext_table
-            . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";");
     }
 
     public function url()
@@ -190,82 +137,6 @@ class tarif_familia extends \FSFramework\model\familia
             }
         }
         return $list;
-    }
-
-    /**
-     * Calcula el prefijo de nivel para mostrar jerarquía.
-     * @return string
-     */
-    private function calcular_nivel()
-    {
-        $nivel = '';
-        if ($this->madre) {
-            $madre = $this->get_madre();
-            if ($madre) {
-                $nivel = $madre->nivel . '— ';
-            }
-        }
-        return $nivel;
-    }
-
-    public function save()
-    {
-        if ($this->test()) {
-            $this->nivel = $this->calcular_nivel();
-
-            // Guardar en tabla base (familias)
-            if ($this->exists()) {
-                $sql = "UPDATE " . $this->table_name . " SET "
-                    . "descripcion = " . $this->var2str($this->descripcion)
-                    . ", madre = " . $this->var2str($this->madre)
-                    . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";";
-            } else {
-                $sql = "INSERT INTO " . $this->table_name . " (codfamilia, descripcion, madre) VALUES ("
-                    . $this->var2str($this->codfamilia) . ","
-                    . $this->var2str($this->descripcion) . ","
-                    . $this->var2str($this->madre) . ");";
-            }
-
-            if ($this->db->exec($sql)) {
-                // Guardar en tabla de extensión
-                if ($this->save_extension()) {
-                    // Si cambiamos la madre, recalcular nivel de las hijas
-                    $this->actualizar_niveles_hijas();
-                    return TRUE;
-                }
-            }
-        }
-        return FALSE;
-    }
-
-    /**
-     * Actualiza los niveles de las familias hijas (recursivo).
-     */
-    private function actualizar_niveles_hijas()
-    {
-        foreach ($this->get_hijas() as $hija) {
-            $hija->save(); // Esto recalcula su nivel y propaga a sus hijas
-        }
-    }
-
-    public function delete()
-    {
-        // Primero eliminar extensión (tiene FK con CASCADE, pero lo hacemos explícito)
-        $this->delete_extension();
-
-        // Antes de eliminar, poner madre = NULL en las hijas
-        $sql = "UPDATE " . $this->table_name . " SET madre = NULL "
-            . " WHERE madre = " . $this->var2str($this->codfamilia) . ";";
-        $this->db->exec($sql);
-
-        // También limpiar nivel en extensiones huérfanas
-        $sql = "UPDATE " . $this->ext_table . " SET nivel = '' "
-            . " WHERE codfamilia IN (SELECT codfamilia FROM " . $this->table_name
-            . " WHERE madre = " . $this->var2str($this->codfamilia) . ");";
-        $this->db->exec($sql);
-
-        return $this->db->exec("DELETE FROM " . $this->table_name
-            . " WHERE codfamilia = " . $this->var2str($this->codfamilia) . ";");
     }
 
     /**
