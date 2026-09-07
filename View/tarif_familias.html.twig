@@ -190,7 +190,7 @@
 {% set close_url = fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa %}
 <form class="form-horizontal" role="form" action="{{ close_url }}" method="post"
       hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
-      hx-target="#familias-tbody" hx-swap="outerHTML"
+      hx-target="#familias-tbody" hx-swap="innerHTML"
       data-fs-csrf-strip>
    {{ csrf_field() }}
    <input type="hidden" name="save_familia" value="1"/>
@@ -283,7 +283,7 @@
 {% if fsc.familias_disponibles|length > 0 %}
 <form class="form-horizontal" role="form" action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}" method="post"
       hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
-      hx-target="#familias-tbody" hx-swap="outerHTML"
+      hx-target="#familias-tbody" hx-swap="innerHTML"
       data-fs-csrf-strip>
    {{ csrf_field() }}
    <input type="hidden" name="add_familia" value="1"/>

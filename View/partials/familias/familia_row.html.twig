@@ -39,7 +39,7 @@
       <form method="post"
             action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=promote"
             hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=promote"
-            hx-target="#familias-tbody" hx-swap="outerHTML"
+            hx-target="#familias-tbody" hx-swap="innerHTML"
             data-fs-csrf-strip>
          {{ csrf_field() }}
          <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
@@ -51,7 +51,7 @@
       <form method="post"
             action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=demote"
             hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=demote"
-            hx-target="#familias-tbody" hx-swap="outerHTML"
+            hx-target="#familias-tbody" hx-swap="innerHTML"
             data-fs-csrf-strip>
          {{ csrf_field() }}
          <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
@@ -119,7 +119,7 @@
             action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=delete"
             hx-post="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=delete"
             hx-confirm="¿Eliminar la familia &quot;{{ row.descripcion }}&quot; de esta tarifa?"
-            hx-target="#familias-tbody" hx-swap="outerHTML"
+            hx-target="#familias-tbody" hx-swap="innerHTML"
             data-fs-csrf-strip>
          {{ csrf_field() }}
          <input type="hidden" name="codfamilia" value="{{ row.codfamilia }}">
