@@ -30,7 +30,9 @@
       {% else %}
       <i class="fa fa-folder familia-icon"></i>
       {% endif %}
-      <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ row.codfamilia }}">
+      <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ row.codfamilia }}"
+         hx-get="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=edit_form&codfamilia={{ row.codfamilia }}"
+         hx-target="#familia-edit-container" hx-swap="innerHTML">
          {{ row.descripcion }}
       </a>
       <small class="text-muted">({{ row.codfamilia }})</small>
@@ -111,6 +113,8 @@
    </td>
    <td class="text-right">
       <a href="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&edit={{ row.codfamilia }}"
+         hx-get="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}&action=edit_form&codfamilia={{ row.codfamilia }}"
+         hx-target="#familia-edit-container" hx-swap="innerHTML"
          class="btn btn-xs btn-default" title="Editar">
          <i class="fa fa-pencil"></i>
       </a>

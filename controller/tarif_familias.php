@@ -175,6 +175,9 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             case 'get_next_capitulo':
                 $this->action_get_next_capitulo();
                 break;
+            case 'edit_form':
+                $this->action_edit_form();
+                break;
             case 'promote':
                 $this->action_promote();
                 break;
@@ -268,6 +271,30 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         $this->renderFragment('partials/familias/capitulo_preview', [
             'capitulo' => $capitulo,
         ]);
+    }
+
+    /**
+     * GET fragment: edit modal for one familia — HTMX-driven edit without a
+     * full page reload. Renders the same partial the full page uses for the
+     * no-JS fallback (?edit=CODE), so both paths share one template.
+     */
+    private function action_edit_form(): void
+    {
+        $codfamilia = isset($_GET['codfamilia']) ? trim($_GET['codfamilia']) : '';
+        if ($codfamilia === '') {
+            $this->new_error_msg('Código de familia no proporcionado.');
+            $this->noContentWithFlash();
+            return;
+        }
+
+        $this->editing_familia = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+        if (!$this->editing_familia) {
+            $this->new_error_msg('Familia no encontrada en esta tarifa.');
+            $this->noContentWithFlash();
+            return;
+        }
+
+        $this->renderFragment('partials/familias/edit_modal');
     }
 
     /**
@@ -629,6 +656,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             $this->new_message('Familia guardada correctamente.');
 
             if ($this->requireHtmx()) {
+                $this->load_familias_tree();
                 $this->renderTbodyFragment($this->get_familias_flat(), ['events' => ['fs:modal-close' => []]]);
             } else {
                 header('Location: ' . $this->listUrl());
@@ -646,15 +674,17 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     }
 
     /**
-     * Add familia to tariff — same pattern as save.
+     * Add familia to tariff by name: links an existing catalog familia on an
+     * exact (case-insensitive) name match, otherwise creates the base catalog
+     * familia first and then links it. Same response pattern as save.
      */
     private function add_familia_to_tarifa(): void
     {
-        $codfamilia = isset($_POST['codfamilia']) ? trim($_POST['codfamilia']) : '';
+        $familia_nombre = isset($_POST['familia_nombre']) ? trim($_POST['familia_nombre']) : '';
         $madre = isset($_POST['madre']) ? trim($_POST['madre']) : '';
 
-        if (empty($codfamilia)) {
-            $this->new_error_msg('Debe seleccionar una familia.');
+        if ($familia_nombre === '') {
+            $this->new_error_msg('Debe indicar el nombre de la familia.');
             if ($this->requireHtmx()) {
                 $this->noContentWithFlash();
             } else {
@@ -664,26 +694,67 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
-        if ($this->tarifa_familia->get($this->codtarifa, $codfamilia)) {
-            $this->new_error_msg('Esta familia ya existe en la tarifa.');
-            if ($this->requireHtmx()) {
-                $this->noContentWithFlash();
-            } else {
-                header('Location: ' . $this->listUrl());
-                exit;
+        require_once 'plugins/catalogo_core/model/core/familia.php';
+        $familia_base_model = new \FSFramework\model\familia();
+
+        $existente = $this->find_familia_by_descripcion($familia_base_model->all(), $familia_nombre);
+        if (null !== $existente) {
+            $codfamilia = $existente->codfamilia;
+            if ($this->tarifa_familia->get($this->codtarifa, $codfamilia)) {
+                $this->new_error_msg('Esta familia ya existe en la tarifa.');
+                if ($this->requireHtmx()) {
+                    $this->noContentWithFlash();
+                } else {
+                    header('Location: ' . $this->listUrl());
+                    exit;
+                }
+                return;
             }
-            return;
+        } else {
+            $nueva = new \FSFramework\model\familia();
+            $nueva->codfamilia = $this->suggest_familia_code(
+                $familia_nombre,
+                function ($candidate) use ($familia_base_model) {
+                    return false !== $familia_base_model->get($candidate);
+                }
+            );
+            if (null === $nueva->codfamilia) {
+                $this->new_error_msg('No se pudo generar un código único para la familia.');
+                if ($this->requireHtmx()) {
+                    $this->noContentWithFlash();
+                } else {
+                    header('Location: ' . $this->listUrl());
+                    exit;
+                }
+                return;
+            }
+            $nueva->descripcion = $familia_nombre;
+            if (!$nueva->save()) {
+                $this->new_error_msg('Error al crear la familia en el catálogo.');
+                if ($this->requireHtmx()) {
+                    $this->noContentWithFlash();
+                } else {
+                    header('Location: ' . $this->listUrl());
+                    exit;
+                }
+                return;
+            }
+            $codfamilia = $nueva->codfamilia;
         }
 
         $tf = $this->tarifa_familia->add_familia_to_tarifa(
             $this->codtarifa,
             $codfamilia,
-            empty($madre) ? null : $madre
+            empty($madre) ? null : $madre,
+            isset($_POST['en_catalogo']),
+            isset($_POST['en_tarifa']),
+            isset($_POST['activa'])
         );
 
         if ($tf) {
             $this->new_message('Familia añadida a la tarifa correctamente.');
             if ($this->requireHtmx()) {
+                $this->load_familias_tree();
                 $this->renderTbodyFragment($this->get_familias_flat(), ['events' => ['fs:modal-close' => []]]);
             } else {
                 header('Location: ' . $this->listUrl());
@@ -698,6 +769,68 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
                 exit;
             }
         }
+    }
+
+    /**
+     * Exact (case-insensitive, trimmed) descripcion match over the base
+     * catalog familia list.
+     *
+     * @param object[] $familias
+     * @return object|null the matched familia, or null when absent
+     */
+    private function find_familia_by_descripcion(array $familias, string $nombre): ?object
+    {
+        $needle = mb_strtolower(trim($nombre), 'UTF-8');
+        foreach ($familias as $fam) {
+            if (mb_strtolower(trim((string) $fam->descripcion), 'UTF-8') === $needle) {
+                return $fam;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Derive a unique codfamilia (1-8 chars, A-Z0-9) from the descripcion.
+     * $codeExists receives a candidate and must return true when already taken.
+     *
+     * @return string|null null when no unique candidate could be generated
+     */
+    private function suggest_familia_code(string $descripcion, callable $codeExists): ?string
+    {
+        $source = $descripcion;
+        if (function_exists('iconv')) {
+            $transliterated = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $descripcion);
+            if (false !== $transliterated) {
+                $source = $transliterated;
+            }
+        }
+
+        $normalized = preg_replace('/[^A-Z0-9]/', '', strtoupper($source));
+        if (null === $normalized || '' === $normalized) {
+            $normalized = 'FAM';
+        }
+
+        $candidate = substr($normalized, 0, 8);
+        if (!$codeExists($candidate)) {
+            return $candidate;
+        }
+
+        for ($i = 1; $i <= 99; $i++) {
+            $candidate = substr($normalized, 0, 6) . str_pad((string) $i, 2, '0', STR_PAD_LEFT);
+            if (!$codeExists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        for ($i = 0; $i < 9; $i++) {
+            $candidate = substr($normalized, 0, 4) . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            if (!$codeExists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**

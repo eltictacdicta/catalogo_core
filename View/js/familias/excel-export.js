@@ -1,5 +1,7 @@
 /**
- * Módulo de exportación Excel para familias
+ * Módulo de exportación Excel para familias — vanilla DOM (no jQuery).
+ * Modal visibility is owned by the Alpine component (familiaExportModal),
+ * which calls exportarExcel() and closes itself.
  * @module familias/excel-export
  */
 
@@ -13,7 +15,7 @@ export class FamiliasExcelExporter {
         this.config = getConfig();
         this.bindGlobalFunctions();
     }
-    
+
     /**
      * Expone funciones globales para compatibilidad con onclick en HTML
      */
@@ -22,14 +24,12 @@ export class FamiliasExcelExporter {
             exportarExcel: () => this.exportarExcel()
         };
     }
-    
+
     /**
-     * Ejecuta la exportación a Excel
+     * Ejecuta la exportación a Excel (el cierre del modal lo maneja Alpine)
      */
     exportarExcel() {
         const url = `${this.config.baseUrl}&codtarifa=${encodeURIComponent(this.config.codtarifa)}&action=export_excel`;
-        
-        $('#modal_exportar_excel_familias').modal('hide');
         window.location.href = url;
     }
 }

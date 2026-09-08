@@ -1,55 +1,60 @@
 {#
- # Modal para exportar familias a Excel
- # Requiere: fsc (controlador)
- #}
-<div class="modal" id="modal_exportar_excel_familias" data-backdrop="static">
-   <div class="modal-dialog">
-      <div class="modal-content">
-         <div class="modal-header">
-            <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-            <h4 class="modal-title">
-               <i class="fa fa-file-excel-o text-success"></i> Exportar Familias a Excel
-            </h4>
-         </div>
-         <div class="modal-body">
-            <div class="alert alert-info">
-               <i class="fa fa-info-circle"></i>
-               <strong>Exportación a Excel:</strong>
-               <p style="margin-top: 10px; margin-bottom: 0;">
-                  Exporta las familias de la tarifa con las columnas: <strong>Codigo, Descripcion, Madre, Capitulo, En Catalogo, En Tarifa, Activa y Etiquetas</strong>.
-               </p>
+ # Modal para exportar familias a Excel — Alpine (CSP build) chrome.
+ # The container uses familia-alpine-modal (NOT .modal) so Bootstrap's
+ # display:none rule cannot fight x-show. Opened via the familias-export-open
+ # event from the toolbar button. Requiere: fsc (controlador)
+#}
+<div x-data="familiaExportModal" x-cloak>
+   <div class="familia-alpine-backdrop" x-show="open"></div>
+   <div class="familia-alpine-modal" id="modal_exportar_excel_familias" x-show="open" tabindex="-1" role="dialog">
+      <div class="modal-dialog">
+         <div class="modal-content">
+            <div class="modal-header">
+               <button type="button" class="close" @click="close()" aria-hidden="true">&times;</button>
+               <h4 class="modal-title">
+                  <i class="fa fa-file-excel-o text-success"></i> Exportar Familias a Excel
+               </h4>
             </div>
+            <div class="modal-body">
+               <div class="alert alert-info">
+                  <i class="fa fa-info-circle"></i>
+                  <strong>Exportación a Excel:</strong>
+                  <p style="margin-top: 10px; margin-bottom: 0;">
+                     Exporta las familias de la tarifa con las columnas: <strong>Codigo, Descripcion, Madre, Capitulo, En Catalogo, En Tarifa, Activa y Etiquetas</strong>.
+                  </p>
+               </div>
 
-            <div class="form-group">
-               <label>Tarifa:</label>
-               <p class="form-control-static">
-                  <strong>{{ fsc.get_tarifa_actual().nombre }}</strong>
-                  <span class="text-muted">({{ fsc.codtarifa }})</span>
-               </p>
-            </div>
+               <div class="form-group">
+                  <label>Tarifa:</label>
+                  <p class="form-control-static">
+                     <strong>{{ fsc.get_tarifa_actual().nombre }}</strong>
+                     <span class="text-muted">({{ fsc.codtarifa }})</span>
+                  </p>
+               </div>
 
-            <div class="form-group">
-               <label>Familias a exportar:</label>
-               <p class="form-control-static">
-                  <strong>{{ fsc.get_familias_flat()|length }}</strong> familias
-               </p>
-            </div>
+               <div class="form-group">
+                  <label>Familias a exportar:</label>
+                  <p class="form-control-static">
+                     <strong>{{ fsc.get_familias_flat()|length }}</strong> familias
+                  </p>
+               </div>
 
-            <div class="alert alert-warning" style="margin-bottom: 0;">
-               <i class="fa fa-lightbulb-o"></i>
-               <small>
-                  <strong>Nota:</strong> La columna "Capitulo" es solo informativa. 
-                  Al importar, los capítulos se recalculan automáticamente según el orden de las filas y la jerarquía.
-               </small>
+               <div class="alert alert-warning" style="margin-bottom: 0;">
+                  <i class="fa fa-lightbulb-o"></i>
+                  <small>
+                     <strong>Nota:</strong> La columna "Capitulo" es solo informativa.
+                     Al importar, los capítulos se recalculan automáticamente según el orden de las filas y la jerarquía.
+                  </small>
+               </div>
             </div>
-         </div>
-         <div class="modal-footer">
-            <button type="button" class="btn btn-default" data-dismiss="modal">
-               <i class="fa fa-times"></i> Cancelar
-            </button>
-            <button type="button" class="btn btn-success" onclick="window.familiasExcelExport.exportarExcel()">
-               <i class="fa fa-download"></i> Exportar Excel
-            </button>
+            <div class="modal-footer">
+               <button type="button" class="btn btn-default" @click="close()">
+                  <i class="fa fa-times"></i> Cancelar
+               </button>
+               <button type="button" class="btn btn-success" @click="exportAndClose()">
+                  <i class="fa fa-download"></i> Exportar Excel
+               </button>
+            </div>
          </div>
       </div>
    </div>

@@ -5,6 +5,7 @@
 {% import 'Macro/TarifarioComponents.html.twig' as tarif %}
 {% import 'Macro/HtmxCrud.html.twig' as crud %}
 {% import 'Macro/Htmx.html.twig' as htmx %}
+{% import 'Macro/Alpine.html.twig' as alpine %}
 
 {% include 'header.html.twig' %}
 
@@ -24,6 +25,29 @@
 {# Styles #}
 {{ tarif.styles_common() }}
 <style>
+   [x-cloak] {
+      display: none !important;
+   }
+   .familia-alpine-modal {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 1050;
+      overflow-y: auto;
+      outline: 0;
+   }
+   .familia-alpine-backdrop {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 1040;
+      background-color: #000;
+      opacity: 0.5;
+   }
    .familia-row.sortable-ghost {
       opacity: 0.4;
    }
@@ -84,9 +108,9 @@
 
 {# Toolbar #}
 {% set extra_buttons = [] %}
-{% if fsc.familias_disponibles|length > 0 %}
+{% if fsc.codtarifa %}
    {% set extra_buttons = [{
-      'modal': 'modal_add_familia',
+      'onclick': "document.dispatchEvent(new CustomEvent('familias-add-open', {bubbles: true}))",
       'class': 'btn-success',
       'icon': 'glyphicon glyphicon-plus',
       'label': 'Añadir familia'
@@ -94,8 +118,8 @@
 {% endif %}
 
 {% set extra_buttons = extra_buttons|merge([
-   {'modal': 'modal_exportar_excel_familias', 'icon': 'fa fa-file-excel-o', 'label': 'Exportar Excel', 'class': 'btn-success'},
-   {'modal': 'modal_importar_excel_familias', 'icon': 'fa fa-file-excel-o', 'label': 'Importar Excel', 'class': 'btn-info'},
+   {'onclick': "document.dispatchEvent(new CustomEvent('familias-export-open', {bubbles: true}))", 'icon': 'fa fa-file-excel-o', 'label': 'Exportar Excel', 'class': 'btn-success'},
+   {'onclick': "document.dispatchEvent(new CustomEvent('familias-import-open', {bubbles: true}))", 'icon': 'fa fa-file-excel-o', 'label': 'Importar Excel', 'class': 'btn-info'},
    {'onclick': 'descargarPlantillaExcel()', 'icon': 'fa fa-file-o', 'label': 'Plantilla', 'class': 'btn-default'}
 ]) %}
 
@@ -169,12 +193,9 @@
                {% else %}
                <tr class="warning">
                   <td colspan="9">
-                     No hay familias en esta tarifa.
-                     {% if fsc.familias_disponibles|length > 0 %}
-                     <a href="#" data-toggle="modal" data-target="#modal_add_familia">Añadir familias</a>
-                     {% else %}
-                     <a href="index.php?page=ventas_familia">Crear familias primero</a>
-                     {% endif %}
+                  No hay familias en esta tarifa.
+                  <a href="#" data-toggle="modal" data-target="#modal_add_familia">Añadir familia</a>
+                  o <a href="index.php?page=ventas_familia">Crear familias primero</a> en el catálogo.
                   </td>
                </tr>
                {% endfor %}
@@ -185,128 +206,48 @@
 </div>
 {% endif %}
 
-{# Modal Editar Familia #}
+{# Modal Editar Familia — HTMX-driven: the row's Editar links fetch this modal
+   as a fragment into the container below. The same partial renders inline here
+   for the no-JS fallback when the page loads with ?edit=CODE. #}
+<div id="familia-edit-container"></div>
 {% if fsc.editing_familia %}
-{% set close_url = fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa %}
-<form class="form-horizontal" role="form" action="{{ close_url }}" method="post"
-      hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
-      hx-target="#familias-tbody" hx-swap="innerHTML"
-      data-fs-csrf-strip>
-   {{ csrf_field() }}
-   <input type="hidden" name="save_familia" value="1"/>
-   <input type="hidden" name="codfamilia" value="{{ fsc.editing_familia.codfamilia }}"/>
-   
-   {{ tarif.modal_popup_start('modal_editar_familia', '<i class="fa fa-folder-open-o"></i> Editar: ' ~ fsc.editing_familia.descripcion, close_url) }}
-   <div class="modal-body">
-      <div class="form-group">
-         <label class="col-sm-3 control-label">Código</label>
-         <div class="col-sm-9">
-            <p class="form-control-static"><b>{{ fsc.editing_familia.codfamilia }}</b></p>
-         </div>
-      </div>
-      <div class="form-group">
-         <label class="col-sm-3 control-label">Descripción</label>
-         <div class="col-sm-9">
-            <input class="form-control" type="text" name="descripcion"
-                   value="{{ fsc.editing_familia.descripcion }}"
-                   maxlength="100" required/>
-            <p class="help-block text-muted">Este cambio actualiza la descripción de la familia base.</p>
-         </div>
-      </div>
-      <div class="form-group">
-         <label class="col-sm-3 control-label">Familia madre</label>
-         <div class="col-sm-9">
-            <select class="form-control" name="madre" id="madre">
-               <option value="">-- Raíz (sin madre) --</option>
-               {% for posible_madre in fsc.get_posibles_madres(fsc.editing_familia.codfamilia) %}
-               <option value="{{ posible_madre.codfamilia }}" {% if posible_madre.codfamilia == fsc.editing_familia.madre %}selected{% endif %}>
-                  {{ posible_madre.nivel }}{{ posible_madre.descripcion }}
-               </option>
-               {% endfor %}
-            </select>
-         </div>
-      </div>
-      <div class="form-group">
-         <label class="col-sm-3 control-label">Capítulo</label>
-         <div class="col-sm-9">
-            <input class="form-control" type="text" name="capitulo" id="capitulo"
-                   value="{{ fsc.editing_familia.capitulo }}" 
-                   maxlength="20" placeholder="Ej: 1, 1.1, 2"/>
-            <span id="capitulo-preview"></span>
-         </div>
-      </div>
-      <div class="form-group">
-         <label class="col-sm-3 control-label">Visibilidad</label>
-         <div class="col-sm-9">
-            {{ tarif.toggle_button_group(fsc.editing_familia, {'show_catalogo': true, 'show_en_tarifa': true, 'show_activa': true}) }}
-            <p class="help-block text-muted" style="margin-top: 10px;">
-               <small>"En tarifa" marca las familias que se incluirán al exportar la tarifa para clientes.</small>
-            </p>
-         </div>
-      </div>
-      <div class="form-group">
-         <label class="col-sm-3 control-label">Etiquetas</label>
-         <div class="col-sm-9">
-            <input class="form-control" type="text" name="etiquetas"
-                   value="{{ fsc.get_etiquetas_familia_text(fsc.editing_familia.codfamilia) }}"
-                   placeholder="Ej: sobredimensionado, premium, outlet"/>
-            <p class="help-block text-muted" style="margin-top: 8px;">
-               <small>Separa por comas. Las etiquetas se aplican solo a esta familia en esta tarifa; el mismo nombre puede repetirse en otras familias sin relación.</small>
-            </p>
-            {% set etiquetas_full = fsc.get_etiquetas_familia_full(fsc.editing_familia.codfamilia) %}
-            {% if etiquetas_full|length > 0 %}
-            <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px;">
-               <label style="font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; display: block;">
-                  <i class="fa fa-eye"></i> Visibilidad en catálogo agrupado
-               </label>
-               <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">
-                  Marca las etiquetas cuyo nombre debe mostrarse como encabezado en la vista agrupada del catálogo.
-               </p>
-               {% for tag in etiquetas_full %}
-               <label style="display: inline-flex; align-items: center; margin-right: 12px; margin-bottom: 4px; font-weight: normal; cursor: pointer;">
-                  <input type="checkbox" name="etiqueta_visible[]" value="{{ tag.etiqueta }}"
-                         {% if tag.visible %}checked{% endif %}
-                         style="margin-right: 5px;">
-                  <span style="font-size: 13px;">{{ tag.etiqueta }}</span>
-               </label>
-               {% endfor %}
-            </div>
-            {% endif %}
-         </div>
-      </div>
-   </div>
-   {{ tarif.modal_popup_end(close_url, 'Guardar') }}
-</form>
+{% include 'partials/familias/edit_modal.html.twig' %}
 {% endif %}
 
-{# Modal Añadir Familia #}
-{% if fsc.familias_disponibles|length > 0 %}
-<form class="form-horizontal" role="form" action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}" method="post"
-      hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
-      hx-target="#familias-tbody" hx-swap="innerHTML"
-      data-fs-csrf-strip>
-   {{ csrf_field() }}
-   <input type="hidden" name="add_familia" value="1"/>
-   
-   <div class="modal fade" id="modal_add_familia">
-      <div class="modal-dialog">
+{# Modal Añadir Familia — Alpine (CSP build): opened via the familias-add-open
+   event from the toolbar button; closed by fs:modal-close (server-sent). #}
+{% if fsc.codtarifa %}
+<div x-data="familiaAddModal" x-cloak>
+   <div class="familia-alpine-backdrop" x-show="open" @click="close()"></div>
+   <div class="familia-alpine-modal" id="modal_add_familia" x-show="open" tabindex="-1" role="dialog">
+      <div class="modal-dialog" role="document">
          <div class="modal-content">
             <div class="modal-header">
-               <button type="button" class="close" data-dismiss="modal">&times;</button>
+               <button type="button" class="close" @click="close()">&times;</button>
                <h4 class="modal-title">
                   <i class="fa fa-plus"></i> Añadir familia a la tarifa
                </h4>
             </div>
+            <form class="form-horizontal" role="form" action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}" method="post"
+                  hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
+                  hx-target="#familias-tbody" hx-swap="innerHTML"
+                  data-fs-csrf-strip>
+               {{ csrf_field() }}
+               <input type="hidden" name="add_familia" value="1"/>
             <div class="modal-body">
                <div class="form-group">
                   <label class="col-sm-3 control-label">Familia</label>
                   <div class="col-sm-9">
-                     <select class="form-control" name="codfamilia" required>
-                        <option value="">-- Seleccionar --</option>
+                     <input class="form-control" type="text" name="familia_nombre" required maxlength="100"
+                            placeholder="Ej: Pernos inoxidable" list="familias_disponibles_dl" autocomplete="off"/>
+                     <datalist id="familias_disponibles_dl">
                         {% for fam_disp in fsc.familias_disponibles %}
-                        <option value="{{ fam_disp.codfamilia }}">{{ fam_disp.descripcion }} ({{ fam_disp.codfamilia }})</option>
+                        <option value="{{ fam_disp.descripcion }}"></option>
                         {% endfor %}
-                     </select>
+                     </datalist>
+                     <p class="help-block text-muted">
+                        <small>Escribe el nombre de la familia. Si ya existe en el catálogo se vincula a la tarifa; si no existe, se crea automáticamente.</small>
+                     </p>
                   </div>
                </div>
                <div class="form-group">
@@ -332,17 +273,27 @@
                      </p>
                   </div>
                </div>
+               <div class="form-group">
+                  <label class="col-sm-3 control-label">Visibilidad</label>
+                  <div class="col-sm-9">
+                     {{ tarif.toggle_button_group({'en_catalogo': true, 'en_tarifa': true, 'activa': true}) }}
+                     <p class="help-block text-muted" style="margin-top: 10px;">
+                        <small>"En tarifa" marca las familias que se incluirán al exportar la tarifa para clientes.</small>
+                     </p>
+                  </div>
+               </div>
             </div>
             <div class="modal-footer">
-               <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+               <button type="button" class="btn btn-default" @click="close()">Cancelar</button>
                <button class="btn btn-primary" type="submit">
                   <span class="glyphicon glyphicon-plus"></span>&nbsp; Añadir
                </button>
             </div>
+            </form>
          </div>
       </div>
    </div>
-</form>
+</div>
 {% endif %}
 
 {# Excel modals — untouched #}
@@ -363,6 +314,132 @@ function descargarPlantillaExcel() {
 </script>
 
 <script type="module" src="plugins/catalogo_core/View/js/familias/index.js"></script>
+
+{# Alpine (CSP build) component registration — inline classic script runs
+   during parse, BEFORE the deferred Alpine boot below, so the alpine:init
+   listener is guaranteed to fire before Alpine walks the tree. #}
+<script type="text/javascript">
+(function () {
+    function registerFamiliaAlpineComponents() {
+        // CSP build: directive expressions are limited to method calls; all
+        // behavior lives here. Window-level listeners use plain
+        // addEventListener so the server's fs:modal-close contract works
+        // regardless of where htmx dispatches the event.
+        Alpine.data('familiaAddModal', function () {
+            return {
+                open: false,
+                init: function () {
+                    window.addEventListener('familias-add-open', this.openModal.bind(this));
+                    window.addEventListener('fs:modal-close', this.closeAndReset.bind(this));
+                    window.addEventListener('keydown', this.onKeydown.bind(this));
+                },
+                openModal: function () {
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                },
+                closeAndReset: function () {
+                    this.close();
+                    var form = document.querySelector('#modal_add_familia form');
+                    if (form) {
+                        form.reset();
+                    }
+                },
+                onKeydown: function (e) {
+                    if (e.key === 'Escape' && this.open) {
+                        this.close();
+                    }
+                }
+            };
+        });
+        Alpine.data('familiaEditModal', function () {
+            return {
+                open: true,
+                init: function () {
+                    window.addEventListener('fs:modal-close', this.close.bind(this));
+                    window.addEventListener('keydown', this.onKeydown.bind(this));
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                },
+                onKeydown: function (e) {
+                    if (e.key === 'Escape' && this.open) {
+                        this.close();
+                    }
+                }
+            };
+        });
+        Alpine.data('familiaExportModal', function () {
+            return {
+                open: false,
+                init: function () {
+                    window.addEventListener('familias-export-open', this.openModal.bind(this));
+                    window.addEventListener('keydown', this.onKeydown.bind(this));
+                },
+                openModal: function () {
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                exportAndClose: function () {
+                    if (window.familiasExcelExport) {
+                        window.familiasExcelExport.exportarExcel();
+                    }
+                    this.close();
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                },
+                onKeydown: function (e) {
+                    if (e.key === 'Escape' && this.open) {
+                        this.close();
+                    }
+                }
+            };
+        });
+        Alpine.data('familiaImportModal', function () {
+            return {
+                open: false,
+                init: function () {
+                    window.addEventListener('familias-import-open', this.openModal.bind(this));
+                    window.addEventListener('keydown', this.onKeydown.bind(this));
+                },
+                openModal: function () {
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                    // Same contract the old hidden.bs.modal hook provided.
+                    if (window.familiasExcelImport) {
+                        window.familiasExcelImport.reset();
+                    }
+                },
+                onKeydown: function (e) {
+                    if (e.key === 'Escape' && this.open) {
+                        this.close();
+                    }
+                }
+            };
+        });
+    }
+
+    if (window.Alpine) {
+        registerFamiliaAlpineComponents();
+    } else {
+        document.addEventListener('alpine:init', registerFamiliaAlpineComponents);
+    }
+})();
+</script>
+
+{# Alpine CSP build — AFTER the module: the module registers its alpine:init
+   component listeners first, then Alpine starts and walks the tree. #}
+{{ alpine.boot() }}
 
 {% include 'partials/familias/modal_exportar_excel.html.twig' %}
 {% include 'partials/familias/modal_importar_excel.html.twig' %}

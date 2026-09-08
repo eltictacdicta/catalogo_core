@@ -1,0 +1,120 @@
+{#
+ # Edit familia modal — single source for BOTH edit paths:
+ #   - HTMX fragment (action=edit_form) swapped into #familia-edit-container
+ #   - No-JS fallback: full page render when ?edit=CODE is present
+ # Expects: fsc (controller instance with editing_familia set)
+ # Alpine (CSP build): x-show owns visibility; the form lives INSIDE the modal
+ # so htmx event targets resolve within it. Open state is always true — this
+ # partial is only rendered when an edit is requested.
+ # Twig includes do not inherit the parent's imports: import the macro here
+ # (it is also needed when the controller renders this as a fragment).
+#}
+{% import 'Macro/TarifarioComponents.html.twig' as tarif %}
+{% set close_url = fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa %}
+<div x-data="familiaEditModal" x-cloak>
+   <div class="familia-alpine-backdrop" x-show="open" @click="close()"></div>
+   <div class="familia-alpine-modal" id="modal_editar_familia" x-show="open" tabindex="-1" role="dialog">
+      <div class="modal-dialog" role="document">
+         <div class="modal-content">
+            <div class="modal-header">
+               <button type="button" class="close" @click="close()">&times;</button>
+               <h4 class="modal-title"><i class="fa fa-folder-open-o"></i> Editar: {{ fsc.editing_familia.descripcion }}</h4>
+            </div>
+            <form class="form-horizontal" role="form" action="{{ close_url }}" method="post"
+                  hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
+                  hx-target="#familias-tbody" hx-swap="innerHTML"
+                  data-fs-csrf-strip>
+               {{ csrf_field() }}
+               <input type="hidden" name="save_familia" value="1"/>
+               <input type="hidden" name="codfamilia" value="{{ fsc.editing_familia.codfamilia }}"/>
+               <div class="modal-body">
+                  <div class="form-group">
+                     <label class="col-sm-3 control-label">Código</label>
+                     <div class="col-sm-9">
+                        <p class="form-control-static"><b>{{ fsc.editing_familia.codfamilia }}</b></p>
+                     </div>
+                  </div>
+                  <div class="form-group">
+                     <label class="col-sm-3 control-label">Descripción</label>
+                     <div class="col-sm-9">
+                        <input class="form-control" type="text" name="descripcion"
+                               value="{{ fsc.editing_familia.descripcion }}"
+                               maxlength="100" required/>
+                        <p class="help-block text-muted">Este cambio actualiza la descripción de la familia base.</p>
+                     </div>
+                  </div>
+                  <div class="form-group">
+                     <label class="col-sm-3 control-label">Familia madre</label>
+                     <div class="col-sm-9">
+                        <select class="form-control" name="madre" id="madre">
+                           <option value="">-- Raíz (sin madre) --</option>
+                           {% for posible_madre in fsc.get_posibles_madres(fsc.editing_familia.codfamilia) %}
+                           <option value="{{ posible_madre.codfamilia }}" {% if posible_madre.codfamilia == fsc.editing_familia.madre %}selected{% endif %}>
+                              {{ posible_madre.nivel }}{{ posible_madre.descripcion }}
+                           </option>
+                           {% endfor %}
+                        </select>
+                     </div>
+                  </div>
+                  <div class="form-group">
+                     <label class="col-sm-3 control-label">Capítulo</label>
+                     <div class="col-sm-9">
+                        <input class="form-control" type="text" name="capitulo" id="capitulo"
+                               value="{{ fsc.editing_familia.capitulo }}"
+                               maxlength="20" placeholder="Ej: 1, 1.1, 2"/>
+                        <span id="capitulo-preview"></span>
+                     </div>
+                  </div>
+                  <div class="form-group">
+                     <label class="col-sm-3 control-label">Visibilidad</label>
+                     <div class="col-sm-9">
+                        {{ tarif.toggle_button_group(fsc.editing_familia, {'show_catalogo': true, 'show_en_tarifa': true, 'show_activa': true}) }}
+                        <p class="help-block text-muted" style="margin-top: 10px;">
+                           <small>"En tarifa" marca las familias que se incluirán al exportar la tarifa para clientes.</small>
+                        </p>
+                     </div>
+                  </div>
+                  <div class="form-group">
+                     <label class="col-sm-3 control-label">Etiquetas</label>
+                     <div class="col-sm-9">
+                        <input class="form-control" type="text" name="etiquetas"
+                               value="{{ fsc.get_etiquetas_familia_text(fsc.editing_familia.codfamilia) }}"
+                               placeholder="Ej: sobredimensionado, premium, outlet"/>
+                        <p class="help-block text-muted" style="margin-top: 8px;">
+                           <small>Separa por comas. Las etiquetas se aplican solo a esta familia en esta tarifa; el mismo nombre puede repetirse en otras familias sin relación.</small>
+                        </p>
+                        {% set etiquetas_full = fsc.get_etiquetas_familia_full(fsc.editing_familia.codfamilia) %}
+                        {% if etiquetas_full|length > 0 %}
+                        <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px;">
+                           <label style="font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; display: block;">
+                              <i class="fa fa-eye"></i> Visibilidad en catálogo agrupado
+                           </label>
+                           <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">
+                              Marca las etiquetas cuyo nombre debe mostrarse como encabezado en la vista agrupada del catálogo.
+                           </p>
+                           {% for tag in etiquetas_full %}
+                           <label style="display: inline-flex; align-items: center; margin-right: 12px; margin-bottom: 4px; font-weight: normal; cursor: pointer;">
+                              <input type="checkbox" name="etiqueta_visible[]" value="{{ tag.etiqueta }}"
+                                     {% if tag.visible %}checked{% endif %}
+                                     style="margin-right: 5px;">
+                              <span style="font-size: 13px;">{{ tag.etiqueta }}</span>
+                           </label>
+                           {% endfor %}
+                        </div>
+                        {% endif %}
+                     </div>
+                  </div>
+               </div>
+               <div class="modal-footer">
+                  <button type="button" class="btn btn-default" @click="close()">
+                     <i class="fa fa-times"></i> Cancelar
+                  </button>
+                  <button class="btn btn-primary" type="submit">
+                     <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; Guardar
+                  </button>
+               </div>
+            </form>
+         </div>
+      </div>
+   </div>
+</div>

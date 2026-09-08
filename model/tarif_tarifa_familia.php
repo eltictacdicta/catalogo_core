@@ -628,17 +628,21 @@ class tarif_tarifa_familia extends \fs_model
      * @param string $codtarifa
      * @param string $codfamilia
      * @param string|null $madre
+     * @param bool $en_catalogo
+     * @param bool $en_tarifa
+     * @param bool $activa
      * @return tarif_tarifa_familia|false
      */
-    public function add_familia_to_tarifa($codtarifa, $codfamilia, $madre = null)
+    public function add_familia_to_tarifa($codtarifa, $codfamilia, $madre = null, $en_catalogo = true, $en_tarifa = false, $activa = true)
     {
         $tf = new tarif_tarifa_familia();
         $tf->codtarifa = $codtarifa;
         $tf->codfamilia = $codfamilia;
         $tf->madre = $madre;
         $tf->capitulo = $this->suggest_capitulo($codtarifa, $madre);
-        $tf->en_catalogo = true;
-        $tf->activa = true;
+        $tf->en_catalogo = $en_catalogo;
+        $tf->en_tarifa = $en_tarifa;
+        $tf->activa = $activa;
 
         if ($tf->save()) {
             return $tf;
