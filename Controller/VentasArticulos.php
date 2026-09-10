@@ -28,6 +28,8 @@ require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
+use FSFramework\Event\FSEventDispatcher;
+use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -410,6 +412,20 @@ class VentasArticulos extends PageController
 
         if ($this->articulo->get($referencia)) {
             $this->new_error_msg('Ya existe un artículo con la referencia ' . $referencia);
+            return;
+        }
+
+        // Neutral permission gate (R-TAR-HOOK-004/005): listeners may deny the
+        // quick-create before persistence. Default resolution is allow.
+        $permissionEvent = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            (string) ($this->user->nick ?? '')
+        );
+        FSEventDispatcher::getInstance()->dispatch($permissionEvent, ArticlePermissionFilterEvent::NAME);
+
+        if (!$permissionEvent->isAllowed()) {
+            $this->new_error_msg('No tienes permisos para crear este artículo: ' . $permissionEvent->getDenialReason());
             return;
         }
 
