@@ -47,7 +47,11 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
 
     protected function install()
     {
-        new tarif_tarifa();
+        // `tarif_tarifa` lives in this namespace; the string form of
+        // class_exists() is not namespace-resolved, so pass the FQCN.
+        if (class_exists(\FSFramework\model\tarif_tarifa::class)) {
+            new tarif_tarifa();
+        }
         new tarif_opcional();
         return '';
     }
@@ -63,7 +67,7 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
         return ($data && count($data) > 0);
     }
 
-    public function add($codtarifa, $id_opcional, $codfamilia, $etiqueta)
+    public function add($codtarifa, $id_opcional, $codfamilia, $etiqueta, $transaction = null)
     {
         $etiqueta = trim($etiqueta);
         if (empty($etiqueta) || $this->exists_relation($codtarifa, $id_opcional, $codfamilia, $etiqueta)) {
@@ -75,7 +79,7 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
             . $this->var2str($codtarifa) . ","
             . $this->intval($id_opcional) . ","
             . $this->var2str($codfamilia) . ","
-            . $this->var2str($etiqueta) . ");");
+            . $this->var2str($etiqueta) . ");", $transaction);
     }
 
     public function remove($codtarifa, $id_opcional, $codfamilia, $etiqueta)
@@ -112,12 +116,12 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
      * @param string $codfamilia
      * @return bool
      */
-    public function delete_all_from_opcional_familia_tarifa($codtarifa, $id_opcional, $codfamilia)
+    public function delete_all_from_opcional_familia_tarifa($codtarifa, $id_opcional, $codfamilia, $transaction = null)
     {
         return $this->db->exec("DELETE FROM " . $this->table_name
             . " WHERE codtarifa = " . $this->var2str($codtarifa)
             . " AND id_opcional = " . $this->intval($id_opcional)
-            . " AND codfamilia = " . $this->var2str($codfamilia) . ";");
+            . " AND codfamilia = " . $this->var2str($codfamilia) . ";", $transaction);
     }
 
     /**
@@ -154,15 +158,24 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
     {
         $normalized = $this->normalizar_etiquetas($etiquetas);
 
-        if (!$this->delete_all_from_opcional_familia_tarifa($codtarifa, $id_opcional, $codfamilia)) {
+        // Delete + inserts must land atomically: a partial rewrite would leave
+        // the tuple without its previous tags. Each statement runs inside the
+        // outer transaction ($transaction = false) so nothing auto-commits.
+        $this->db->begin_transaction();
+
+        if (!$this->delete_all_from_opcional_familia_tarifa($codtarifa, $id_opcional, $codfamilia, false)) {
+            $this->db->rollback();
             return false;
         }
 
         foreach ($normalized as $tag) {
-            if (!$this->add($codtarifa, $id_opcional, $codfamilia, $tag)) {
+            if (!$this->add($codtarifa, $id_opcional, $codfamilia, $tag, false)) {
+                $this->db->rollback();
                 return false;
             }
         }
+
+        $this->db->commit();
 
         return true;
     }

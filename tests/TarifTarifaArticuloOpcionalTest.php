@@ -46,6 +46,13 @@ final class ArticuloOpcionalSpyDb
     /** @var list<array<int, array<string, mixed>>> */
     public array $selectQueue = [];
 
+    public bool $tableExists = true;
+
+    public function table_exists($name, $list = false)
+    {
+        return $this->tableExists;
+    }
+
     public function var2str($val)
     {
         if ($val === null) {
@@ -272,5 +279,27 @@ final class TarifTarifaArticuloOpcionalTest extends TestCase
         $this->assertStringContainsString('tarif_tarifa_articulo', $db->selectStatements[0]);
         $this->assertStringContainsString('?', $db->selectStatements[0]);
         $this->assertSame(['T1', 'F1'], $db->selectParams[0]);
+    }
+
+    public function test_sync_familia_overrides_short_circuits_without_the_article_table(): void
+    {
+        $db = new ArticuloOpcionalSpyDb();
+        $db->tableExists = false;
+
+        $resolver = new class($db) extends \FSFramework\model\tarif_tarifa_opcional_resolver {
+            public function __construct($db)
+            {
+                $this->db = $db;
+            }
+        };
+
+        $stats = $resolver->sync_familia_overrides('T1', 'F1');
+
+        $this->assertSame(
+            ['articulos' => 0, 'procesados' => 0, 'activados' => 0, 'desactivados' => 0],
+            $stats,
+            'a missing tarif_tarifa_articulo table must return the empty stats'
+        );
+        $this->assertSame([], $db->selectStatements, 'no query may run when the table is absent');
     }
 }

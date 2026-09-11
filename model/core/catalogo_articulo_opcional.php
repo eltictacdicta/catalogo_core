@@ -178,6 +178,7 @@ class catalogo_articulo_opcional extends \fs_model
         $data = $this->db->select('SELECT o.* FROM ' . catalogo_opcional::TABLE . ' o'
             . ' INNER JOIN ' . $this->table_name . ' ao ON o.id = ao.id_opcional'
             . ' WHERE ao.referencia = ?'
+            . ' AND (o.id_grupo IS NULL OR o.id_grupo = 0)'
             . ' ORDER BY o.nombre ASC;', [$referencia]);
         if ($data) {
             foreach ($data as $d) {

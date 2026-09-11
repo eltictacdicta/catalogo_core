@@ -22,7 +22,24 @@ final class TarifOpcionalExtMigration
             return;
         }
 
+        // Cheap pre-check: skip the bulk INSERT..SELECT when every legacy row
+        // already has its extension row (the steady state after migration).
+        if (!self::hasPendingLegacyRows($db, $sourceTable)) {
+            return;
+        }
+
         self::copyLegacyRows($db, $sourceTable);
+    }
+
+    private static function hasPendingLegacyRows(\fs_db2 $db, string $sourceTable): bool
+    {
+        $data = $db->select(
+            'SELECT 1 FROM ' . $sourceTable . ' o '
+            . 'LEFT JOIN tarif_opcional_ext e ON e.id_opcional = o.id '
+            . 'WHERE e.id_opcional IS NULL LIMIT 1;'
+        );
+
+        return (bool) $data;
     }
 
     private static function ensureExtTable(\fs_db2 $db): void

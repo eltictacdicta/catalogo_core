@@ -358,6 +358,76 @@ final class TarifConfiguradorOpcionalesTest extends TestCase
         );
     }
 
+    /**
+     * Extracts a method body from source so assertions cannot be satisfied by
+     * unrelated code elsewhere in the file.
+     */
+    private function methodBody(string $src, string $method): string
+    {
+        $pattern = '/function\s+' . preg_quote($method, '/') . '\s*\([^)]*\)[^{]*\{/';
+        if (!preg_match($pattern, $src, $matches, PREG_OFFSET_CAPTURE)) {
+            return '';
+        }
+
+        $start = $matches[0][1] + strlen($matches[0][0]);
+        $depth = 1;
+        $length = strlen($src);
+        for ($i = $start; $i < $length; $i++) {
+            if ($src[$i] === '{') {
+                $depth++;
+            } elseif ($src[$i] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($src, $start, $i - $start);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    public function test_mutating_actions_require_post_and_csrf(): void
+    {
+        $src = $this->controllerSource();
+
+        $this->assertStringContainsString('MUTATING_ACTIONS', $src, 'the mutating action list must be declared');
+        $this->assertStringContainsString('guard_mutating_action()', $src, 'mutating actions must be guarded');
+        $this->assertStringContainsString('requireCsrf()', $src, 'the guard must enforce the framework CSRF token');
+        $this->assertStringContainsString("!== 'POST'", $src, 'the guard must reject non-POST requests');
+
+        $view = (string) file_get_contents(
+            FS_FOLDER . '/plugins/catalogo_core/View/tarif_configurador_opcionales.html.twig'
+        );
+        $this->assertStringContainsString(
+            "'X-CSRF-TOKEN': _csrfToken",
+            $view,
+            'the AJAX helper must send the CSRF token header'
+        );
+        $this->assertStringContainsString(
+            '_mutatingActions[action]',
+            $view,
+            'the AJAX helper must branch on the mutating action list'
+        );
+        $this->assertStringContainsString("method: 'POST'", $view, 'the AJAX helper must use POST for mutations');
+    }
+
+    public function test_batch_push_to_products_resolves_article_tags_once(): void
+    {
+        $body = $this->methodBody($this->controllerSource(), 'batch_push_to_products');
+
+        $this->assertNotSame('', $body, 'batch_push_to_products() body must be found');
+        $this->assertSame(
+            1,
+            substr_count($body, 'etiquetas_articulo('),
+            'article tags must be resolved once, outside the visible_ids loop'
+        );
+        $this->assertStringContainsString(
+            '$matching_refs',
+            $body,
+            'the matching references must be collected once before the opcional loop'
+        );
+    }
+
     // =====================================================================
     // D4 helper behavior (fake DB)
     // =====================================================================

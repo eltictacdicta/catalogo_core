@@ -142,4 +142,39 @@ final class TarifOpcionalPrecioHistorialTest extends TestCase
         $this->assertTrue($model->save());
         $this->assertCount(0, $model->historial, 'saving the same value must append no history row');
     }
+
+    public function test_change_below_the_epsilon_appends_no_history_row(): void
+    {
+        if (!method_exists(\FSFramework\model\tarif_opcional_precio::class, 'registrar_cambio_historial')) {
+            self::fail(
+                'adapter must expose the history seam registrar_cambio_historial() (design D3)'
+            );
+        }
+
+        $model = $this->makeTrackedModel(10.0);
+        $model->id_opcional = 1;
+        $model->codlista = 'DEF';
+        $model->precio = 10.00009;
+
+        $this->assertTrue($model->save());
+        $this->assertCount(0, $model->historial, 'a change below 0.0001 must append no history row');
+    }
+
+    public function test_change_at_the_epsilon_boundary_appends_exactly_one_history_row(): void
+    {
+        if (!method_exists(\FSFramework\model\tarif_opcional_precio::class, 'registrar_cambio_historial')) {
+            self::fail(
+                'adapter must expose the history seam registrar_cambio_historial() (design D3)'
+            );
+        }
+
+        $model = $this->makeTrackedModel(10.0);
+        $model->id_opcional = 1;
+        $model->codlista = 'DEF';
+        $model->precio = 10.0001;
+
+        $this->assertTrue($model->save());
+        $this->assertCount(1, $model->historial, 'a change of exactly 0.0001 must append one history row');
+        $this->assertSame([1, 'DEF', 10.0, 10.0001], $model->historial[0]);
+    }
 }

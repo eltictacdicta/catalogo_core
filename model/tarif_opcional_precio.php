@@ -114,7 +114,10 @@ class tarif_opcional_precio extends catalogo_opcional_precio
 
         $result = parent::save();
 
-        if ($result && abs($precio_anterior - $this->precio) >= 0.0001) {
+        // Round the delta to the epsilon's precision before comparing: the
+        // binary representation of an exact 0.0001 change lands just below
+        // 0.0001 (9.9999999999766942e-5) and would otherwise be silently lost.
+        if ($result && round(abs($precio_anterior - $this->precio), 5) >= 0.0001) {
             $this->registrar_cambio_historial(
                 $this->id_opcional,
                 $this->codlista,
@@ -217,10 +220,9 @@ class tarif_opcional_precio extends catalogo_opcional_precio
      * @param string $codtarifa
      * @param array $ids_opcionales
      * @param float $porcentaje
-     * @param string|null $usuario
      * @return array
      */
-    public function aplicar_porcentaje_masivo($codtarifa, $ids_opcionales, $porcentaje, $usuario = null)
+    public function aplicar_porcentaje_masivo($codtarifa, $ids_opcionales, $porcentaje)
     {
         $resultado = [
             'actualizados' => 0,

@@ -224,6 +224,10 @@ class tarif_tarifa_opcional_resolver extends \fs_model
             return $stats;
         }
 
+        if (!$this->db->table_exists(self::TARIFA_ARTICULO_TABLE)) {
+            return $stats;
+        }
+
         $data = $this->db->select(
             'SELECT referencia FROM ' . self::TARIFA_ARTICULO_TABLE
             . ' WHERE codtarifa = ? AND codfamilia = ?;',

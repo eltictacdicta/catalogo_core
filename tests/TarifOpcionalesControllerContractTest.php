@@ -110,13 +110,15 @@ final class TarifOpcionalesControllerContractTest extends TestCase
     public function test_all_four_controllers_have_zero_tarifario_opcional_requires(): void
     {
         foreach (self::CONTROLLER_SLUGS as $slug) {
-            $this->assertSame(
-                0,
-                (int) preg_match_all(
-                    "#require(_once)?\s*\(?\s*['\"]plugins/tarifario/model/tarif_[a-z0-9_]*opcional[a-z0-9_]*\.php#i",
-                    $this->controllerSource($slug)
-                ),
-                $slug . ' must not require plugins/tarifario/model/tarif_*opcional*'
+            // Strip quotes/whitespace/newlines so concatenated paths such as
+            // FS_FOLDER . '/plugins/tarifario/model/...' (or '.' joinings) are
+            // detected just like a single-quoted literal would be.
+            $normalized = (string) preg_replace('/[\s\'"]+/', '', $this->controllerSource($slug));
+
+            $this->assertStringNotContainsString(
+                'plugins/tarifario/model',
+                $normalized,
+                $slug . ' must not reference plugins/tarifario/model/* (including concatenated paths)'
             );
         }
     }

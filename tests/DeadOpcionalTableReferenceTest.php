@@ -41,11 +41,15 @@ use PHPUnit\Framework\TestCase;
  */
 final class DeadOpcionalTableReferenceTest extends TestCase
 {
-    private const DEAD_TABLE_PATTERN = '/(FROM|JOIN|INTO|REFERENCES|UPDATE)[[:space:]]+`?(tarif_articulo_opcional|tarif_opcionales)`?([^_a-zA-Z0-9]|$)/';
+    private const DEAD_TABLE_PATTERN = '/(FROM|JOIN|INTO|REFERENCES|UPDATE)[[:space:]]+`?(tarif_articulo_opcional|tarif_opcionales)`?([^_a-zA-Z0-9]|$)/i';
 
     /** @return list<string> */
     private function sourceFiles(string $root): array
     {
+        if (!is_dir($root)) {
+            return [];
+        }
+
         $files = [];
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
@@ -114,6 +118,11 @@ final class DeadOpcionalTableReferenceTest extends TestCase
         $this->assertMatchesRegularExpression(self::DEAD_TABLE_PATTERN, 'FROM tarif_articulo_opcional ao');
         $this->assertMatchesRegularExpression(self::DEAD_TABLE_PATTERN, 'DELETE FROM tarif_articulo_opcional;');
         $this->assertMatchesRegularExpression(self::DEAD_TABLE_PATTERN, 'REFERENCES tarif_opcionales (id)');
+        $this->assertMatchesRegularExpression(
+            self::DEAD_TABLE_PATTERN,
+            'FROM TARIF_ARTICULO_OPCIONAL ao',
+            'the pattern must be case-insensitive'
+        );
     }
 
     public function test_no_dead_table_references_remain(): void

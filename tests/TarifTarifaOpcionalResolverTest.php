@@ -152,16 +152,50 @@ final class TarifTarifaOpcionalResolverTest extends TestCase
     // Wiring contract
     // =====================================================================
 
+    /**
+     * Extracts the body of a method from its source, so wiring assertions
+     * cannot be satisfied by unrelated code elsewhere in the file.
+     */
+    private function methodBody(string $src, string $method): string
+    {
+        $pattern = '/function\s+' . preg_quote($method, '/') . '\s*\([^)]*\)[^{]*\{/';
+        if (!preg_match($pattern, $src, $matches, PREG_OFFSET_CAPTURE)) {
+            return '';
+        }
+
+        $start = $matches[0][1] + strlen($matches[0][0]);
+        $depth = 1;
+        $length = strlen($src);
+        for ($i = $start; $i < $length; $i++) {
+            if ($src[$i] === '{') {
+                $depth++;
+            } elseif ($src[$i] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($src, $start, $i - $start);
+                }
+            }
+        }
+
+        return '';
+    }
+
     public function test_get_opcionales_activos_articulo_applies_the_filter_helper(): void
     {
-        $src = $this->resolverSource();
+        $body = $this->methodBody($this->resolverSource(), 'get_opcionales_activos_articulo');
 
-        $this->assertStringContainsString('filtrar_por_etiquetas(', $src);
-        $this->assertStringContainsString('get_etiquetas_opcional(', $src);
-        $this->assertStringContainsString('familia_tiene_etiquetas(', $src);
+        $this->assertNotSame('', $body, 'the resolver method body must be found');
+
+        $this->assertStringContainsString(
+            'filtrar_por_etiquetas(',
+            $body,
+            'get_opcionales_activos_articulo() must invoke filtrar_por_etiquetas()'
+        );
+        $this->assertStringContainsString('get_etiquetas_opcional(', $body);
+        $this->assertStringContainsString('familia_tiene_etiquetas(', $body);
         $this->assertStringContainsString(
             'return $opcionales;',
-            $src,
+            $body,
             'a familia without tags must return the full active set'
         );
     }

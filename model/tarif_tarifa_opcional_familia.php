@@ -228,13 +228,13 @@ class tarif_tarifa_opcional_familia extends \fs_model
         $list = [];
         
         $sql = "SELECT f.* FROM familias f"
-            . " INNER JOIN catalogo_opcional_familias of ON f.codfamilia = of.codfamilia"
-            . " WHERE of.id_opcional = " . $this->intval($id_opcional)
+            . " INNER JOIN catalogo_opcional_familias of2 ON f.codfamilia = of2.codfamilia"
+            . " WHERE of2.id_opcional = " . $this->intval($id_opcional)
             . " AND NOT EXISTS ("
             . "   SELECT 1 FROM " . $this->table_name . " tof"
             . "   WHERE tof.codtarifa = " . $this->var2str($codtarifa)
-            . "   AND tof.id_opcional = of.id_opcional"
-            . "   AND tof.codfamilia = of.codfamilia"
+            . "   AND tof.id_opcional = of2.id_opcional"
+            . "   AND tof.codfamilia = of2.codfamilia"
             . "   AND tof.activo = FALSE"
             . " )"
             . " ORDER BY f.descripcion ASC;";
@@ -258,13 +258,13 @@ class tarif_tarifa_opcional_familia extends \fs_model
     {
         $ids = [];
         
-        $sql = "SELECT of.id_opcional FROM catalogo_opcional_familias of"
-            . " WHERE of.codfamilia = " . $this->var2str($codfamilia)
+        $sql = "SELECT of2.id_opcional FROM catalogo_opcional_familias of2"
+            . " WHERE of2.codfamilia = " . $this->var2str($codfamilia)
             . " AND NOT EXISTS ("
             . "   SELECT 1 FROM " . $this->table_name . " tof"
             . "   WHERE tof.codtarifa = " . $this->var2str($codtarifa)
-            . "   AND tof.id_opcional = of.id_opcional"
-            . "   AND tof.codfamilia = of.codfamilia"
+            . "   AND tof.id_opcional = of2.id_opcional"
+            . "   AND tof.codfamilia = of2.codfamilia"
             . "   AND tof.activo = FALSE"
             . " );";
         

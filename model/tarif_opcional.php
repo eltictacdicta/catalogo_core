@@ -25,6 +25,19 @@ class tarif_opcional extends catalogo_opcional
     /** @var bool Incluido en tarifa exportada (solo tarifario). */
     public $en_tarifa = false;
 
+    /**
+     * Process-wide cache of columnExists() probes, keyed by "table|column".
+     * @var array<string, bool>
+     */
+    private static array $column_exists_cache = [];
+
+    /**
+     * Legacy extension columns per source table, probed at most once per
+     * process (keyed by table name).
+     * @var array<string, array<int, string>>
+     */
+    private static array $legacy_columns_cache = [];
+
     public function __construct($data = false)
     {
         parent::__construct($data);
@@ -47,10 +60,13 @@ class tarif_opcional extends catalogo_opcional
         }
 
         if ($data && $this->id) {
+            // Rows coming from the extension LEFT JOIN already carry the
+            // `ref_sap` key: trust the joined data and skip the per-row
+            // ext_exists() probe (N+1). Only rows without that key (e.g. from
+            // a query that did not join tarif_opcional_ext) need an explicit
+            // extension load.
             if (!array_key_exists('ref_sap', $data)) {
                 $this->load_extension();
-            } elseif (!$this->ext_exists()) {
-                $this->load_legacy_extension_columns();
             }
         }
     }
@@ -119,20 +135,19 @@ class tarif_opcional extends catalogo_opcional
             return;
         }
 
-        $columns = ['id'];
-        if ($this->columnExists($sourceTable, 'ref_sap')) {
-            $columns[] = 'ref_sap';
-        }
-        if ($this->columnExists($sourceTable, 'codigo2')) {
-            $columns[] = 'codigo2';
-        }
-        if ($this->columnExists($sourceTable, 'en_catalogo')) {
-            $columns[] = 'en_catalogo';
-        }
-        if ($this->columnExists($sourceTable, 'en_tarifa')) {
-            $columns[] = 'en_tarifa';
+        // Probe the legacy columns at most once per process and reuse the
+        // result for every subsequently hydrated row.
+        if (!array_key_exists($sourceTable, self::$legacy_columns_cache)) {
+            $columns = ['id'];
+            foreach (['ref_sap', 'codigo2', 'en_catalogo', 'en_tarifa'] as $candidate) {
+                if ($this->columnExists($sourceTable, $candidate)) {
+                    $columns[] = $candidate;
+                }
+            }
+            self::$legacy_columns_cache[$sourceTable] = $columns;
         }
 
+        $columns = self::$legacy_columns_cache[$sourceTable];
         if (count($columns) === 1) {
             return;
         }
@@ -270,6 +285,57 @@ class tarif_opcional extends catalogo_opcional
         return $list;
     }
 
+    /**
+     * Cuenta los opcionales que cumplen los mismos filtros que search():
+     * query, familia, tarifa (solo activos) y extensión ref_sap. Devuelve el
+     * total real para paginar sin depender del número de filas de la página.
+     *
+     * @param string $query
+     * @param string $codfamilia
+     * @param string $codtarifa
+     * @param bool $solo_activos
+     * @return int
+     */
+    public function count_filtered($query = '', $codfamilia = '', $codtarifa = '', $solo_activos = false)
+    {
+        $query = $this->no_html(mb_strtolower($query, 'UTF8'));
+        $where_conditions = [];
+        $familiaTable = catalogo_opcional_familia::TABLE;
+
+        if ($codfamilia != '' || ($codtarifa != '' && $solo_activos)) {
+            $sql = 'SELECT COUNT(DISTINCT o.id) as total FROM ' . $this->table_name . ' o '
+                . 'LEFT JOIN ' . $this->ext_table . ' e ON o.id = e.id_opcional';
+
+            if ($codfamilia != '') {
+                $sql .= ' INNER JOIN ' . $familiaTable . ' of ON o.id = of.id_opcional';
+                $where_conditions[] = 'of.codfamilia = ' . $this->var2str($codfamilia);
+            }
+
+            if ($codtarifa != '' && $solo_activos) {
+                $sql .= ' INNER JOIN catalogo_opcional_precios op ON o.id = op.id_opcional';
+                $where_conditions[] = 'op.codlista = ' . $this->var2str($codtarifa);
+            }
+
+            if ($query != '') {
+                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR lower(COALESCE(e.ref_sap, '')) LIKE '%" . $query . "%')";
+            }
+
+            if (count($where_conditions) > 0) {
+                $sql .= ' WHERE ' . implode(' AND ', $where_conditions);
+            }
+        } else {
+            $sql = 'SELECT COUNT(*) as total FROM ' . $this->table_name;
+            if ($query != '') {
+                $sql .= " WHERE lower(codigo) LIKE '%" . $query . "%'"
+                    . " OR lower(nombre) LIKE '%" . $query . "%'";
+            }
+        }
+
+        $data = $this->db->select($sql);
+
+        return $data ? intval($data[0]['total']) : 0;
+    }
+
     public function all($offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $list = [];
@@ -354,6 +420,11 @@ class tarif_opcional extends catalogo_opcional
 
     private function columnExists(string $table, string $column): bool
     {
+        $cacheKey = $table . '|' . $column;
+        if (array_key_exists($cacheKey, self::$column_exists_cache)) {
+            return self::$column_exists_cache[$cacheKey];
+        }
+
         if (defined('FS_DB_TYPE') && FS_DB_TYPE === 'postgresql') {
             $data = $this->db->select(
                 'SELECT 1 FROM information_schema.columns '
@@ -366,6 +437,6 @@ class tarif_opcional extends catalogo_opcional
             );
         }
 
-        return (bool) $data;
+        return self::$column_exists_cache[$cacheKey] = (bool) $data;
     }
 }

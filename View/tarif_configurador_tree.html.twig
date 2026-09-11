@@ -31,7 +31,7 @@
             <a href="#" onclick="openModalEditarOpcional({{ opc.id }}); return false;">
                <i class="fa fa-pencil"></i> Editar opcional
             </a>
-            <a href="#" onclick="removeOpcionalProducto('{{ art.referencia }}', {{ opc.id }}); return false;" class="text-danger">
+            <a href="#" onclick="removeOpcionalProducto('{{ art.referencia|e('js') }}', {{ opc.id }}); return false;" class="text-danger">
                <i class="fa fa-times"></i> Quitar del producto
             </a>
          </div>
@@ -43,10 +43,10 @@
             <i class="fa fa-plus"></i>
          </button>
          <div class="cfg-badge-menu">
-            <a href="#" onclick="openModalCrearOpcional('producto', '{{ node.codfamilia }}', '', '{{ art.referencia }}'); return false;">
+            <a href="#" onclick="openModalCrearOpcional('producto', '{{ node.codfamilia|e('js') }}', '', '{{ art.referencia|e('js') }}'); return false;">
                <i class="fa fa-plus-circle"></i> Crear nuevo opcional
             </a>
-            <a href="#" onclick="openModalAgregarExistente('producto', '{{ node.codfamilia }}', '', '{{ art.referencia }}'); return false;">
+            <a href="#" onclick="openModalAgregarExistente('producto', '{{ node.codfamilia|e('js') }}', '', '{{ art.referencia|e('js') }}'); return false;">
                <i class="fa fa-search"></i> Agregar existente
             </a>
          </div>

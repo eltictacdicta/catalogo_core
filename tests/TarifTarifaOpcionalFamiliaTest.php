@@ -228,7 +228,7 @@ final class TarifTarifaOpcionalFamiliaTest extends TestCase
         $this->assertStringContainsString('NOT EXISTS', $sql);
         $this->assertStringContainsString('tof.activo = FALSE', $sql);
         $this->assertStringContainsString("tof.codtarifa = 'T1'", $sql);
-        $this->assertStringContainsString("of.codfamilia = 'F1'", $sql);
+        $this->assertStringContainsString("of2.codfamilia = 'F1'", $sql);
     }
 
     // =====================================================================

@@ -62,6 +62,26 @@ class tarif_configurador_opcionales extends fbase_controller
     private const TARIFA_ARTICULO_ETIQUETA_TABLE = 'tarif_tarifa_articulo_etiqueta';
     private const TARIFA_ARTICULO_PRECIO_TABLE = 'tarif_articulo_precios';
 
+    /**
+     * Actions that mutate persisted state. They must arrive as a POST carrying
+     * a valid CSRF token before the matching ajax_* handler runs.
+     */
+    private const MUTATING_ACTIONS = [
+        'push_to_products',
+        'push_to_tags',
+        'push_to_children',
+        'push_all_down',
+        'create_opcional',
+        'edit_opcional',
+        'delete_opcional',
+        'add_opcional_familia',
+        'add_opcional_etiqueta',
+        'add_opcional_producto',
+        'remove_opcional_familia',
+        'remove_opcional_etiqueta',
+        'remove_opcional_producto',
+    ];
+
     /** @var tarif_tarifa_familia */
     public $tarifa_familia;
 
@@ -93,6 +113,14 @@ class tarif_configurador_opcionales extends fbase_controller
         $this->init_tarifa();
 
         $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+
+        // Mutating dispatcher actions require POST + a valid framework CSRF
+        // token (pre_private_core() validates it; requireCsrf() enforces it
+        // even in soft mode). Non-mutating actions (htmx_tree,
+        // search_opcionales) keep working over GET.
+        if (in_array($action, self::MUTATING_ACTIONS, true) && !$this->guard_mutating_action()) {
+            return;
+        }
 
         switch ($action) {
             case 'htmx_tree':
@@ -143,6 +171,37 @@ class tarif_configurador_opcionales extends fbase_controller
         }
 
         $this->load_familias_raiz();
+    }
+
+    /**
+     * Allows a mutating action only when it is a POST with a valid CSRF token.
+     * Emits a JSON 403 response otherwise and returns false.
+     */
+    private function guard_mutating_action(): bool
+    {
+        $request = $this->getRequest();
+        if (strtoupper($request->getMethod()) !== 'POST') {
+            return $this->reject_mutating_action();
+        }
+
+        if (!$this->requireCsrf()) {
+            return $this->reject_mutating_action();
+        }
+
+        return true;
+    }
+
+    private function reject_mutating_action(): bool
+    {
+        $this->template = false;
+        header('Content-Type: application/json');
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Token de seguridad inválido o método no permitido.',
+        ]);
+
+        return false;
     }
 
     private function init_tarifa()
@@ -841,14 +900,22 @@ class tarif_configurador_opcionales extends fbase_controller
         if (!empty($etiqueta)) {
             $required_tags = explode('|', $etiqueta);
             sort($required_tags);
+
+            // Article tags do not depend on the opcional: resolve the matching
+            // references once instead of re-querying them per opcional.
+            $matching_refs = [];
+            foreach ($articulos as $art) {
+                $tags = $this->etiquetas_articulo($this->codtarifa, $art->referencia);
+                sort($tags);
+                if ($tags === $required_tags) {
+                    $matching_refs[] = $art->referencia;
+                }
+            }
+
             foreach ($visible_ids as $id_opcional) {
-                foreach ($articulos as $art) {
-                    $tags = $this->etiquetas_articulo($this->codtarifa, $art->referencia);
-                    sort($tags);
-                    if ($tags === $required_tags) {
-                        if ($art_opc->add($art->referencia, $id_opcional)) {
-                            $count++;
-                        }
+                foreach ($matching_refs as $referencia) {
+                    if ($art_opc->add($referencia, $id_opcional)) {
+                        $count++;
                     }
                 }
             }

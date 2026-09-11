@@ -42,6 +42,12 @@ final class EtiquetaQuerySpyDb
     /** @var list<array<string, mixed>> */
     public array $rows = [];
 
+    public int $commits = 0;
+
+    public int $rollbacks = 0;
+
+    public bool $failOnInsert = false;
+
     public function var2str($val)
     {
         if ($val === null) {
@@ -71,7 +77,31 @@ final class EtiquetaQuerySpyDb
 
     public function exec($sql, $transaction = null, $params = [], $batch = false)
     {
-        $this->execStatements[] = trim((string) $sql);
+        $sql = trim((string) $sql);
+        $this->execStatements[] = $sql;
+
+        if ($this->failOnInsert && stripos($sql, 'INSERT') === 0) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function begin_transaction()
+    {
+        return true;
+    }
+
+    public function commit()
+    {
+        $this->commits++;
+
+        return true;
+    }
+
+    public function rollback()
+    {
+        $this->rollbacks++;
 
         return true;
     }
@@ -165,9 +195,23 @@ final class TarifTarifaOpcionalEtiquetaTest extends TestCase
     }
 
     // =====================================================================
-    // replace_etiquetas_opcional: normalized + idempotent
+    // install() dependency guard
     // =====================================================================
 
+    public function test_install_guards_the_tarif_tarifa_instantiation(): void
+    {
+        $src = (string) file_get_contents(FS_FOLDER . '/' . self::MODEL_RELATIVE);
+
+        $this->assertStringContainsString(
+            'class_exists(\FSFramework\model\tarif_tarifa::class)',
+            $src,
+            'install() must guard the tarif_tarifa instantiation with its namespace-resolved class name'
+        );
+    }
+
+    // =====================================================================
+    // replace_etiquetas_opcional: normalized + idempotent
+    // =====================================================================
     public function test_replace_etiquetas_persists_the_normalized_deduplicated_set(): void
     {
         $db = new EtiquetaQuerySpyDb();
@@ -218,6 +262,32 @@ final class TarifTarifaOpcionalEtiquetaTest extends TestCase
         $this->assertCount(1, $secondDeletes, 'a rewrite clears the tuple exactly once');
         $this->assertEqualsCanonicalizing($first, $second, 'the stored set must not change');
         $this->assertCount(2, $second);
+    }
+
+    public function test_replace_etiquetas_commits_once_on_success(): void
+    {
+        $db = new EtiquetaQuerySpyDb();
+        $db->rows = [];
+        $model = $this->buildModel($db);
+
+        $this->assertTrue($model->replace_etiquetas_opcional('T1', 5, 'F1', ['ROJO', 'AZUL']));
+        $this->assertSame(1, $db->commits, 'a successful replace commits the delete+inserts atomically');
+        $this->assertSame(0, $db->rollbacks, 'a successful replace must not roll back');
+    }
+
+    public function test_replace_etiquetas_rolls_back_and_returns_false_when_an_insert_fails(): void
+    {
+        $db = new EtiquetaQuerySpyDb();
+        $db->rows = [];
+        $db->failOnInsert = true;
+        $model = $this->buildModel($db);
+
+        $this->assertFalse(
+            $model->replace_etiquetas_opcional('T1', 5, 'F1', ['ROJO']),
+            'a failed insert must preserve the previous false-return contract'
+        );
+        $this->assertSame(1, $db->rollbacks, 'a failed insert must roll back the delete+inserts');
+        $this->assertSame(0, $db->commits, 'a failed replace must not commit');
     }
 
     // =====================================================================

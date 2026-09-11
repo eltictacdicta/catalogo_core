@@ -283,8 +283,10 @@ class tarif_opcional_edit extends fbase_controller
                     $guardados++;
                 }
             } else {
-                // Si no está activo, eliminar el precio de esta tarifa
-                if ($this->opcional->delete_precio_tarifa($tarifa->codtarifa)) {
+                // Si no está activo, eliminar el precio de esta tarifa.
+                // Contar solo cuando existía una fila que se borró realmente.
+                $precio_existente = $precio_model->get($this->opcional->id, $tarifa->codtarifa);
+                if ($precio_existente && $this->opcional->delete_precio_tarifa($tarifa->codtarifa)) {
                     $eliminados++;
                 }
             }

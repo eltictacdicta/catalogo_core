@@ -137,12 +137,15 @@ class tarif_opcionales extends fbase_controller
         $opcional = new tarif_opcional();
 
         $this->resultados = $opcional->search($this->query, $this->offset, $this->b_codfamilia, $this->b_codtarifa, $this->b_solo_activos);
-        $this->total_resultados = count($this->resultados);
 
-        // Contar total
-        if ($this->query == '' && $this->b_codfamilia == '' && !$this->b_solo_activos) {
-            $this->total_resultados = $opcional->count();
-        }
+        // Dedicated filtered count: paginate by the real total, not by the
+        // number of rows returned in the current page.
+        $this->total_resultados = $opcional->count_filtered(
+            $this->query,
+            $this->b_codfamilia,
+            $this->b_codtarifa,
+            $this->b_solo_activos
+        );
     }
 
     /**

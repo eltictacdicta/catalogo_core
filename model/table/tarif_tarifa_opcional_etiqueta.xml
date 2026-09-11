@@ -27,4 +27,22 @@
         <nombre>tarif_tarifa_opcional_etiqueta_pkey</nombre>
         <consulta>PRIMARY KEY (codtarifa, id_opcional, codfamilia, etiqueta)</consulta>
     </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opc_etiq_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opc_etiq_opcional</nombre>
+        <consulta>FOREIGN KEY (id_opcional)
+            REFERENCES catalogo_opcionales (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opc_etiq_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
 </tabla>

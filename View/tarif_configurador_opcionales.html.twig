@@ -17,6 +17,27 @@ var _codtarifa = '{{ fsc.codtarifa }}';
 var _currentCodfamilia = '';
 var _searchTimer = null;
 
+/* CSRF token exposed by the theme header meta tag for AJAX use. */
+var _csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+/* Mutating dispatcher actions: these are sent as POST with the CSRF token.
+   Read-only actions (htmx_tree, search_opcionales) stay on GET. */
+var _mutatingActions = {
+   push_to_products: 1,
+   push_to_tags: 1,
+   push_to_children: 1,
+   push_all_down: 1,
+   create_opcional: 1,
+   edit_opcional: 1,
+   delete_opcional: 1,
+   add_opcional_familia: 1,
+   add_opcional_etiqueta: 1,
+   add_opcional_producto: 1,
+   remove_opcional_familia: 1,
+   remove_opcional_etiqueta: 1,
+   remove_opcional_producto: 1
+};
+
 function cambiarTarifa() {
    var codtarifa = document.getElementById('select_tarifa').value;
    window.location.href = _baseUrl + '&codtarifa=' + encodeURIComponent(codtarifa);
@@ -92,14 +113,45 @@ document.addEventListener('click', function() { closeBadgeMenus(); });
 /* ===== AJAX helper ===== */
 
 function _ajaxAction(action, params) {
-   var qs = 'codtarifa=' + encodeURIComponent(_codtarifa) + '&action=' + encodeURIComponent(action);
+   var body = new URLSearchParams();
+   body.append('codtarifa', _codtarifa);
+   body.append('action', action);
    Object.keys(params).forEach(function(k) {
       if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
-         qs += '&' + k + '=' + encodeURIComponent(params[k]);
+         body.append(k, params[k]);
       }
    });
-   return fetch(_baseUrl + '&' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+
+   if (_mutatingActions[action]) {
+      return fetch(_baseUrl, {
+         method: 'POST',
+         headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-CSRF-TOKEN': _csrfToken
+         },
+         body: body.toString()
+      }).then(function(r) { return r.json(); });
+   }
+
+   return fetch(_baseUrl + '&' + body.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function(r) { return r.json(); });
+}
+
+/**
+ * Renders "<icon> prefix <strong>name</strong> entity" without interpolating
+ * raw data into innerHTML.
+ */
+function _renderAssocLabel(el, prefix, name, entity) {
+   el.textContent = '';
+   var icon = document.createElement('i');
+   icon.className = 'fa fa-link';
+   el.appendChild(icon);
+   el.appendChild(document.createTextNode(' ' + prefix + ' '));
+   var strong = document.createElement('strong');
+   strong.textContent = name;
+   el.appendChild(strong);
+   el.appendChild(document.createTextNode(' ' + entity));
 }
 
 /* ===== Push-down actions ===== */
@@ -201,7 +253,7 @@ function openModalCrearOpcional(assocType, assocCodfamilia, assocEtiqueta, assoc
    if (assocType) {
       var labels = {familia: 'Familia', etiqueta: 'Etiqueta', producto: 'Producto'};
       var entity = assocCodfamilia || assocEtiqueta || assocReferencia || '';
-      assocInfo.innerHTML = '<i class="fa fa-link"></i> Se asociará a: <strong>' + (labels[assocType] || assocType) + '</strong> ' + entity;
+      _renderAssocLabel(assocInfo, 'Se asociará a:', labels[assocType] || assocType, entity);
       assocInfo.style.display = 'block';
    } else {
       assocInfo.style.display = 'none';
@@ -298,7 +350,12 @@ function openModalAgregarExistente(assocType, assocCodfamilia, assocEtiqueta, as
    var labels = {familia: 'Familia', etiqueta: 'Etiqueta', producto: 'Producto'};
    var entity = assocCodfamilia || assocReferencia || '';
    if (assocEtiqueta) entity += ' → ' + assocEtiqueta.replace(/\|/g, ', ');
-   document.getElementById('add-opc-assoc-label').innerHTML = '<i class="fa fa-link"></i> Asociar a: <strong>' + (labels[assocType] || assocType) + '</strong> ' + entity;
+   _renderAssocLabel(
+      document.getElementById('add-opc-assoc-label'),
+      'Asociar a:',
+      labels[assocType] || assocType,
+      entity
+   );
 
    $('#modal-agregar-existente').modal('show');
    setTimeout(function() { document.getElementById('add-opc-search').focus(); }, 400);
@@ -316,21 +373,45 @@ function searchExistingOpcionales() {
 
       _ajaxAction('search_opcionales', {q: query, exclude_familia: excludeFamilia}).then(function(data) {
          var container = document.getElementById('add-opc-results');
+         container.textContent = '';
+
          if (!data.success || data.results.length === 0) {
-            container.innerHTML = '<div class="text-muted text-center" style="padding: 20px;">No se encontraron opcionales.</div>';
+            var empty = document.createElement('div');
+            empty.className = 'text-muted text-center';
+            empty.style.padding = '20px';
+            empty.textContent = 'No se encontraron opcionales.';
+            container.appendChild(empty);
             return;
          }
-         var html = '';
+
          data.results.forEach(function(opc) {
-            html += '<div class="cfg-search-result-item" onclick="selectExistingOpcional(' + opc.id + ')">'
-               + '<div class="cfg-search-result-info">'
-               + '<strong>' + opc.nombre + '</strong>'
-               + '<small class="text-muted"> (' + opc.codigo + ')</small>'
-               + '</div>'
-               + '<div class="cfg-search-result-price">' + (opc.precio_tarifa > 0 ? opc.precio_tarifa.toFixed(2).replace('.', ',') + ' €' : '') + '</div>'
-               + '</div>';
+            var item = document.createElement('div');
+            item.className = 'cfg-search-result-item';
+            item.addEventListener('click', function() { selectExistingOpcional(opc.id); });
+
+            var info = document.createElement('div');
+            info.className = 'cfg-search-result-info';
+
+            var name = document.createElement('strong');
+            name.textContent = opc.nombre;
+            info.appendChild(name);
+
+            var codigo = document.createElement('small');
+            codigo.className = 'text-muted';
+            codigo.textContent = ' (' + opc.codigo + ')';
+            info.appendChild(codigo);
+
+            item.appendChild(info);
+
+            var price = document.createElement('div');
+            price.className = 'cfg-search-result-price';
+            if (opc.precio_tarifa > 0) {
+               price.textContent = opc.precio_tarifa.toFixed(2).replace('.', ',') + ' €';
+            }
+            item.appendChild(price);
+
+            container.appendChild(item);
          });
-         container.innerHTML = html;
       });
    }, 300);
 }
