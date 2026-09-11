@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Extensión 1:1 de catalogo_opcionales para campos propios del tarifario.
+    ref_sap, en_catalogo y en_tarifa no pertenecen al catálogo base (tpvmod).
+-->
+<tabla>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>ref_sap</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>YES</nulo>
+        <defecto>false</defecto>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>YES</nulo>
+        <defecto>false</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_opcional_ext_pkey</nombre>
+        <consulta>PRIMARY KEY (id_opcional)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_opcional_ext_opcional</nombre>
+        <consulta>FOREIGN KEY (id_opcional)
+            REFERENCES catalogo_opcionales (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

@@ -1,0 +1,317 @@
+{#
+ # Parcial: Árbol jerárquico del configurador de opcionales.
+ # Renderiza recursivamente la estructura: categoría → subcategorías → etiquetas → productos.
+ # Muestra opcionales con acciones de despliegue, edición, eliminación y asociación.
+ # Se carga via AJAX cuando el usuario selecciona una categoría raíz.
+ #}
+
+{% macro render_producto(art, fsc, node) %}
+<div class="cfg-producto-row">
+   <div class="cfg-producto-nombre">
+      <i class="fa fa-cube" style="color: #999; margin-right: 6px;"></i>
+      <span>{{ art.descripcion }}</span>
+      <small class="text-muted">({{ art.referencia }})</small>
+      {% if art.pvp is not null %}
+      <span class="cfg-producto-precio">{{ fsc.format_precio(art.pvp) }}</span>
+      {% endif %}
+   </div>
+   <div class="cfg-opcionales-list">
+      {% for opc in art.opcionales %}
+      <div class="cfg-badge-action-wrapper" data-id-opcional="{{ opc.id }}" data-referencia="{{ art.referencia }}">
+         <span class="cfg-opcional-badge cfg-opcional-producto">
+            {{ opc.nombre }}
+            {% if opc.precio is not null and opc.precio > 0 %}
+            <span class="cfg-opcional-precio">{{ fsc.format_precio(opc.precio) }}</span>
+            {% endif %}
+            <button type="button" class="cfg-badge-action-btn" onclick="toggleBadgeMenu(this, event)" title="Acciones">
+               <i class="fa fa-caret-down"></i>
+            </button>
+         </span>
+         <div class="cfg-badge-menu">
+            <a href="#" onclick="openModalEditarOpcional({{ opc.id }}); return false;">
+               <i class="fa fa-pencil"></i> Editar opcional
+            </a>
+            <a href="#" onclick="removeOpcionalProducto('{{ art.referencia }}', {{ opc.id }}); return false;" class="text-danger">
+               <i class="fa fa-times"></i> Quitar del producto
+            </a>
+         </div>
+      </div>
+      {% endfor %}
+      {# Botón agregar opcional al producto #}
+      <div class="cfg-add-opc-inline" onclick="event.stopPropagation();">
+         <button type="button" class="cfg-add-opc-btn cfg-add-opc-btn-sm" onclick="toggleBadgeMenu(this, event)" title="Agregar opcional al producto">
+            <i class="fa fa-plus"></i>
+         </button>
+         <div class="cfg-badge-menu">
+            <a href="#" onclick="openModalCrearOpcional('producto', '{{ node.codfamilia }}', '', '{{ art.referencia }}'); return false;">
+               <i class="fa fa-plus-circle"></i> Crear nuevo opcional
+            </a>
+            <a href="#" onclick="openModalAgregarExistente('producto', '{{ node.codfamilia }}', '', '{{ art.referencia }}'); return false;">
+               <i class="fa fa-search"></i> Agregar existente
+            </a>
+         </div>
+      </div>
+   </div>
+</div>
+{% endmacro %}
+
+{% macro render_node(node, fsc, nivel) %}
+{% import _self as self %}
+{% set node_id = node.codfamilia|replace({'.': '_', ' ': '_'}) %}
+{% set has_content = node.hijas|length > 0 or node.productos_sin_etiqueta|length > 0 or node.grupos_etiqueta|length > 0 %}
+{% set has_children = node.hijas|length > 0 %}
+
+{# Filtrar solo opcionales "visibles" #}
+{% set opcionales_visibles = [] %}
+{% for opc in node.opcionales %}
+   {% if opc.estado is defined and opc.estado == 'visible' %}
+      {% set opcionales_visibles = opcionales_visibles|merge([opc]) %}
+   {% endif %}
+{% endfor %}
+
+<div class="cfg-node cfg-nivel-{{ nivel }}">
+   {# Cabecera de categoría #}
+   <div class="cfg-node-header" {% if has_content %}onclick="toggleNode('{{ node_id }}')" style="cursor: pointer;"{% endif %}>
+      <div class="cfg-node-title">
+         {% if has_content %}
+         <i id="node-icon-{{ node_id }}" class="fa fa-chevron-down cfg-toggle-icon"></i>
+         {% else %}
+         <i class="fa fa-circle-o" style="font-size: 8px; color: #ccc; margin-right: 4px;"></i>
+         {% endif %}
+
+         {% if nivel == 0 %}
+         <i class="fa fa-folder" style="color: #f9a825;"></i>
+         {% else %}
+         <i class="fa fa-folder-o" style="color: #90a4ae;"></i>
+         {% endif %}
+
+         {% if node.capitulo %}
+         <span class="capitulo-badge">{{ node.capitulo }}</span>
+         {% endif %}
+
+         <span class="cfg-node-name">{{ node.descripcion }}</span>
+         <small class="text-muted">({{ node.codfamilia }})</small>
+      </div>
+
+      {# Opcionales y acciones de la categoría #}
+      <div class="cfg-node-opcionales" onclick="event.stopPropagation();">
+         {# Opcionales VISIBLES con acciones de despliegue #}
+         {% for opc in opcionales_visibles %}
+         <div class="cfg-badge-action-wrapper" data-id-opcional="{{ opc.id }}" data-codfamilia="{{ node.codfamilia }}">
+            <span class="cfg-opcional-badge cfg-opcional-familia cfg-badge-visible">
+               {{ opc.nombre }}
+               {% if opc.precio is not null and opc.precio > 0 %}
+               <span class="cfg-opcional-precio">{{ fsc.format_precio(opc.precio) }}</span>
+               {% endif %}
+               <button type="button" class="cfg-badge-action-btn" onclick="toggleBadgeMenu(this, event)" title="Acciones">
+                  <i class="fa fa-caret-down"></i>
+               </button>
+            </span>
+            <div class="cfg-badge-menu">
+               {% if has_children %}
+               <a href="#" onclick="pushToChildren('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', {{ opc.id }}); return false;">
+                  <i class="fa fa-sitemap"></i> Desplegar a subcategorías
+               </a>
+               {% endif %}
+               {% if node.tiene_etiquetas %}
+               <a href="#" onclick="pushToTags('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', {{ opc.id }}); return false;">
+                  <i class="fa fa-tags"></i> Desplegar a etiquetas
+               </a>
+               {% endif %}
+               <a href="#" onclick="pushToProducts('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', {{ opc.id }}, ''); return false;">
+                  <i class="fa fa-cubes"></i> Desplegar a productos
+               </a>
+               <div class="cfg-badge-menu-divider"></div>
+               <a href="#" onclick="openModalEditarOpcional({{ opc.id }}); return false;">
+                  <i class="fa fa-pencil"></i> Editar opcional
+               </a>
+               <a href="#" onclick="removeOpcionalFamilia('{{ node.codfamilia }}', {{ opc.id }}); return false;" class="text-danger">
+                  <i class="fa fa-times"></i> Quitar de categoría
+               </a>
+            </div>
+         </div>
+         {% endfor %}
+
+         {# Botón "Desplegar todos" #}
+         {% if opcionales_visibles|length > 0 %}
+         <div class="cfg-push-all-wrapper">
+            {% if has_children and node.tiene_etiquetas %}
+            <button type="button" class="cfg-push-all-btn" onclick="togglePushAllMenu(this, event)" title="Desplegar todos los opcionales visibles">
+               <i class="fa fa-level-down"></i> Desplegar todos <i class="fa fa-caret-down" style="font-size: 10px;"></i>
+            </button>
+            <div class="cfg-badge-menu">
+               <a href="#" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'children', ''); return false;">
+                  <i class="fa fa-sitemap"></i> A subcategorías
+               </a>
+               <a href="#" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'tags', ''); return false;">
+                  <i class="fa fa-tags"></i> A etiquetas
+               </a>
+               <a href="#" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'products', ''); return false;">
+                  <i class="fa fa-cubes"></i> A productos
+               </a>
+            </div>
+            {% elseif has_children %}
+            <button type="button" class="cfg-push-all-btn" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'children', ''); return false;" title="Desplegar todos a subcategorías">
+               <i class="fa fa-level-down"></i> Desplegar todos
+            </button>
+            {% elseif node.tiene_etiquetas %}
+            <button type="button" class="cfg-push-all-btn" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'tags', ''); return false;" title="Desplegar todos a etiquetas">
+               <i class="fa fa-level-down"></i> Desplegar todos
+            </button>
+            {% else %}
+            <button type="button" class="cfg-push-all-btn" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'products', ''); return false;" title="Desplegar todos a productos">
+               <i class="fa fa-level-down"></i> Desplegar todos
+            </button>
+            {% endif %}
+         </div>
+         {% endif %}
+
+         {# Botón agregar opcional a la categoría #}
+         <div class="cfg-add-opc-inline">
+            <button type="button" class="cfg-add-opc-btn" onclick="toggleBadgeMenu(this, event)" title="Agregar opcional a esta categoría">
+               <i class="fa fa-plus"></i>
+            </button>
+            <div class="cfg-badge-menu">
+               <a href="#" onclick="openModalCrearOpcional('familia', '{{ node.codfamilia }}', '', ''); return false;">
+                  <i class="fa fa-plus-circle"></i> Crear nuevo opcional
+               </a>
+               <a href="#" onclick="openModalAgregarExistente('familia', '{{ node.codfamilia }}', '', ''); return false;">
+                  <i class="fa fa-search"></i> Agregar existente
+               </a>
+            </div>
+         </div>
+      </div>
+   </div>
+
+   {# Contenido expandible #}
+   {% if has_content %}
+   <div id="node-content-{{ node_id }}" class="cfg-node-content">
+
+      {# Sub-categorías (recursivo) #}
+      {% for hija in node.hijas %}
+      {{ self.render_node(hija, fsc, nivel + 1) }}
+      {% endfor %}
+
+      {# Productos sin etiqueta #}
+      {% if node.productos_sin_etiqueta|length > 0 %}
+      <div class="cfg-product-group cfg-group-sin-etiqueta">
+         <div class="cfg-group-header cfg-group-header-plain">
+            <i class="fa fa-cubes" style="color: #999;"></i>
+            <span>Productos sin etiqueta</span>
+            <span class="cfg-group-count">{{ node.productos_sin_etiqueta|length }}</span>
+         </div>
+         <div class="cfg-group-body">
+            {% for art in node.productos_sin_etiqueta %}
+            {{ self.render_producto(art, fsc, node) }}
+            {% endfor %}
+         </div>
+      </div>
+      {% endif %}
+
+      {# Grupos por etiqueta #}
+      {% for group in node.grupos_etiqueta %}
+      <div class="cfg-product-group cfg-group-etiqueta">
+         <div class="cfg-group-header cfg-group-header-tag">
+            <div class="cfg-group-tag-info">
+               <i class="fa fa-tag" style="color: #5c6bc0;"></i>
+               <strong>{{ group.label }}</strong>
+               <span class="cfg-group-count">{{ group.articulos|length }} art.</span>
+            </div>
+            {# Opcionales VISIBLES de esta etiqueta con acciones #}
+            {% set opc_etiq_visibles = [] %}
+            {% for opc in group.opcionales %}
+               {% if opc.estado is defined and opc.estado == 'visible' %}
+                  {% set opc_etiq_visibles = opc_etiq_visibles|merge([opc]) %}
+               {% endif %}
+            {% endfor %}
+            <div class="cfg-opcionales-list">
+               {% for opc in opc_etiq_visibles %}
+               <div class="cfg-badge-action-wrapper" data-id-opcional="{{ opc.id }}" data-codfamilia="{{ node.codfamilia }}" data-tag-key="{{ group.tag_key }}">
+                  <span class="cfg-opcional-badge cfg-opcional-etiqueta cfg-badge-visible">
+                     {{ opc.nombre }}
+                     {% if opc.precio is not null and opc.precio > 0 %}
+                     <span class="cfg-opcional-precio">{{ fsc.format_precio(opc.precio) }}</span>
+                     {% endif %}
+                     <button type="button" class="cfg-badge-action-btn" onclick="toggleBadgeMenu(this, event)" title="Acciones">
+                        <i class="fa fa-caret-down"></i>
+                     </button>
+                  </span>
+                  <div class="cfg-badge-menu">
+                     <a href="#" onclick="pushToProducts('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', {{ opc.id }}, '{{ group.tag_key }}'); return false;">
+                        <i class="fa fa-cubes"></i> Desplegar a productos del grupo
+                     </a>
+                     <div class="cfg-badge-menu-divider"></div>
+                     <a href="#" onclick="openModalEditarOpcional({{ opc.id }}); return false;">
+                        <i class="fa fa-pencil"></i> Editar opcional
+                     </a>
+                     <a href="#" onclick="removeOpcionalEtiqueta('{{ node.codfamilia }}', {{ opc.id }}, '{{ group.tag_key }}'); return false;" class="text-danger">
+                        <i class="fa fa-times"></i> Quitar de etiqueta
+                     </a>
+                  </div>
+               </div>
+               {% endfor %}
+
+               {# Botón "Desplegar todos" a productos de esta etiqueta #}
+               {% if opc_etiq_visibles|length > 0 %}
+               <div class="cfg-push-all-wrapper">
+                  <button type="button" class="cfg-push-all-btn" onclick="pushAllDown('{{ fsc.codtarifa }}', '{{ node.codfamilia }}', 'products', '{{ group.tag_key }}'); return false;" title="Desplegar todos a productos del grupo">
+                     <i class="fa fa-level-down"></i> Desplegar todos
+                  </button>
+               </div>
+               {% endif %}
+
+               {# Botón agregar opcional a esta etiqueta #}
+               <div class="cfg-add-opc-inline">
+                  <button type="button" class="cfg-add-opc-btn cfg-add-opc-btn-sm" onclick="toggleBadgeMenu(this, event)" title="Agregar opcional a esta etiqueta">
+                     <i class="fa fa-plus"></i>
+                  </button>
+                  <div class="cfg-badge-menu">
+                     <a href="#" onclick="openModalCrearOpcional('etiqueta', '{{ node.codfamilia }}', '{{ group.tag_key }}', ''); return false;">
+                        <i class="fa fa-plus-circle"></i> Crear nuevo opcional
+                     </a>
+                     <a href="#" onclick="openModalAgregarExistente('etiqueta', '{{ node.codfamilia }}', '{{ group.tag_key }}', ''); return false;">
+                        <i class="fa fa-search"></i> Agregar existente
+                     </a>
+                  </div>
+               </div>
+            </div>
+         </div>
+         <div class="cfg-group-body">
+            {% for art in group.articulos %}
+            {{ self.render_producto(art, fsc, node) }}
+            {% endfor %}
+         </div>
+      </div>
+      {% endfor %}
+
+   </div>
+   {% endif %}
+</div>
+{% endmacro %}
+
+{% import _self as self %}
+
+{% if fsc.tree is defined and fsc.tree.codfamilia is defined %}
+<div class="cfg-tree">
+   {{ self.render_node(fsc.tree, fsc, 0) }}
+</div>
+
+{# Leyenda #}
+<div class="cfg-leyenda">
+   <span class="cfg-leyenda-title"><i class="fa fa-info-circle"></i> Leyenda:</span>
+   <span class="cfg-opcional-badge cfg-opcional-familia cfg-badge-visible" style="font-size: 11px;">
+      Visible (sin distribuir) <i class="fa fa-caret-down" style="margin-left: 3px;"></i>
+   </span>
+   <span class="cfg-opcional-badge cfg-opcional-producto" style="font-size: 11px;">Asociado a producto</span>
+   <button type="button" class="cfg-add-opc-btn cfg-add-opc-btn-sm" style="pointer-events: none; font-size: 11px;" disabled>
+      <i class="fa fa-plus"></i>
+   </button>
+   <span style="font-size: 11px; color: #666;">Agregar opcional</span>
+   <span class="cfg-leyenda-note">Los opcionales ya distribuidos (seleccionables) no se muestran en el nivel padre.</span>
+</div>
+{% else %}
+<div class="empty-state">
+   <i class="fa fa-inbox"></i>
+   <p>No se encontraron datos para esta categoría.</p>
+</div>
+{% endif %}

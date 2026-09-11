@@ -7,6 +7,7 @@ declare(strict_types=1);
 namespace FSFramework\Plugins\catalogo_core;
 
 use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
+use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 
 final class Init
 {
@@ -25,11 +26,17 @@ final class Init
     {
         $this->cleanupOrphanWizardFiles();
         self::migrateLegacyTables();
+        self::migrateOpcionalExtension();
         self::ensureArticuloOpcionalGrupoTable();
         try {
             self::ensureFamiliasTarifaTables();
         } catch (\Throwable $e) {
             error_log('[catalogo_core] familias tarifa tables ensure failed: ' . $e->getMessage());
+        }
+        try {
+            self::ensureOpcionalesTarifaTables();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] opcionales tarifa tables ensure failed: ' . $e->getMessage());
         }
     }
 
@@ -44,8 +51,10 @@ final class Init
     {
         try {
             self::migrateLegacyTables();
+            self::migrateOpcionalExtension();
             self::ensureCatalogTables();
             self::ensureFamiliasTarifaTables();
+            self::ensureOpcionalesTarifaTables();
             foreach (self::DEFAULT_SEED_MODELS as $modelName) {
                 self::seedNamespacedModel($modelName);
             }
@@ -73,6 +82,51 @@ final class Init
             'tarif_familia_ext',         // extends core familias
             'tarif_tarifa_etiqueta_familia',
             'tarif_tarifa_familia',      // FK → tarif_tarifas; install() also re-creates tarif_tarifas (model:128, defense in depth)
+        ] as $modelName) {
+            $file = FS_FOLDER . '/plugins/catalogo_core/model/' . $modelName . '.php';
+            if (is_file($file)) {
+                require_once $file;
+            }
+            $fqcn = 'FSFramework\\model\\' . $modelName;
+            if (class_exists($fqcn, false) && is_subclass_of($fqcn, \fs_model::class)) {
+                new $fqcn();
+            }
+        }
+    }
+
+    /**
+     * Asegura las cinco tablas tarif_* opcionales absorbidas desde tarifario
+     * cuando el plugin tarifario NO está activo (instalación standalone).
+     * Idempotente: require_once + fs_model solo crea la tabla si falta.
+     * Orden FK-seguro, espejo del antiguo tarifario_init.php.
+     */
+    public static function ensureOpcionalesTarifaTables(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+
+        // Destinos FK canónicos + clases que consumen los install() movidos.
+        // catalogo_lista_precio MUST go first: catalogo_opcional::install()
+        // instantiates it, so its class/table must already exist.
+        self::touchNamespacedModel('catalogo_lista_precio');
+        self::touchNamespacedModel('catalogo_opcional');
+        self::touchNamespacedModel('catalogo_articulo_opcional');
+
+        // tarif_tarifas debe existir antes de las tablas con FK.
+        self::ensureFamiliasTarifaTables();
+
+        // tarif_opcional (subclase de catalogo_opcional) lo consumen los install()
+        // de las tablas movidas; se precarga desde el árbol de catalogo_core.
+        $opcionalFile = FS_FOLDER . '/plugins/catalogo_core/model/tarif_opcional.php';
+        if (is_file($opcionalFile)) {
+            require_once $opcionalFile;
+        }
+
+        foreach ([                       // FK-safe order (spec: Standalone FK-safe table bootstrap)
+            'tarif_opcional_ext',        // FK → catalogo_opcionales
+            'tarif_tarifa_opcional_etiqueta',
+            'tarif_opcional_precio_historial',
+            'tarif_tarifa_opcional_familia',   // FK → tarif_tarifas, catalogo_opcionales, familias
+            'tarif_tarifa_articulo_opcional',  // FK → tarif_tarifas, articulos, catalogo_opcionales
         ] as $modelName) {
             $file = FS_FOLDER . '/plugins/catalogo_core/model/' . $modelName . '.php';
             if (is_file($file)) {
@@ -117,6 +171,24 @@ final class Init
             CatalogLegacyTableMigration::migrateIfNeeded($db);
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Migra ref_sap/en_catalogo/en_tarifa hacia tarif_opcional_ext. Absorbido
+     * desde tarifario/Init.php::migrateOpcionalExtension() junto con el modelo.
+     */
+    private static function migrateOpcionalExtension(): void
+    {
+        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
+            return;
+        }
+
+        try {
+            $db = \FSFramework\DependencyInjection\Container::db();
+            TarifOpcionalExtMigration::migrateIfNeeded($db);
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] Opcional extension migration failed: ' . $e->getMessage());
         }
     }
 

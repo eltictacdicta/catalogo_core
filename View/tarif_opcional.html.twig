@@ -1,0 +1,335 @@
+{% include 'header.html.twig' %}
+
+{% if fsc.opcional %}
+<script type="text/javascript">
+   var defined_autocomplete = false;
+
+   function eliminar_familia(cod, nombre)
+   {
+      bootbox.confirm({
+         message: '¿Eliminar la familia "'+nombre+'" de este opcional?',
+         title: '<b>Atención</b>',
+         callback: function(result) {
+            if (result) {
+               window.location.href = '{{ fsc.opcional.url() }}&remove_familia='+encodeURIComponent(cod)+'#familias';
+            }
+         }
+      });
+   }
+
+   function eliminar_articulo(ref)
+   {
+      bootbox.confirm({
+         message: '¿Eliminar el artículo "'+ref+'" de este opcional?',
+         title: '<b>Atención</b>',
+         callback: function(result) {
+            if (result) {
+               window.location.href = '{{ fsc.opcional.url() }}&remove_articulo='+encodeURIComponent(ref)+'#articulos';
+            }
+         }
+      });
+   }
+
+   function setup_autocomplete()
+   {
+      if (!defined_autocomplete) {
+         defined_autocomplete = true;
+         $('#buscar_articulo').autocomplete({
+            serviceUrl: '{{ fsc.opcional.url() }}',
+            paramName: 'buscar_articulo',
+            onSelect: function(suggestion) {
+               window.location.href = '{{ fsc.opcional.url() }}&add_articulo='+encodeURIComponent(suggestion.referencia)+'#articulos';
+            }
+         });
+      }
+   }
+
+   $(document).ready(function() {
+      $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+         if ($(e.target).attr('href') == '#articulos') {
+            setup_autocomplete();
+            $('#buscar_articulo').focus();
+         }
+      });
+
+      if(window.location.hash.substring(1) == 'articulos') {
+         $('#ul_tabs a[href="#articulos"]').tab('show');
+         setup_autocomplete();
+      } else if(window.location.hash.substring(1) == 'familias') {
+         $('#ul_tabs a[href="#familias"]').tab('show');
+      }
+   });
+</script>
+
+<div class="container-fluid" style="margin-bottom: 10px;">
+   <div class="row">
+      <div class="col-xs-12">
+         <div class="btn-group">
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_opcionales" title="Volver al listado">
+               <span class="glyphicon glyphicon-arrow-left"></span>
+               <span class="hidden-xs">&nbsp;Volver</span>
+            </a>
+         </div>
+         <div class="btn-group">
+            <a class="btn btn-sm btn-default" href="{{ fsc.opcional.url() }}" title="Recargar">
+               <span class="glyphicon glyphicon-refresh"></span>
+            </a>
+         </div>
+      </div>
+   </div>
+</div>
+
+<div role="tabpanel">
+   <ul id="ul_tabs" class="nav nav-tabs" role="tablist">
+      <li role="presentation" class="active">
+         <a href="#datos" aria-controls="datos" role="tab" data-toggle="tab">
+            <span class="glyphicon glyphicon-edit" aria-hidden="true"></span>
+            <span class="hidden-xs">&nbsp;Datos</span>
+         </a>
+      </li>
+      <li role="presentation">
+         <a href="#familias" aria-controls="familias" role="tab" data-toggle="tab">
+            <span class="glyphicon glyphicon-folder-open" aria-hidden="true"></span>
+            <span class="hidden-xs">&nbsp;Familias</span>
+            <span class="badge">{{ fsc.familias_asignadas|length }}</span>
+         </a>
+      </li>
+      <li role="presentation">
+         <a href="#articulos" aria-controls="articulos" role="tab" data-toggle="tab">
+            <span class="glyphicon glyphicon-th-list" aria-hidden="true"></span>
+            <span class="hidden-xs">&nbsp;Artículos</span>
+            <span class="badge">{{ fsc.articulos|length }}</span>
+         </a>
+      </li>
+   </ul>
+
+   <div class="tab-content">
+      {# Tab Datos #}
+      <div role="tabpanel" class="tab-pane active" id="datos">
+         <form action="{{ fsc.opcional.url() }}" method="post" class="form">
+            <div class="container-fluid" style="margin-top: 15px;">
+               <div class="row">
+                  <div class="col-sm-6">
+                     <div class="panel panel-primary">
+                        <div class="panel-heading">
+                           <h3 class="panel-title">Información del opcional</h3>
+                        </div>
+                        <div class="panel-body">
+                           <div class="form-group">
+                              <label>Código</label>
+                              <input class="form-control" type="text" name="codigo" value="{{ fsc.opcional.codigo }}" readonly/>
+                           </div>
+                           <div class="form-group">
+                              <label>REF</label>
+                              <input class="form-control" type="text" name="ref_sap" value="{{ fsc.opcional.ref_sap }}" maxlength="50" placeholder="SKU / Referencia SAP"/>
+                           </div>
+                           <div class="form-group">
+                              <label>Nombre</label>
+                              <input class="form-control" type="text" name="nombre" value="{{ fsc.opcional.nombre }}" maxlength="100" required/>
+                           </div>
+                           <div class="form-group">
+                              <label>Descripción</label>
+                              <textarea class="form-control" name="descripcion" rows="3">{{ fsc.opcional.descripcion }}</textarea>
+                           </div>
+                           <div class="form-group">
+                              <label>Precio</label>
+                              <div class="input-group">
+                                 <input class="form-control" type="text" name="precio" value="{{ fsc.opcional.precio }}" autocomplete="off"/>
+                                 <div class="input-group-addon">{{ fsc.simbolo_divisa(fsc.codtarifa) }}</div>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="checkbox-inline">
+                                 <input type="checkbox" name="activo" value="TRUE"{% if fsc.opcional.activo %} checked{% endif %}/>
+                                 Opcional activo
+                              </label>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+                  <div class="col-sm-6">
+                     <div class="panel panel-info">
+                        <div class="panel-heading">
+                           <h3 class="panel-title">Resumen</h3>
+                        </div>
+                        <div class="panel-body">
+                           <p><b>Familias asociadas:</b> {{ fsc.familias_asignadas|length }}</p>
+                           <p><b>Artículos asociados:</b> {{ fsc.articulos|length }}</p>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+               <div class="row">
+                  <div class="col-sm-12 text-right">
+                     <button class="btn btn-primary" type="submit">
+                        <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; Guardar
+                     </button>
+                  </div>
+               </div>
+            </div>
+         </form>
+      </div>
+
+      {# Tab Familias #}
+      <div role="tabpanel" class="tab-pane" id="familias">
+         <div class="container-fluid" style="margin-top: 15px;">
+            <div class="row">
+               <div class="col-sm-6">
+                  <div class="panel panel-default">
+                     <div class="panel-heading">
+                        <h3 class="panel-title">Familias asignadas</h3>
+                     </div>
+                     <div class="panel-body">
+                        {% if fsc.familias_asignadas|length > 0 %}
+                        <table class="table table-hover">
+                           <thead>
+                              <tr>
+                                 <th>Código</th>
+                                 <th>Descripción</th>
+                                 <th></th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              {% for fam in fsc.familias_asignadas %}
+                              <tr>
+                                 <td>{{ fam.codfamilia }}</td>
+                                 <td>{{ fam.descripcion }}</td>
+                                 <td class="text-right">
+                                    {% if fsc.allow_delete %}
+                                    <a href="#" class="btn btn-xs btn-danger" onclick="eliminar_familia('{{ fam.codfamilia|e('js') }}', '{{ fam.descripcion|e('js') }}')" title="Quitar">
+                                       <span class="glyphicon glyphicon-remove"></span>
+                                    </a>
+                                    {% endif %}
+                                 </td>
+                              </tr>
+                              {% endfor %}
+                           </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted">No hay familias asignadas a este opcional.</p>
+                        {% endif %}
+                     </div>
+                  </div>
+               </div>
+               <div class="col-sm-6">
+                  <div class="panel panel-success">
+                     <div class="panel-heading">
+                        <h3 class="panel-title">Familias disponibles</h3>
+                     </div>
+                     <div class="panel-body">
+                        {% set familias_disponibles = fsc.get_familias_disponibles() %}
+                        {% if familias_disponibles|length > 0 %}
+                        <table class="table table-hover">
+                           <thead>
+                              <tr>
+                                 <th>Código</th>
+                                 <th>Descripción</th>
+                                 <th></th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              {% for fam in familias_disponibles %}
+                              <tr>
+                                 <td>{{ fam.codfamilia }}</td>
+                                 <td>{{ fam.nivel }}{{ fam.descripcion }}</td>
+                                 <td class="text-right">
+                                    <a href="{{ fsc.opcional.url() }}&add_familia={{ fam.codfamilia }}#familias" class="btn btn-xs btn-success" title="Añadir">
+                                       <span class="glyphicon glyphicon-plus"></span>
+                                    </a>
+                                 </td>
+                              </tr>
+                              {% endfor %}
+                           </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted">No hay más familias disponibles.</p>
+                        {% endif %}
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </div>
+
+      {# Tab Artículos #}
+      <div role="tabpanel" class="tab-pane" id="articulos">
+         <div class="container-fluid" style="margin-top: 15px;">
+            <div class="row">
+               <div class="col-sm-12">
+                  <div class="panel panel-info">
+                     <div class="panel-heading">
+                        <h3 class="panel-title">Buscar artículos para añadir</h3>
+                     </div>
+                     <div class="panel-body">
+                        <div class="form-group">
+                           <div class="input-group">
+                              <input type="text" id="buscar_articulo" class="form-control" placeholder="Buscar por referencia o descripción..." autocomplete="off"/>
+                              <span class="input-group-addon">
+                                 <span class="glyphicon glyphicon-search"></span>
+                              </span>
+                           </div>
+                           <p class="help-block">Escribe para buscar y haz clic en el resultado para añadirlo.</p>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+            <div class="row">
+               <div class="col-sm-12">
+                  <div class="panel panel-default">
+                     <div class="panel-heading">
+                        <h3 class="panel-title">Artículos asociados ({{ fsc.articulos|length }})</h3>
+                     </div>
+                     <div class="panel-body">
+                        {% if fsc.articulos|length > 0 %}
+                        <table class="table table-hover">
+                           <thead>
+                              <tr>
+                                 <th>Referencia</th>
+                                 <th>Descripción</th>
+                                 <th>Familia</th>
+                                 <th class="text-right">Precio</th>
+                                 <th></th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              {% for art in fsc.articulos %}
+                              <tr>
+                                 <td><a href="{{ art.url() }}">{{ art.referencia }}</a></td>
+                                 <td>{{ art.descripcion(fsc.codidioma, 60) }}</td>
+                                 <td>{{ art.codfamilia }}</td>
+                                 <td class="text-right">{{ fsc.show_precio(art.precio, false, true, constant('FS_NF0_ART')) }}</td>
+                                 <td class="text-right">
+                                    {% if fsc.allow_delete %}
+                                    <a href="#" class="btn btn-xs btn-danger" onclick="eliminar_articulo('{{ art.referencia|e('js') }}')" title="Quitar">
+                                       <span class="glyphicon glyphicon-remove"></span>
+                                    </a>
+                                    {% endif %}
+                                 </td>
+                              </tr>
+                              {% endfor %}
+                           </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted">No hay artículos asociados a este opcional.</p>
+                        {% endif %}
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </div>
+   </div>
+</div>
+
+{% else %}
+<div class="container-fluid">
+   <div class="alert alert-danger">
+      <span class="glyphicon glyphicon-exclamation-sign"></span>
+      &nbsp;Opcional no encontrado.
+      <a href="index.php?page=tarif_opcionales">Volver al listado</a>
+   </div>
+</div>
+{% endif %}
+
+{% include 'footer.html.twig' %}

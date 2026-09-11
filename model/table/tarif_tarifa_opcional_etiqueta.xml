@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_tarifa_opcional_etiqueta: Etiquetas requeridas por opcional en familia y tarifa.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>etiqueta</nombre>
+        <tipo>character varying(60)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_opcional_etiqueta_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, id_opcional, codfamilia, etiqueta)</consulta>
+    </restriccion>
+</tabla>

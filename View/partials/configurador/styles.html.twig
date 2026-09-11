@@ -1,0 +1,447 @@
+{#
+ # Estilos CSS para el Configurador de Opcionales
+ #}
+<style>
+   /* === SELECTOR DE CATEGORÍA === */
+   .cfg-selector-bar {
+      display: inline-flex;
+      align-items: center;
+   }
+   .cfg-selector-label {
+      background-color: #e8e8e8;
+      border: 1px solid #ccc;
+      border-right: none;
+      padding: 5px 12px;
+      font-size: 12px;
+      border-radius: 4px 0 0 4px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+   }
+   .cfg-selector {
+      display: inline-block;
+      min-width: 300px;
+      height: 30px;
+      padding: 2px 8px;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+   }
+
+   /* === CONTENEDOR PRINCIPAL === */
+   .cfg-container {
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      padding: 15px;
+      min-height: 200px;
+   }
+
+   /* === ÁRBOL === */
+   .cfg-tree {
+      padding: 5px 0;
+   }
+
+   /* === NODO DE CATEGORÍA === */
+   .cfg-node {
+      border: 1px solid #d0d8e8;
+      border-radius: 5px;
+      margin-bottom: 10px;
+      background: #fff;
+   }
+
+   .cfg-node-header {
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      border-radius: 5px 5px 0 0;
+      transition: background-color 0.15s ease;
+   }
+   .cfg-node-header:hover {
+      background-color: #f5f7fb;
+   }
+
+   .cfg-nivel-0 > .cfg-node-header {
+      background-color: #e8eaf6;
+      border-bottom: 2px solid #5c6bc0;
+   }
+   .cfg-nivel-0 > .cfg-node-header:hover {
+      background-color: #dde0f2;
+   }
+   .cfg-nivel-1 > .cfg-node-header {
+      background-color: #f3f4f9;
+      border-bottom: 1px solid #c5cae9;
+   }
+   .cfg-nivel-2 > .cfg-node-header {
+      background-color: #fafafa;
+      border-bottom: 1px solid #e0e0e0;
+   }
+
+   .cfg-node-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+   }
+   .cfg-node-name {
+      font-weight: 600;
+      color: #333;
+      font-size: 14px;
+   }
+   .cfg-nivel-0 > .cfg-node-header .cfg-node-name {
+      font-size: 16px;
+   }
+
+   .cfg-toggle-icon {
+      color: #666;
+      width: 14px;
+      text-align: center;
+      transition: transform 0.15s ease;
+   }
+
+   .cfg-node-opcionales {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+   }
+
+   /* === CONTENIDO DEL NODO === */
+   .cfg-node-content {
+      padding: 10px 12px 12px 12px;
+   }
+
+   .cfg-node-content > .cfg-node {
+      margin-left: 0;
+   }
+
+   /* === BADGES DE OPCIONALES === */
+   .cfg-opcional-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      white-space: nowrap;
+   }
+   .cfg-opcional-familia {
+      background-color: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      color: #2e7d32;
+   }
+   .cfg-opcional-etiqueta {
+      background-color: #e3f2fd;
+      border: 1px solid #90caf9;
+      color: #1565c0;
+   }
+   .cfg-opcional-producto {
+      background-color: #fff3e0;
+      border: 1px solid #ffcc80;
+      color: #e65100;
+   }
+   .cfg-opcional-precio {
+      font-weight: 600;
+      font-size: 11px;
+      opacity: 0.8;
+      margin-left: 2px;
+   }
+   .cfg-opcionales-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+   }
+
+   /* === BADGES VISIBLES (con acción) === */
+   .cfg-badge-visible {
+      cursor: default;
+      border-style: dashed;
+      position: relative;
+   }
+   .cfg-badge-visible:hover {
+      filter: brightness(0.95);
+   }
+
+   .cfg-badge-action-wrapper {
+      position: relative;
+      display: inline-flex;
+   }
+
+   .cfg-badge-action-btn {
+      background: none;
+      border: none;
+      padding: 0 2px 0 4px;
+      margin: 0;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      opacity: 0.6;
+      color: inherit;
+   }
+   .cfg-badge-action-btn:hover {
+      opacity: 1;
+   }
+
+   /* === DROPDOWN MENÚ === */
+   .cfg-badge-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      z-index: 1000;
+      min-width: 220px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+      padding: 4px 0;
+      margin-top: 2px;
+   }
+   .cfg-badge-menu.open {
+      display: block;
+   }
+   .cfg-badge-menu a {
+      display: block;
+      padding: 7px 14px;
+      color: #333;
+      text-decoration: none;
+      font-size: 12px;
+      white-space: nowrap;
+   }
+   .cfg-badge-menu a:hover {
+      background-color: #f0f0f0;
+   }
+   .cfg-badge-menu a i {
+      width: 18px;
+      text-align: center;
+      margin-right: 6px;
+      color: #666;
+   }
+
+   /* === BOTÓN "DESPLEGAR TODOS" === */
+   .cfg-push-all-wrapper {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      margin-left: 4px;
+   }
+   .cfg-push-all-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      white-space: nowrap;
+      cursor: pointer;
+      border: 1px dashed #7e57c2;
+      background-color: #ede7f6;
+      color: #5e35b1;
+      font-weight: 500;
+      transition: background-color 0.15s, border-color 0.15s;
+   }
+   .cfg-push-all-btn:hover {
+      background-color: #d1c4e9;
+      border-color: #5e35b1;
+   }
+   .cfg-push-all-btn:active {
+      background-color: #b39ddb;
+   }
+   .cfg-push-all-btn i.fa-level-down {
+      font-size: 11px;
+   }
+   .cfg-push-all-wrapper .cfg-badge-menu {
+      right: 0;
+   }
+
+   /* === GRUPOS DE PRODUCTOS === */
+   .cfg-product-group {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-bottom: 8px;
+   }
+   .cfg-group-header {
+      padding: 8px 12px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+   }
+   .cfg-group-header-plain {
+      background-color: #f5f5f5;
+      border-bottom: 1px solid #e0e0e0;
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+   }
+   .cfg-group-header-tag {
+      background-color: #e8eaf6;
+      border-bottom: 2px solid #7986cb;
+   }
+   .cfg-group-tag-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+   }
+   .cfg-group-count {
+      background-color: rgba(0,0,0,0.08);
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      color: #666;
+   }
+   .cfg-group-body {
+      padding: 0;
+   }
+
+   /* === FILA DE PRODUCTO === */
+   .cfg-producto-row {
+      padding: 8px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px;
+   }
+   .cfg-producto-row:last-child {
+      border-bottom: none;
+   }
+   .cfg-producto-row:hover {
+      background-color: #fafafa;
+   }
+   .cfg-producto-nombre {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      flex: 1;
+      min-width: 200px;
+   }
+   .cfg-producto-precio {
+      font-weight: 600;
+      color: #2e7d32;
+      font-size: 12px;
+      white-space: nowrap;
+      margin-left: 8px;
+   }
+
+   /* === LEYENDA === */
+   .cfg-leyenda {
+      margin-top: 15px;
+      padding: 10px 15px;
+      background-color: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+   }
+   .cfg-leyenda-title {
+      font-size: 12px;
+      color: #999;
+      font-weight: 500;
+   }
+   .cfg-leyenda-note {
+      font-size: 11px;
+      color: #999;
+      font-style: italic;
+   }
+
+   /* === SEPARADOR DE MENÚ === */
+   .cfg-badge-menu-divider {
+      height: 1px;
+      background-color: #e0e0e0;
+      margin: 4px 0;
+   }
+
+   /* === BOTÓN AGREGAR OPCIONAL (+) === */
+   .cfg-add-opc-inline {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+   }
+   .cfg-add-opc-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px dashed #43a047;
+      background: #e8f5e9;
+      color: #2e7d32;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.15s;
+      padding: 0;
+   }
+   .cfg-add-opc-btn:hover {
+      background: #c8e6c9;
+      border-style: solid;
+      transform: scale(1.1);
+   }
+   .cfg-add-opc-btn-sm {
+      width: 20px;
+      height: 20px;
+      font-size: 10px;
+   }
+
+   /* === RESULTADOS DE BÚSQUEDA (modal agregar existente) === */
+   .cfg-search-results {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+   }
+   .cfg-search-result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      transition: background-color 0.15s;
+   }
+   .cfg-search-result-item:last-child {
+      border-bottom: none;
+   }
+   .cfg-search-result-item:hover {
+      background-color: #e3f2fd;
+   }
+   .cfg-search-result-info {
+      flex: 1;
+      min-width: 0;
+   }
+   .cfg-search-result-price {
+      font-weight: 600;
+      color: #2e7d32;
+      font-size: 13px;
+      white-space: nowrap;
+      margin-left: 12px;
+   }
+
+   /* === RESPONSIVE === */
+   @media (max-width: 768px) {
+      .cfg-selector {
+         min-width: 180px;
+      }
+      .cfg-node-header {
+         flex-direction: column;
+         align-items: flex-start;
+      }
+      .cfg-producto-row {
+         flex-direction: column;
+      }
+      .cfg-badge-menu {
+         right: auto;
+         left: 0;
+      }
+   }
+</style>

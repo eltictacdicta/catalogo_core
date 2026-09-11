@@ -1,0 +1,541 @@
+{#
+ # Configurador de Opcionales - Vista jerárquica
+ # Muestra la distribución de opcionales por categorías, etiquetas y productos.
+ # Permite crear, editar, eliminar y asociar opcionales a familias, etiquetas y productos.
+ #}
+{% import 'Macro/TarifarioComponents.html.twig' as tarif %}
+
+{% include 'header.html.twig' %}
+
+{{ tarif.styles_common() }}
+
+{% include 'partials/configurador/styles.html.twig' %}
+
+{{ tarif.js_common(fsc) }}
+
+<script type="text/javascript">
+var _baseUrl = '{{ fsc.url() }}';
+var _codtarifa = '{{ fsc.codtarifa }}';
+var _currentCodfamilia = '';
+var _searchTimer = null;
+
+function cambiarTarifa() {
+   var codtarifa = document.getElementById('select_tarifa').value;
+   window.location.href = _baseUrl + '&codtarifa=' + encodeURIComponent(codtarifa);
+}
+
+/* ===== Árbol ===== */
+
+function cargarArbol(codfamilia) {
+   if (typeof codfamilia === 'undefined') {
+      codfamilia = document.getElementById('select_familia_raiz').value;
+   }
+   _currentCodfamilia = codfamilia;
+   var container = document.getElementById('tree-container');
+
+   if (!codfamilia) {
+      container.innerHTML = '<div class="empty-state"><i class="fa fa-sitemap"></i><p>Seleccione una categoría de primer nivel para ver la jerarquía de opcionales.</p></div>';
+      return;
+   }
+
+   container.innerHTML = '<div class="text-center" style="padding: 40px;"><i class="fa fa-spinner fa-spin fa-2x"></i><p class="text-muted" style="margin-top: 10px;">Cargando árbol de opcionales...</p></div>';
+
+   var url = _baseUrl + '&codtarifa=' + _codtarifa
+      + '&action=htmx_tree&ajax=1'
+      + '&codfamilia=' + encodeURIComponent(codfamilia);
+
+   fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function(r) { return r.text(); })
+      .then(function(html) { container.innerHTML = html; })
+      .catch(function() { container.innerHTML = '<div class="alert alert-danger">Error al cargar el árbol.</div>'; });
+}
+
+function toggleNode(id) {
+   var content = document.getElementById('node-content-' + id);
+   var icon = document.getElementById('node-icon-' + id);
+   if (!content) return;
+   if (content.style.display === 'none') {
+      content.style.display = 'block';
+      if (icon) icon.className = 'fa fa-chevron-down';
+   } else {
+      content.style.display = 'none';
+      if (icon) icon.className = 'fa fa-chevron-right';
+   }
+}
+
+function expandAll() {
+   document.querySelectorAll('.cfg-node-content').forEach(function(el) { el.style.display = 'block'; });
+   document.querySelectorAll('.cfg-toggle-icon').forEach(function(el) { el.className = 'fa fa-chevron-down cfg-toggle-icon'; });
+}
+
+function collapseAll() {
+   document.querySelectorAll('.cfg-node-content').forEach(function(el) { el.style.display = 'none'; });
+   document.querySelectorAll('.cfg-toggle-icon').forEach(function(el) { el.className = 'fa fa-chevron-right cfg-toggle-icon'; });
+}
+
+/* ===== Badge menus ===== */
+
+function closeBadgeMenus() {
+   document.querySelectorAll('.cfg-badge-menu.open').forEach(function(el) { el.classList.remove('open'); });
+}
+
+function toggleBadgeMenu(btn, event) {
+   event.stopPropagation();
+   event.preventDefault();
+   var wrapper = btn.closest('.cfg-badge-action-wrapper') || btn.closest('.cfg-push-all-wrapper') || btn.closest('.cfg-add-opc-inline');
+   var menu = wrapper.querySelector('.cfg-badge-menu');
+   var isOpen = menu.classList.contains('open');
+   closeBadgeMenus();
+   if (!isOpen) menu.classList.add('open');
+}
+
+document.addEventListener('click', function() { closeBadgeMenus(); });
+
+/* ===== AJAX helper ===== */
+
+function _ajaxAction(action, params) {
+   var qs = 'codtarifa=' + encodeURIComponent(_codtarifa) + '&action=' + encodeURIComponent(action);
+   Object.keys(params).forEach(function(k) {
+      if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+         qs += '&' + k + '=' + encodeURIComponent(params[k]);
+      }
+   });
+   return fetch(_baseUrl + '&' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function(r) { return r.json(); });
+}
+
+/* ===== Push-down actions ===== */
+
+function _pushAction(action, params) {
+   closeBadgeMenus();
+   _ajaxAction(action, params)
+      .then(function(data) {
+         if (data.success) {
+            _removeBadgeFromDom(params.id_opcional, params.codfamilia, params.etiqueta);
+            cargarArbol(_currentCodfamilia);
+         } else {
+            alert('Error: ' + (data.error || 'Operación fallida'));
+         }
+      })
+      .catch(function() { alert('Error de conexión'); });
+}
+
+function _removeBadgeFromDom(idOpcional, codfamilia, etiqueta) {
+   var selector = '.cfg-badge-action-wrapper[data-id-opcional="' + idOpcional + '"][data-codfamilia="' + codfamilia + '"]';
+   if (etiqueta) {
+      selector += '[data-tag-key="' + etiqueta + '"]';
+   } else {
+      selector += ':not([data-tag-key])';
+   }
+   document.querySelectorAll(selector).forEach(function(wrapper) {
+      wrapper.style.transition = 'opacity 0.3s, transform 0.3s';
+      wrapper.style.opacity = '0';
+      wrapper.style.transform = 'scale(0.8)';
+      setTimeout(function() { wrapper.remove(); }, 300);
+   });
+}
+
+function pushToProducts(codtarifa, codfamilia, id_opcional, etiqueta) {
+   var label = etiqueta ? etiqueta.replace(/\|/g, ', ') : '';
+   var msg = label
+      ? '¿Asociar este opcional a todos los productos del grupo "' + label + '"?'
+      : '¿Asociar este opcional a todos los productos de esta categoría?';
+   if (confirm(msg)) {
+      _pushAction('push_to_products', {codtarifa: codtarifa, codfamilia: codfamilia, id_opcional: id_opcional, etiqueta: etiqueta});
+   }
+}
+
+function pushToTags(codtarifa, codfamilia, id_opcional) {
+   if (confirm('¿Asociar este opcional a todas las etiquetas de esta categoría?')) {
+      _pushAction('push_to_tags', {codtarifa: codtarifa, codfamilia: codfamilia, id_opcional: id_opcional});
+   }
+}
+
+function pushToChildren(codtarifa, codfamilia, id_opcional) {
+   if (confirm('¿Asociar este opcional a todas las subcategorías hijas?')) {
+      _pushAction('push_to_children', {codtarifa: codtarifa, codfamilia: codfamilia, id_opcional: id_opcional});
+   }
+}
+
+function pushAllDown(codtarifa, codfamilia, target, etiqueta) {
+   var msgs = {
+      children: '¿Desplegar TODOS los opcionales visibles a las subcategorías hijas?',
+      tags: '¿Desplegar TODOS los opcionales visibles a las etiquetas?',
+      products: '¿Desplegar TODOS los opcionales visibles a los productos?'
+   };
+   if (!confirm(msgs[target] || '¿Desplegar todos?')) return;
+
+   _ajaxAction('push_all_down', {codfamilia: codfamilia, target: target, etiqueta: etiqueta || ''})
+      .then(function(data) {
+         if (data.success) { cargarArbol(_currentCodfamilia); }
+         else { alert('Error: ' + (data.error || 'Operación fallida')); }
+      })
+      .catch(function() { alert('Error de conexión'); });
+}
+
+function togglePushAllMenu(btn, event) {
+   event.stopPropagation();
+   event.preventDefault();
+   var menu = btn.nextElementSibling;
+   var isOpen = menu.classList.contains('open');
+   closeBadgeMenus();
+   if (!isOpen) menu.classList.add('open');
+}
+
+/* ===== CRUD Opcionales ===== */
+
+function openModalCrearOpcional(assocType, assocCodfamilia, assocEtiqueta, assocReferencia) {
+   document.getElementById('modal-opc-title').textContent = 'Crear nuevo opcional';
+   document.getElementById('opc-form-id').value = '';
+   document.getElementById('opc-form-nombre').value = '';
+   document.getElementById('opc-form-codigo').value = '';
+   document.getElementById('opc-form-precio').value = '0';
+   document.getElementById('opc-form-descripcion').value = '';
+   document.getElementById('opc-form-ref-sap').value = '';
+   document.getElementById('opc-form-assoc-type').value = assocType || '';
+   document.getElementById('opc-form-assoc-codfamilia').value = assocCodfamilia || '';
+   document.getElementById('opc-form-assoc-etiqueta').value = assocEtiqueta || '';
+   document.getElementById('opc-form-assoc-referencia').value = assocReferencia || '';
+   document.getElementById('opc-form-btn-delete').style.display = 'none';
+   document.getElementById('opc-form-btn-submit').textContent = ' Crear';
+
+   var assocInfo = document.getElementById('opc-form-assoc-info');
+   if (assocType) {
+      var labels = {familia: 'Familia', etiqueta: 'Etiqueta', producto: 'Producto'};
+      var entity = assocCodfamilia || assocEtiqueta || assocReferencia || '';
+      assocInfo.innerHTML = '<i class="fa fa-link"></i> Se asociará a: <strong>' + (labels[assocType] || assocType) + '</strong> ' + entity;
+      assocInfo.style.display = 'block';
+   } else {
+      assocInfo.style.display = 'none';
+   }
+
+   $('#modal-opcional-form').modal('show');
+}
+
+function openModalEditarOpcional(idOpcional) {
+   document.getElementById('modal-opc-title').textContent = 'Editar opcional';
+   document.getElementById('opc-form-btn-delete').style.display = 'inline-block';
+   document.getElementById('opc-form-btn-submit').textContent = ' Guardar';
+   document.getElementById('opc-form-assoc-type').value = '';
+   document.getElementById('opc-form-assoc-info').style.display = 'none';
+
+   _ajaxAction('search_opcionales', {q: '', id_opcional: idOpcional}).then(function(data) {
+      if (data.success && data.results.length > 0) {
+         var opc = data.results.find(function(o) { return o.id === idOpcional; });
+         if (!opc && data.results.length > 0) opc = data.results[0];
+         if (opc) {
+            document.getElementById('opc-form-id').value = opc.id;
+            document.getElementById('opc-form-nombre').value = opc.nombre;
+            document.getElementById('opc-form-codigo').value = opc.codigo;
+            document.getElementById('opc-form-precio').value = opc.precio_tarifa || opc.precio;
+            document.getElementById('opc-form-descripcion').value = opc.descripcion || '';
+            document.getElementById('opc-form-ref-sap').value = opc.ref_sap || '';
+         }
+      }
+      $('#modal-opcional-form').modal('show');
+   });
+}
+
+function submitOpcionalForm() {
+   var id = document.getElementById('opc-form-id').value;
+   var nombre = document.getElementById('opc-form-nombre').value.trim();
+   if (!nombre) { alert('El nombre es obligatorio'); return; }
+
+   var params = {
+      nombre: nombre,
+      codigo: document.getElementById('opc-form-codigo').value.trim(),
+      precio: document.getElementById('opc-form-precio').value,
+      descripcion: document.getElementById('opc-form-descripcion').value.trim(),
+      ref_sap: document.getElementById('opc-form-ref-sap').value.trim()
+   };
+
+   var action;
+   if (id) {
+      action = 'edit_opcional';
+      params.id_opcional = id;
+      params.precio_tarifa = params.precio;
+   } else {
+      action = 'create_opcional';
+      params.assoc_type = document.getElementById('opc-form-assoc-type').value;
+      params.assoc_codfamilia = document.getElementById('opc-form-assoc-codfamilia').value;
+      params.assoc_etiqueta = document.getElementById('opc-form-assoc-etiqueta').value;
+      params.assoc_referencia = document.getElementById('opc-form-assoc-referencia').value;
+   }
+
+   _ajaxAction(action, params).then(function(data) {
+      if (data.success) {
+         $('#modal-opcional-form').modal('hide');
+         cargarArbol(_currentCodfamilia);
+      } else {
+         alert('Error: ' + (data.error || 'Error al guardar'));
+      }
+   }).catch(function() { alert('Error de conexión'); });
+}
+
+function deleteOpcional() {
+   var id = document.getElementById('opc-form-id').value;
+   if (!id) return;
+   if (!confirm('¿Eliminar este opcional y TODAS sus asociaciones? Esta acción no se puede deshacer.')) return;
+
+   _ajaxAction('delete_opcional', {id_opcional: id}).then(function(data) {
+      if (data.success) {
+         $('#modal-opcional-form').modal('hide');
+         cargarArbol(_currentCodfamilia);
+      } else {
+         alert('Error: ' + (data.error || 'Error al eliminar'));
+      }
+   }).catch(function() { alert('Error de conexión'); });
+}
+
+/* ===== Agregar opcional existente ===== */
+
+function openModalAgregarExistente(assocType, assocCodfamilia, assocEtiqueta, assocReferencia) {
+   document.getElementById('add-opc-assoc-type').value = assocType || '';
+   document.getElementById('add-opc-assoc-codfamilia').value = assocCodfamilia || '';
+   document.getElementById('add-opc-assoc-etiqueta').value = assocEtiqueta || '';
+   document.getElementById('add-opc-assoc-referencia').value = assocReferencia || '';
+   document.getElementById('add-opc-search').value = '';
+   document.getElementById('add-opc-results').innerHTML = '<div class="text-muted text-center" style="padding: 20px;">Escriba para buscar opcionales...</div>';
+
+   var labels = {familia: 'Familia', etiqueta: 'Etiqueta', producto: 'Producto'};
+   var entity = assocCodfamilia || assocReferencia || '';
+   if (assocEtiqueta) entity += ' → ' + assocEtiqueta.replace(/\|/g, ', ');
+   document.getElementById('add-opc-assoc-label').innerHTML = '<i class="fa fa-link"></i> Asociar a: <strong>' + (labels[assocType] || assocType) + '</strong> ' + entity;
+
+   $('#modal-agregar-existente').modal('show');
+   setTimeout(function() { document.getElementById('add-opc-search').focus(); }, 400);
+}
+
+function searchExistingOpcionales() {
+   clearTimeout(_searchTimer);
+   _searchTimer = setTimeout(function() {
+      var query = document.getElementById('add-opc-search').value.trim();
+      var assocType = document.getElementById('add-opc-assoc-type').value;
+      var excludeFamilia = '';
+      if (assocType === 'familia') {
+         excludeFamilia = document.getElementById('add-opc-assoc-codfamilia').value;
+      }
+
+      _ajaxAction('search_opcionales', {q: query, exclude_familia: excludeFamilia}).then(function(data) {
+         var container = document.getElementById('add-opc-results');
+         if (!data.success || data.results.length === 0) {
+            container.innerHTML = '<div class="text-muted text-center" style="padding: 20px;">No se encontraron opcionales.</div>';
+            return;
+         }
+         var html = '';
+         data.results.forEach(function(opc) {
+            html += '<div class="cfg-search-result-item" onclick="selectExistingOpcional(' + opc.id + ')">'
+               + '<div class="cfg-search-result-info">'
+               + '<strong>' + opc.nombre + '</strong>'
+               + '<small class="text-muted"> (' + opc.codigo + ')</small>'
+               + '</div>'
+               + '<div class="cfg-search-result-price">' + (opc.precio_tarifa > 0 ? opc.precio_tarifa.toFixed(2).replace('.', ',') + ' €' : '') + '</div>'
+               + '</div>';
+         });
+         container.innerHTML = html;
+      });
+   }, 300);
+}
+
+function selectExistingOpcional(idOpcional) {
+   var assocType = document.getElementById('add-opc-assoc-type').value;
+   var codfamilia = document.getElementById('add-opc-assoc-codfamilia').value;
+   var etiqueta = document.getElementById('add-opc-assoc-etiqueta').value;
+   var referencia = document.getElementById('add-opc-assoc-referencia').value;
+
+   var action, params = {id_opcional: idOpcional};
+
+   switch (assocType) {
+      case 'familia':
+         action = 'add_opcional_familia';
+         params.codfamilia = codfamilia;
+         break;
+      case 'etiqueta':
+         action = 'add_opcional_etiqueta';
+         params.codfamilia = codfamilia;
+         params.etiqueta = etiqueta;
+         break;
+      case 'producto':
+         action = 'add_opcional_producto';
+         params.referencia = referencia;
+         break;
+      default:
+         alert('Tipo de asociación no válido');
+         return;
+   }
+
+   _ajaxAction(action, params).then(function(data) {
+      if (data.success) {
+         $('#modal-agregar-existente').modal('hide');
+         cargarArbol(_currentCodfamilia);
+      } else {
+         alert('Error: ' + (data.error || 'Error al asociar'));
+      }
+   }).catch(function() { alert('Error de conexión'); });
+}
+
+/* ===== Quitar opcional de nivel ===== */
+
+function removeOpcionalFamilia(codfamilia, idOpcional) {
+   if (!confirm('¿Quitar este opcional de la categoría en la tarifa actual?')) return;
+   _ajaxAction('remove_opcional_familia', {codfamilia: codfamilia, id_opcional: idOpcional})
+      .then(function(data) {
+         if (data.success) cargarArbol(_currentCodfamilia);
+         else alert('Error: ' + (data.error || 'Error'));
+      }).catch(function() { alert('Error de conexión'); });
+}
+
+function removeOpcionalEtiqueta(codfamilia, idOpcional, etiqueta) {
+   if (!confirm('¿Quitar este opcional de la etiqueta en la tarifa actual?')) return;
+   _ajaxAction('remove_opcional_etiqueta', {codfamilia: codfamilia, id_opcional: idOpcional, etiqueta: etiqueta})
+      .then(function(data) {
+         if (data.success) cargarArbol(_currentCodfamilia);
+         else alert('Error: ' + (data.error || 'Error'));
+      }).catch(function() { alert('Error de conexión'); });
+}
+
+function removeOpcionalProducto(referencia, idOpcional) {
+   if (!confirm('¿Quitar este opcional del producto?')) return;
+   _ajaxAction('remove_opcional_producto', {referencia: referencia, id_opcional: idOpcional})
+      .then(function(data) {
+         if (data.success) cargarArbol(_currentCodfamilia);
+         else alert('Error: ' + (data.error || 'Error'));
+      }).catch(function() { alert('Error de conexión'); });
+}
+</script>
+
+{# Toolbar #}
+{{ tarif.toolbar(fsc, {
+   'show_tarifas_link': false,
+   'show_articulos_link': false,
+   'show_catalogo_link': true,
+   'extra_buttons': [
+      {'onclick': "openModalCrearOpcional('', '', '', '')", 'icon': 'fa fa-plus', 'label': 'Nuevo opcional', 'class': 'btn-success'},
+      {'onclick': 'expandAll()', 'icon': 'fa fa-expand', 'label': 'Expandir'},
+      {'onclick': 'collapseAll()', 'icon': 'fa fa-compress', 'label': 'Colapsar'}
+   ]
+}) }}
+
+{# Selector de categoría de primer nivel #}
+<div class="container-fluid" style="margin-bottom: 15px;">
+   <div class="cfg-selector-bar">
+      <span class="cfg-selector-label">
+         <i class="fa fa-sitemap"></i>&nbsp; Categoría raíz:
+      </span>
+      <select id="select_familia_raiz" class="form-control input-sm cfg-selector" onchange="cargarArbol()">
+         <option value="">-- Seleccione una categoría --</option>
+         {% for fam in fsc.familias_raiz %}
+         <option value="{{ fam.codfamilia }}">
+            {% if fam.capitulo %}{{ fam.capitulo }} - {% endif %}{{ fam.descripcion }}
+         </option>
+         {% endfor %}
+      </select>
+   </div>
+</div>
+
+{# Contenedor del árbol #}
+<div class="container-fluid">
+   <div class="cfg-container">
+      <div id="tree-container">
+         <div class="empty-state">
+            <i class="fa fa-sitemap"></i>
+            <p>Seleccione una categoría de primer nivel para ver la jerarquía de opcionales.</p>
+         </div>
+      </div>
+   </div>
+</div>
+
+{# ===== MODAL: Crear/Editar opcional ===== #}
+<div class="modal fade" id="modal-opcional-form" tabindex="-1" role="dialog">
+   <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal">&times;</button>
+            <h4 class="modal-title" id="modal-opc-title">Crear nuevo opcional</h4>
+         </div>
+         <div class="modal-body">
+            <input type="hidden" id="opc-form-id" value="">
+            <input type="hidden" id="opc-form-assoc-type" value="">
+            <input type="hidden" id="opc-form-assoc-codfamilia" value="">
+            <input type="hidden" id="opc-form-assoc-etiqueta" value="">
+            <input type="hidden" id="opc-form-assoc-referencia" value="">
+
+            <div id="opc-form-assoc-info" class="alert alert-info" style="display:none; padding: 8px 12px; font-size: 13px;"></div>
+
+            <div class="row">
+               <div class="col-sm-8">
+                  <div class="form-group">
+                     <label>Nombre *</label>
+                     <input type="text" id="opc-form-nombre" class="form-control" placeholder="Nombre del opcional">
+                  </div>
+               </div>
+               <div class="col-sm-4">
+                  <div class="form-group">
+                     <label>Código</label>
+                     <input type="text" id="opc-form-codigo" class="form-control" placeholder="Auto">
+                  </div>
+               </div>
+            </div>
+            <div class="row">
+               <div class="col-sm-4">
+                  <div class="form-group">
+                     <label>Precio (€)</label>
+                     <input type="number" id="opc-form-precio" class="form-control" step="0.01" min="0" value="0">
+                  </div>
+               </div>
+               <div class="col-sm-4">
+                  <div class="form-group">
+                     <label>Ref. SAP</label>
+                     <input type="text" id="opc-form-ref-sap" class="form-control" placeholder="">
+                  </div>
+               </div>
+            </div>
+            <div class="form-group">
+               <label>Descripción</label>
+               <textarea id="opc-form-descripcion" class="form-control" rows="2" placeholder="Descripción opcional"></textarea>
+            </div>
+         </div>
+         <div class="modal-footer">
+            <button type="button" id="opc-form-btn-delete" class="btn btn-danger pull-left" style="display:none;" onclick="deleteOpcional()">
+               <i class="fa fa-trash"></i> Eliminar
+            </button>
+            <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+            <button type="button" id="opc-form-btn-submit" class="btn btn-primary" onclick="submitOpcionalForm()">
+               <i class="fa fa-floppy-o"></i> Crear
+            </button>
+         </div>
+      </div>
+   </div>
+</div>
+
+{# ===== MODAL: Agregar opcional existente ===== #}
+<div class="modal fade" id="modal-agregar-existente" tabindex="-1" role="dialog">
+   <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal">&times;</button>
+            <h4 class="modal-title"><i class="fa fa-search"></i> Agregar opcional existente</h4>
+         </div>
+         <div class="modal-body">
+            <input type="hidden" id="add-opc-assoc-type" value="">
+            <input type="hidden" id="add-opc-assoc-codfamilia" value="">
+            <input type="hidden" id="add-opc-assoc-etiqueta" value="">
+            <input type="hidden" id="add-opc-assoc-referencia" value="">
+
+            <div id="add-opc-assoc-label" class="alert alert-info" style="padding: 8px 12px; font-size: 13px;"></div>
+
+            <div class="form-group">
+               <input type="text" id="add-opc-search" class="form-control" placeholder="Buscar por nombre, código o ref. SAP..." oninput="searchExistingOpcionales()">
+            </div>
+            <div id="add-opc-results" class="cfg-search-results" style="max-height: 350px; overflow-y: auto;">
+               <div class="text-muted text-center" style="padding: 20px;">Escriba para buscar opcionales...</div>
+            </div>
+         </div>
+         <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Cerrar</button>
+         </div>
+      </div>
+   </div>
+</div>
+
+{% include 'footer.html.twig' %}

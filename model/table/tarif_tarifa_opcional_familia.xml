@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_tarifa_opcional_familia: Relación opcional-familia específica por tarifa.
+    Hereda de tarif_opcional_familia (tabla base global).
+    Si una relación existe en la base pero NO aquí, se considera activa por defecto.
+    Si existe aquí con activo=FALSE, la relación está desactivada para esa tarifa.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>activo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_opcional_familia_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, id_opcional, codfamilia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opc_fam_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opc_fam_opcional</nombre>
+        <consulta>FOREIGN KEY (id_opcional)
+            REFERENCES catalogo_opcionales (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opc_fam_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

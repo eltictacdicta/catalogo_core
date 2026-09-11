@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_opcional_precio_historial: Historial de cambios de precios de opcionales
+    Registra cada cambio de precio con fecha, usuario y valores anterior/nuevo
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>precio_anterior</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>precio_nuevo</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>fecha_cambio</nombre>
+        <tipo>timestamp</tipo>
+        <defecto>CURRENT_TIMESTAMP</defecto>
+    </columna>
+    <columna>
+        <nombre>usuario</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <restriccion>
+        <nombre>tarif_opcional_precio_historial_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+</tabla>
