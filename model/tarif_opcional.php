@@ -244,8 +244,8 @@ class tarif_opcional extends catalogo_opcional
             }
 
             if ($codtarifa != '' && $solo_activos) {
-                $sql .= ' INNER JOIN tarif_opcional_precios op ON o.id = op.id_opcional';
-                $where_conditions[] = 'op.codtarifa = ' . $this->var2str($codtarifa);
+                $sql .= ' INNER JOIN catalogo_opcional_precios op ON o.id = op.id_opcional';
+                $where_conditions[] = 'op.codlista = ' . $this->var2str($codtarifa);
             }
 
             if ($query != '') {

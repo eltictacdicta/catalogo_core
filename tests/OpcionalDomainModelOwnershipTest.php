@@ -30,12 +30,6 @@ use PHPUnit\Framework\TestCase;
  * would hit the database) and their namespace + table_name source contracts
  * are pinned. `tarif_opcional` inherits its canonical table from
  * `catalogo_opcional`, so it is asserted through its base class.
- *
- * Slice note (S1a): `tarif_opcional_precio` is still the byte-identical legacy
- * model here (table `tarif_opcional_precios`, extends fs_model). Work unit S2
- * (design D3) rewrites it as the thin canonical adapter
- * (`extends catalogo_opcional_precio`, table `catalogo_opcional_precios`) and
- * MUST flip its row below accordingly.
  */
 final class OpcionalDomainModelOwnershipTest extends TestCase
 {
@@ -60,8 +54,8 @@ final class OpcionalDomainModelOwnershipTest extends TestCase
         'tarif_opcional_precio' => [
             'FSFramework\\model\\tarif_opcional_precio',
             'plugins/catalogo_core/model/tarif_opcional_precio.php',
-            'tarif_opcional_precios',
-            null,
+            'catalogo_opcional_precios',
+            'catalogo_opcional_precio',
         ],
         'tarif_opcional_precio_historial' => [
             'FSFramework\\model\\tarif_opcional_precio_historial',
