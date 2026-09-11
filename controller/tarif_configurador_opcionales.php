@@ -19,31 +19,27 @@
 
 require_once 'plugins/catalogo_core/extras/TarifarioOpcionalStateTrait.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_familia.php';
-require_once 'plugins/tarifario/model/tarif_tarifa_articulo.php';
 require_once 'plugins/catalogo_core/model/tarif_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_opcional.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_opcional_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_resolver.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
-require_once 'plugins/tarifario/model/tarif_tarifa_articulo_etiqueta.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_etiqueta.php';
-require_once 'plugins/tarifario/model/tarif_articulo_precio.php';
 require_once 'plugins/catalogo_core/model/tarif_opcional_precio.php';
-require_once 'plugins/tarifario/model/tarif_articulos_ext.php';
 
 use FSFramework\model\tarif_tarifa_familia;
-use FSFramework\model\tarif_tarifa_articulo;
 use FSFramework\model\tarif_tarifa;
-use FSFramework\model\tarif_articulo;
-use FSFramework\model\tarif_tarifa_articulo_etiqueta;
+use FSFramework\model\articulo;
 use FSFramework\model\tarif_tarifa_opcional_etiqueta;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa_opcional_familia;
 use FSFramework\model\tarif_tarifa_opcional_resolver;
 use FSFramework\model\tarif_familia;
 use FSFramework\model\tarif_opcional;
-use FSFramework\model\tarif_opcional_familia;
-use FSFramework\model\tarif_articulo_opcional;
+use FSFramework\model\catalogo_opcional_familia;
+use FSFramework\model\catalogo_articulo_opcional;
 
 /**
  * Vista "Configurador de opcionales": muestra la jerarquía completa de
@@ -58,11 +54,16 @@ class tarif_configurador_opcionales extends fbase_controller
 {
     use TarifarioOpcionalStateTrait;
 
+    /**
+     * Stable tarifa-article relation tables (tarifario-owned data, no
+     * tarifario PHP class dependency — design D4).
+     */
+    private const TARIFA_ARTICULO_TABLE = 'tarif_tarifa_articulo';
+    private const TARIFA_ARTICULO_ETIQUETA_TABLE = 'tarif_tarifa_articulo_etiqueta';
+    private const TARIFA_ARTICULO_PRECIO_TABLE = 'tarif_articulo_precios';
+
     /** @var tarif_tarifa_familia */
     public $tarifa_familia;
-
-    /** @var tarif_tarifa_articulo */
-    public $tarifa_articulo;
 
     /** @var tarif_tarifa */
     public $tarifa;
@@ -87,7 +88,6 @@ class tarif_configurador_opcionales extends fbase_controller
         $this->init_tarifario_opcional_state();
 
         $this->tarifa_familia = new tarif_tarifa_familia();
-        $this->tarifa_articulo = new tarif_tarifa_articulo();
         $this->tarifa = new tarif_tarifa();
 
         $this->init_tarifa();
@@ -176,6 +176,92 @@ class tarif_configurador_opcionales extends fbase_controller
         }
     }
 
+    // ==================== RAW-SQL FORK (design D4) ====================
+    // The configurator moved to catalogo_core and must not load tarifario PHP
+    // classes. These helpers read the stable tarifario-owned relation tables
+    // with parameterized SQL and no-op safely when the tables are absent, so
+    // standalone catalogo_core never fatals.
+
+    /**
+     * Artículos (referencias) de una familia dentro de una tarifa.
+     *
+     * @return array<int, object>
+     */
+    private function articulos_from_familia($codtarifa, $codfamilia): array
+    {
+        if (!$this->db->table_exists(self::TARIFA_ARTICULO_TABLE)) {
+            return [];
+        }
+
+        $data = $this->db->select(
+            'SELECT referencia FROM ' . self::TARIFA_ARTICULO_TABLE
+            . ' WHERE codtarifa = ? AND codfamilia = ?'
+            . ' ORDER BY orden ASC, referencia ASC;',
+            [$codtarifa, $codfamilia]
+        );
+
+        $list = [];
+        if ($data) {
+            foreach ($data as $row) {
+                $item = new \stdClass();
+                $item->referencia = $row['referencia'];
+                $list[] = $item;
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Etiquetas asignadas a un artículo dentro de una tarifa.
+     *
+     * @return array<int, string>
+     */
+    private function etiquetas_articulo($codtarifa, $referencia): array
+    {
+        if (!$this->db->table_exists(self::TARIFA_ARTICULO_ETIQUETA_TABLE)) {
+            return [];
+        }
+
+        $data = $this->db->select(
+            'SELECT etiqueta FROM ' . self::TARIFA_ARTICULO_ETIQUETA_TABLE
+            . ' WHERE codtarifa = ? AND referencia = ? ORDER BY etiqueta ASC;',
+            [$codtarifa, $referencia]
+        );
+
+        $list = [];
+        if ($data) {
+            foreach ($data as $row) {
+                $list[] = $row['etiqueta'];
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Precio del artículo en una tarifa; cae al PVP base cuando no hay precio
+     * específico o la tabla no existe.
+     */
+    private function precio_articulo_tarifa($referencia, $codtarifa): float
+    {
+        if ($this->db->table_exists(self::TARIFA_ARTICULO_PRECIO_TABLE)) {
+            $data = $this->db->select(
+                'SELECT precio FROM ' . self::TARIFA_ARTICULO_PRECIO_TABLE
+                . ' WHERE referencia = ? AND codtarifa = ? LIMIT 1;',
+                [$referencia, $codtarifa]
+            );
+            if ($data) {
+                return (float) $data[0]['precio'];
+            }
+        }
+
+        $articulo = new articulo();
+        $art = $articulo->get($referencia);
+
+        return $art ? (float) $art->pvp : 0.0;
+    }
+
     /**
      * HTMX endpoint: construye y renderiza el árbol completo de una familia raíz.
      */
@@ -222,7 +308,7 @@ class tarif_configurador_opcionales extends fbase_controller
         $tiene_etiquetas = $familia_etiqueta->familia_tiene_etiquetas($this->codtarifa, $codfamilia);
         $node->tiene_etiquetas = $tiene_etiquetas;
 
-        $articulos_config = $this->tarifa_articulo->all_from_familia($this->codtarifa, $codfamilia, 0, 9999);
+        $articulos_config = $this->articulos_from_familia($this->codtarifa, $codfamilia);
 
         // 3. Sub-familias recursivas
         $node->hijas = [];
@@ -251,10 +337,9 @@ class tarif_configurador_opcionales extends fbase_controller
      */
     private function build_grupos_articulos($node, $articulos_config, $codfamilia, $tiene_etiquetas, $opc_familia)
     {
-        $articulo_model = new tarif_articulo();
-        $articulo_etiqueta = new tarif_tarifa_articulo_etiqueta();
+        $articulo_model = new articulo();
         $opcional_etiqueta = new tarif_tarifa_opcional_etiqueta();
-        $art_opc = new tarif_articulo_opcional();
+        $art_opc = new catalogo_articulo_opcional();
 
         $articulos_items = [];
         foreach ($articulos_config as $art_config) {
@@ -266,14 +351,14 @@ class tarif_configurador_opcionales extends fbase_controller
             $item = new \stdClass();
             $item->referencia = $art->referencia;
             $item->descripcion = $art->get_descripcion_idioma($this->codidioma);
-            $item->pvp = $art->precio_en_tarifa($this->codtarifa);
+            $item->pvp = $this->precio_articulo_tarifa($art->referencia, $this->codtarifa);
 
-            // Opcionales directos del artículo (solo los de tarif_articulo_opcional)
-            $opc_directos = $art_opc->get_opcionales_from_articulo($art->referencia);
+            // Opcionales directos del artículo (solo los de catalogo_articulo_opcional)
+            $opc_directos = $art_opc->get_opcionales_directos_from_articulo($art->referencia);
             $item->opcionales = $this->build_opcionales_list($opc_directos);
 
             if ($tiene_etiquetas) {
-                $tags = $articulo_etiqueta->get_etiquetas_articulo($this->codtarifa, $art->referencia);
+                $tags = $this->etiquetas_articulo($this->codtarifa, $art->referencia);
                 sort($tags);
             } else {
                 $tags = [];
@@ -406,7 +491,7 @@ class tarif_configurador_opcionales extends fbase_controller
     private function build_opcionales_list_with_state($opcionales, $codfamilia, $refs_productos, $child_codfamilias)
     {
         $opc_etiq = new tarif_tarifa_opcional_etiqueta();
-        $art_opc = new tarif_articulo_opcional();
+        $art_opc = new catalogo_articulo_opcional();
         $rel_familia = new tarif_tarifa_opcional_familia();
 
         $list = [];
@@ -478,17 +563,16 @@ class tarif_configurador_opcionales extends fbase_controller
             return;
         }
 
-        $art_opc = new tarif_articulo_opcional();
-        $articulos = $this->tarifa_articulo->all_from_familia($this->codtarifa, $codfamilia, 0, 9999);
+        $art_opc = new catalogo_articulo_opcional();
+        $articulos = $this->articulos_from_familia($this->codtarifa, $codfamilia);
         $count = 0;
 
         if (!empty($etiqueta)) {
             // Solo productos que coincidan con el grupo de etiquetas (tag_key pipe-separated)
             $required_tags = explode('|', $etiqueta);
             sort($required_tags);
-            $art_etiq = new tarif_tarifa_articulo_etiqueta();
             foreach ($articulos as $art) {
-                $tags = $art_etiq->get_etiquetas_articulo($this->codtarifa, $art->referencia);
+                $tags = $this->etiquetas_articulo($this->codtarifa, $art->referencia);
                 sort($tags);
                 if ($tags === $required_tags) {
                     if ($art_opc->add($art->referencia, $id_opcional)) {
@@ -556,7 +640,7 @@ class tarif_configurador_opcionales extends fbase_controller
 
         $all_familias = $this->tarifa_familia->all_activas_from_tarifa($this->codtarifa);
         $rel_familia = new tarif_tarifa_opcional_familia();
-        $base_model = new tarif_opcional_familia();
+        $base_model = new catalogo_opcional_familia();
         $count = 0;
 
         foreach ($all_familias as $fam) {
@@ -627,7 +711,7 @@ class tarif_configurador_opcionales extends fbase_controller
             }
         }
 
-        $articulos_config = $this->tarifa_articulo->all_from_familia($this->codtarifa, $codfamilia, 0, 9999);
+        $articulos_config = $this->articulos_from_familia($this->codtarifa, $codfamilia);
         $refs_productos = array_map(fn($a) => $a->referencia, $articulos_config);
 
         $opcionales_with_state = $this->build_opcionales_list_with_state(
@@ -651,16 +735,15 @@ class tarif_configurador_opcionales extends fbase_controller
         $rel_familia = new tarif_tarifa_opcional_familia();
         $opc_familia = $rel_familia->get_opcionales_activos($this->codtarifa, $codfamilia);
         $opcional_etiqueta = new tarif_tarifa_opcional_etiqueta();
-        $art_opc = new tarif_articulo_opcional();
-        $art_etiq = new tarif_tarifa_articulo_etiqueta();
+        $art_opc = new catalogo_articulo_opcional();
 
         $required_tags = explode('|', $etiqueta);
         sort($required_tags);
 
-        $articulos_config = $this->tarifa_articulo->all_from_familia($this->codtarifa, $codfamilia, 0, 9999);
+        $articulos_config = $this->articulos_from_familia($this->codtarifa, $codfamilia);
         $group_refs = [];
         foreach ($articulos_config as $art) {
-            $tags = $art_etiq->get_etiquetas_articulo($this->codtarifa, $art->referencia);
+            $tags = $this->etiquetas_articulo($this->codtarifa, $art->referencia);
             sort($tags);
             if ($tags === $required_tags) {
                 $group_refs[] = $art->referencia;
@@ -700,7 +783,7 @@ class tarif_configurador_opcionales extends fbase_controller
 
         $all_familias = $this->tarifa_familia->all_activas_from_tarifa($this->codtarifa);
         $rel_familia = new tarif_tarifa_opcional_familia();
-        $base_model = new tarif_opcional_familia();
+        $base_model = new catalogo_opcional_familia();
         $count = 0;
 
         foreach ($visible_ids as $id_opcional) {
@@ -751,18 +834,16 @@ class tarif_configurador_opcionales extends fbase_controller
             return 0;
         }
 
-        $art_opc = new tarif_articulo_opcional();
-        $articulos = $this->tarifa_articulo->all_from_familia($this->codtarifa, $codfamilia, 0, 9999);
+        $art_opc = new catalogo_articulo_opcional();
+        $articulos = $this->articulos_from_familia($this->codtarifa, $codfamilia);
         $count = 0;
 
         if (!empty($etiqueta)) {
             $required_tags = explode('|', $etiqueta);
             sort($required_tags);
-            $art_etiq = new tarif_tarifa_articulo_etiqueta();
-
             foreach ($visible_ids as $id_opcional) {
                 foreach ($articulos as $art) {
-                    $tags = $art_etiq->get_etiquetas_articulo($this->codtarifa, $art->referencia);
+                    $tags = $this->etiquetas_articulo($this->codtarifa, $art->referencia);
                     sort($tags);
                     if ($tags === $required_tags) {
                         if ($art_opc->add($art->referencia, $id_opcional)) {
@@ -982,7 +1063,7 @@ class tarif_configurador_opcionales extends fbase_controller
             return;
         }
 
-        $base_model = new tarif_opcional_familia();
+        $base_model = new catalogo_opcional_familia();
         if (!$base_model->exists_relation($id_opcional, $codfamilia)) {
             $base_model->add($id_opcional, $codfamilia);
         }
@@ -1010,7 +1091,7 @@ class tarif_configurador_opcionales extends fbase_controller
             return;
         }
 
-        $base_model = new tarif_opcional_familia();
+        $base_model = new catalogo_opcional_familia();
         if (!$base_model->exists_relation($id_opcional, $codfamilia)) {
             $base_model->add($id_opcional, $codfamilia);
         }
@@ -1048,7 +1129,7 @@ class tarif_configurador_opcionales extends fbase_controller
             return;
         }
 
-        $art_opc = new tarif_articulo_opcional();
+        $art_opc = new catalogo_articulo_opcional();
         if ($art_opc->add($referencia, $id_opcional)) {
             echo json_encode(['success' => true]);
         } else {
@@ -1130,7 +1211,7 @@ class tarif_configurador_opcionales extends fbase_controller
             return;
         }
 
-        $art_opc = new tarif_articulo_opcional();
+        $art_opc = new catalogo_articulo_opcional();
         if ($art_opc->remove($referencia, $id_opcional)) {
             echo json_encode(['success' => true]);
         } else {
@@ -1156,7 +1237,7 @@ class tarif_configurador_opcionales extends fbase_controller
             case 'familia':
                 $codfamilia = isset($_REQUEST['assoc_codfamilia']) ? trim($_REQUEST['assoc_codfamilia']) : '';
                 if (!empty($codfamilia) && !empty($this->codtarifa)) {
-                    $base_model = new tarif_opcional_familia();
+                    $base_model = new catalogo_opcional_familia();
                     if (!$base_model->exists_relation($id_opcional, $codfamilia)) {
                         $base_model->add($id_opcional, $codfamilia);
                     }
@@ -1170,7 +1251,7 @@ class tarif_configurador_opcionales extends fbase_controller
                 $codfamilia = isset($_REQUEST['assoc_codfamilia']) ? trim($_REQUEST['assoc_codfamilia']) : '';
                 $etiqueta = isset($_REQUEST['assoc_etiqueta']) ? trim($_REQUEST['assoc_etiqueta']) : '';
                 if (!empty($codfamilia) && !empty($etiqueta) && !empty($this->codtarifa)) {
-                    $base_model = new tarif_opcional_familia();
+                    $base_model = new catalogo_opcional_familia();
                     if (!$base_model->exists_relation($id_opcional, $codfamilia)) {
                         $base_model->add($id_opcional, $codfamilia);
                     }
@@ -1193,7 +1274,7 @@ class tarif_configurador_opcionales extends fbase_controller
             case 'producto':
                 $referencia = isset($_REQUEST['assoc_referencia']) ? trim($_REQUEST['assoc_referencia']) : '';
                 if (!empty($referencia)) {
-                    $art_opc = new tarif_articulo_opcional();
+                    $art_opc = new catalogo_articulo_opcional();
                     $art_opc->add($referencia, $id_opcional);
                     $result['entidad'] = $referencia;
                 }

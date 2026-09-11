@@ -164,6 +164,30 @@ class catalogo_articulo_opcional extends \fs_model
         return $list;
     }
 
+    /**
+     * Opcionales sueltos asignados directamente al artículo, hidratados como
+     * tarif_opcional. Additive relocation read for the absorbed configurator
+     * and tarifario consumers (design D4); the catalogo-typed variant stays
+     * available through get_opcionales_sueltos_from_articulo().
+     *
+     * @return array<int, tarif_opcional>
+     */
+    public function get_opcionales_directos_from_articulo($referencia)
+    {
+        $list = [];
+        $data = $this->db->select('SELECT o.* FROM ' . catalogo_opcional::TABLE . ' o'
+            . ' INNER JOIN ' . $this->table_name . ' ao ON o.id = ao.id_opcional'
+            . ' WHERE ao.referencia = ?'
+            . ' ORDER BY o.nombre ASC;', [$referencia]);
+        if ($data) {
+            foreach ($data as $d) {
+                $list[] = new tarif_opcional($d);
+            }
+        }
+
+        return $list;
+    }
+
     public function get_articulos_from_opcional($id_opcional)
     {
         $list = [];

@@ -22,12 +22,13 @@ require_once 'plugins/catalogo_core/model/tarif_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_opcional_precio.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_etiqueta.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
 
 use FSFramework\model\tarif_familia;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa_opcional_etiqueta;
 use FSFramework\model\tarif_opcional;
-use FSFramework\model\tarif_articulo_opcional;
+use FSFramework\model\catalogo_articulo_opcional;
 use FSFramework\model\tarif_opcional_precio;
 
 /**
@@ -177,7 +178,7 @@ class tarif_opcional_edit extends fbase_controller
 
     private function add_articulo()
     {
-        $rel = new tarif_articulo_opcional();
+        $rel = new catalogo_articulo_opcional();
         $referencia = $_GET['add_articulo'];
 
         if ($rel->add($referencia, $this->opcional->id)) {
@@ -194,7 +195,7 @@ class tarif_opcional_edit extends fbase_controller
             return;
         }
 
-        $rel = new tarif_articulo_opcional();
+        $rel = new catalogo_articulo_opcional();
         $referencia = $_GET['remove_articulo'];
 
         if ($rel->remove($referencia, $this->opcional->id)) {

@@ -26,6 +26,9 @@ class tarif_tarifa_opcional_resolver extends \fs_model
     /** Stable per-tarifa article table (no tarifario PHP class dependency). */
     private const TARIFA_ARTICULO_TABLE = 'tarif_tarifa_articulo';
 
+    /** Stable per-tarifa article tag table (no tarifario PHP class dependency). */
+    private const TARIFA_ARTICULO_ETIQUETA_TABLE = 'tarif_tarifa_articulo_etiqueta';
+
     public function __construct($data = FALSE)
     {
         parent::__construct('tarif_tarifa_opcional_familia');
@@ -35,9 +38,36 @@ class tarif_tarifa_opcional_resolver extends \fs_model
     {
         new tarif_tarifa_opcional_familia();
         new tarif_tarifa_etiqueta_familia();
-        new tarif_tarifa_articulo_etiqueta();
         new tarif_tarifa_opcional_etiqueta();
         return '';
+    }
+
+    /**
+     * Etiquetas de un artículo en una tarifa, leídas con SQL parametrizado
+     * para no depender de la clase PHP de tarifario (design D4).
+     *
+     * @return array<int, string>
+     */
+    private function etiquetas_articulo($codtarifa, $referencia)
+    {
+        if (!$this->db->table_exists(self::TARIFA_ARTICULO_ETIQUETA_TABLE)) {
+            return [];
+        }
+
+        $data = $this->db->select(
+            'SELECT etiqueta FROM ' . self::TARIFA_ARTICULO_ETIQUETA_TABLE
+            . ' WHERE codtarifa = ? AND referencia = ? ORDER BY etiqueta ASC;',
+            [$codtarifa, $referencia]
+        );
+
+        $list = [];
+        if ($data) {
+            foreach ($data as $row) {
+                $list[] = $row['etiqueta'];
+            }
+        }
+
+        return $list;
     }
 
     /**
@@ -66,8 +96,7 @@ class tarif_tarifa_opcional_resolver extends \fs_model
             return $opcionales;
         }
 
-        $articulo_etiqueta = new tarif_tarifa_articulo_etiqueta();
-        $etiquetas_articulo = $articulo_etiqueta->get_etiquetas_articulo($codtarifa, $referencia);
+        $etiquetas_articulo = $this->etiquetas_articulo($codtarifa, $referencia);
         $etiquetas_articulo_idx = [];
         foreach ($etiquetas_articulo as $etiqueta) {
             $etiquetas_articulo_idx[$etiqueta] = true;

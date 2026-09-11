@@ -182,6 +182,29 @@ class catalogo_opcional_familia extends \fs_model
         return $list;
     }
 
+    /**
+     * Opcionales de una familia hidratados como tarif_opcional. Additive
+     * relocation read for tarifario consumers (design D4); the catalogo-typed
+     * variant stays available through get_opcionales_from_familia().
+     *
+     * @return array<int, tarif_opcional>
+     */
+    public function get_opcionales_tarifario_from_familia($codfamilia)
+    {
+        $list = [];
+        $data = $this->db->select('SELECT o.* FROM ' . catalogo_opcional::TABLE . ' o'
+            . ' INNER JOIN ' . $this->table_name . ' of ON o.id = of.id_opcional'
+            . ' WHERE of.codfamilia = ?'
+            . ' ORDER BY o.nombre ASC;', [$codfamilia]);
+        if ($data) {
+            foreach ($data as $d) {
+                $list[] = new tarif_opcional($d);
+            }
+        }
+
+        return $list;
+    }
+
     public function delete_all_from_opcional($id_opcional)
     {
         return $this->db->exec('DELETE FROM ' . $this->table_name
