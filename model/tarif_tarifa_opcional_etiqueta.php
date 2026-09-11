@@ -121,15 +121,13 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
     }
 
     /**
-     * Reemplaza las etiquetas de un opcional en una familia y tarifa.
+     * Normaliza una lista de etiquetas: recorta espacios, descarta vacías y
+     * elimina duplicados preservando el orden de aparición.
      *
-     * @param string $codtarifa
-     * @param int $id_opcional
-     * @param string $codfamilia
-     * @param array $etiquetas
-     * @return bool
+     * @param mixed $etiquetas
+     * @return array<int, string>
      */
-    public function replace_etiquetas_opcional($codtarifa, $id_opcional, $codfamilia, $etiquetas)
+    private function normalizar_etiquetas($etiquetas)
     {
         $normalized = [];
         foreach ((array) $etiquetas as $etiqueta) {
@@ -140,11 +138,27 @@ class tarif_tarifa_opcional_etiqueta extends \fs_model
             $normalized[$tag] = true;
         }
 
+        return array_keys($normalized);
+    }
+
+    /**
+     * Reemplaza las etiquetas de un opcional en una familia y tarifa.
+     *
+     * @param string $codtarifa
+     * @param int $id_opcional
+     * @param string $codfamilia
+     * @param array $etiquetas
+     * @return bool
+     */
+    public function replace_etiquetas_opcional($codtarifa, $id_opcional, $codfamilia, $etiquetas)
+    {
+        $normalized = $this->normalizar_etiquetas($etiquetas);
+
         if (!$this->delete_all_from_opcional_familia_tarifa($codtarifa, $id_opcional, $codfamilia)) {
             return false;
         }
 
-        foreach (array_keys($normalized) as $tag) {
+        foreach ($normalized as $tag) {
             if (!$this->add($codtarifa, $id_opcional, $codfamilia, $tag)) {
                 return false;
             }

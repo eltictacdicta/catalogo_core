@@ -107,6 +107,21 @@ class tarif_tarifa_opcional_familia extends \fs_model
     }
 
     /**
+     * Comprueba la existencia de la relación en la tabla base global.
+     * Seam aislado para poder verificar la herencia sin base de datos viva.
+     *
+     * @param int $id_opcional
+     * @param string $codfamilia
+     * @return bool
+     */
+    protected function base_relation_exists($id_opcional, $codfamilia): bool
+    {
+        $base_model = new catalogo_opcional_familia();
+
+        return (bool) $base_model->exists_relation($id_opcional, $codfamilia);
+    }
+
+    /**
      * Verifica si una relación está activa en una tarifa.
      * Aplica la lógica de herencia: si no hay registro específico, hereda de la tabla base.
      * 
@@ -118,8 +133,7 @@ class tarif_tarifa_opcional_familia extends \fs_model
     public function is_activo_en_tarifa($codtarifa, $id_opcional, $codfamilia)
     {
         // Primero verificar si existe en la tabla base
-        $base_model = new catalogo_opcional_familia();
-        if (!$base_model->exists_relation($id_opcional, $codfamilia)) {
+        if (!$this->base_relation_exists($id_opcional, $codfamilia)) {
             return FALSE; // No existe la relación base
         }
 

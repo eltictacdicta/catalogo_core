@@ -97,15 +97,40 @@ class tarif_tarifa_opcional_resolver extends \fs_model
         }
 
         $etiquetas_articulo = $this->etiquetas_articulo($codtarifa, $referencia);
+
+        $opcional_etiqueta = new tarif_tarifa_opcional_etiqueta();
+        $etiquetas_por_opcional = [];
+        foreach ($opcionales as $opcional) {
+            $etiquetas_por_opcional[intval($opcional->id)] = $opcional_etiqueta->get_etiquetas_opcional(
+                $codtarifa,
+                intval($opcional->id),
+                $codfamilia
+            );
+        }
+
+        return $this->filtrar_por_etiquetas($opcionales, $etiquetas_articulo, $etiquetas_por_opcional);
+    }
+
+    /**
+     * Filtro puro de intersección de etiquetas: los opcionales sin etiqueta
+     * se incluyen siempre, y los etiquetados solo cuando alguna de sus
+     * etiquetas está presente en el conjunto de etiquetas del artículo.
+     *
+     * @param array<int, object> $opcionales
+     * @param array<int, string> $etiquetas_articulo
+     * @param array<int, array<int, string>> $etiquetas_por_opcional indexado por id de opcional
+     * @return array<int, object>
+     */
+    private function filtrar_por_etiquetas(array $opcionales, array $etiquetas_articulo, array $etiquetas_por_opcional)
+    {
         $etiquetas_articulo_idx = [];
         foreach ($etiquetas_articulo as $etiqueta) {
             $etiquetas_articulo_idx[$etiqueta] = true;
         }
 
-        $opcional_etiqueta = new tarif_tarifa_opcional_etiqueta();
         $resultado = [];
         foreach ($opcionales as $opcional) {
-            $etiquetas_opcional = $opcional_etiqueta->get_etiquetas_opcional($codtarifa, intval($opcional->id), $codfamilia);
+            $etiquetas_opcional = $etiquetas_por_opcional[intval($opcional->id)] ?? [];
 
             if (empty($etiquetas_opcional)) {
                 $resultado[] = $opcional;
@@ -125,6 +150,17 @@ class tarif_tarifa_opcional_resolver extends \fs_model
         }
 
         return $resultado;
+    }
+
+    /**
+     * Seam de factoría para la tabla de overrides por artículo (verificable
+     * sin base de datos viva).
+     *
+     * @return tarif_tarifa_articulo_opcional
+     */
+    protected function tarifa_articulo_opcional_model(): tarif_tarifa_articulo_opcional
+    {
+        return new tarif_tarifa_articulo_opcional();
     }
 
     /**
@@ -155,7 +191,7 @@ class tarif_tarifa_opcional_resolver extends \fs_model
             return $stats;
         }
 
-        $tarifa_articulo_opcional = new tarif_tarifa_articulo_opcional();
+        $tarifa_articulo_opcional = $this->tarifa_articulo_opcional_model();
         foreach ($data as $row) {
             $id_opcional = intval($row['id_opcional']);
             $activo = isset($efectivos_idx[$id_opcional]);
