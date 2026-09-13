@@ -31,17 +31,32 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.ph
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional_grupo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_familia.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_articulo.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_familia.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_articulo_etiqueta.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_imagen.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
 use FSFramework\Core\Html;
+use FSFramework\Event\FSEventDispatcher;
 use FSFramework\model\catalogo_articulo_opcional;
 use FSFramework\model\catalogo_articulo_opcional_grupo;
 use FSFramework\model\catalogo_idioma;
 use FSFramework\model\catalogo_lista_precio;
 use FSFramework\model\catalogo_opcional;
 use FSFramework\model\catalogo_opcional_grupo;
+use FSFramework\model\tarif_articulo_imagen;
+use FSFramework\model\tarif_tarifa;
+use FSFramework\model\tarif_tarifa_articulo;
+use FSFramework\model\tarif_tarifa_articulo_etiqueta;
+use FSFramework\model\tarif_tarifa_etiqueta_familia;
+use FSFramework\model\tarif_tarifa_familia;
+use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\Translation\FSTranslator;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -58,6 +73,17 @@ class VentasArticulo extends PageController
     public array $grupos_disponibles = [];
     public string $lista_precio_defecto = catalogo_lista_precio::DEFAULT_CODE;
     public bool $allow_delete = false;
+
+    // WU-2 absorbed state (ported 1:1 from tarifario's tarif_articulo_edit).
+    public string $codtarifa = '';
+    public array $tarifas = [];
+    public array $imagenes = [];
+    public array $articulo_etiquetas_disponibles = [];
+    public array $articulo_etiquetas_seleccionadas = [];
+    public bool $puede_editar = false;
+
+    /** TRUE once an htmx fragment response was echoed; run() then skips the page. */
+    protected bool $htmxHandled = false;
 
     public function __construct()
     {
@@ -94,6 +120,10 @@ class VentasArticulo extends PageController
 
         $this->privateCore($this->response, $this->user, $this->permissions);
 
+        if ($this->htmxHandled) {
+            return;
+        }
+
         if ($this->isOpcionalesPartialRequest()) {
             if ($this->shouldRenderOpcionalesPartial()) {
                 $this->renderOpcionalesPartial();
@@ -120,7 +150,7 @@ class VentasArticulo extends PageController
 
     public function privateCore(&$response, $user, $permissions): void
     {
-        $this->articulo = new \articulo();
+        $this->articulo = $this->articulo_model();
 
         $ref = $this->resolveArticuloReferenciaFromRequest();
         if ($ref !== null) {
@@ -134,6 +164,7 @@ class VentasArticulo extends PageController
         }
 
         $this->loadFilterOptions();
+        $this->loadTarifarioState();
         $this->loadCatalogData();
 
         if ($this->request->request->has('add_opcional_articulo')) {
@@ -148,13 +179,131 @@ class VentasArticulo extends PageController
             $this->toggleObligatorioGrupo($this->request);
         } elseif ($this->request->request->has('toggle_obligatorio_opcional')) {
             $this->toggleObligatorioOpcional($this->request);
+        } elseif ($this->request->request->has('upload_imagen')) {
+            $this->uploadImagen($this->articulo);
+        } elseif ($this->request->request->has('delete_imagen')) {
+            $this->deleteImagen($this->articulo);
+        } elseif ($this->request->request->has('destacar_imagen')) {
+            $this->destacarImagen($this->articulo);
+        } elseif ($this->request->request->has('eliminar_articulo')) {
+            $this->eliminarArticulo($this->request);
         } elseif ($this->request->request->has('sreferencia')) {
             $this->editarArticulo($this->request);
-        } elseif ($this->request->query->has('delete') && $this->allow_delete) {
-            $this->eliminarArticulo($this->request);
         }
 
         $this->loadCatalogData();
+    }
+
+    /**
+     * Loads the tarifario state absorbed from tarif_articulo_edit: active
+     * tarifas, the selected codtarifa, the loaded article's images and etiqueta
+     * lists, and the neutral permission verdict for the edit surface.
+     */
+    protected function loadTarifarioState(): void
+    {
+        $tarifa = $this->tarifa_model();
+        $this->tarifas = $tarifa->all_activas();
+        $this->codtarifa = $this->resolveCodtarifa();
+
+        $this->puede_editar = false;
+        $this->imagenes = [];
+        $this->articulo_etiquetas_disponibles = [];
+        $this->articulo_etiquetas_seleccionadas = [];
+
+        if ($this->articulo === null || $this->articulo->referencia === null || $this->articulo->referencia === '') {
+            return;
+        }
+
+        $this->puede_editar = $this->puedeEditarArticulo($this->articulo->referencia, $this->codtarifa);
+        $this->loadImagenes($this->articulo);
+        $this->articulo_etiquetas_disponibles = $this->getEtiquetasDisponiblesArticulo();
+        $this->articulo_etiquetas_seleccionadas = $this->getEtiquetasSeleccionadasArticulo();
+    }
+
+    /**
+     * Resolves the active codtarifa: request override, else the default tariff
+     * (ported 1:1 from tarif_controller's selection logic).
+     */
+    protected function resolveCodtarifa(): string
+    {
+        if ($this->request->query->has('codtarifa')) {
+            return (string) $this->request->query->get('codtarifa');
+        }
+
+        if ($this->request->request->has('codtarifa')) {
+            return (string) $this->request->request->get('codtarifa');
+        }
+
+        $defecto = $this->tarifa_model()->get_default();
+
+        return $defecto ? (string) $defecto->codtarifa : '';
+    }
+
+    // =====================================================================
+    // WU-2 seams (protected, overridable by the DB-free test subclass).
+    // =====================================================================
+
+    protected function articulo_model(): \articulo
+    {
+        return new \articulo();
+    }
+
+    protected function tarifa_model(): tarif_tarifa
+    {
+        return new tarif_tarifa();
+    }
+
+    protected function tarifa_articulo_model(): tarif_tarifa_articulo
+    {
+        return new tarif_tarifa_articulo();
+    }
+
+    protected function etiqueta_model(): tarif_tarifa_articulo_etiqueta
+    {
+        return new tarif_tarifa_articulo_etiqueta();
+    }
+
+    protected function etiqueta_familia_model(): tarif_tarifa_etiqueta_familia
+    {
+        return new tarif_tarifa_etiqueta_familia();
+    }
+
+    protected function imagen_model(): tarif_articulo_imagen
+    {
+        return new tarif_articulo_imagen();
+    }
+
+    protected function familia_model(): \familia
+    {
+        return new \familia();
+    }
+
+    protected function tarifa_familia_model(): tarif_tarifa_familia
+    {
+        return new tarif_tarifa_familia();
+    }
+
+    /**
+     * Neutral permission gate (AD-W2-2): admins short-circuit, otherwise the
+     * plugin-agnostic ArticlePermissionFilterEvent resolves the verdict
+     * (default-allow with zero listeners; tarifario's listener enforces RBAC
+     * transitively when active).
+     */
+    protected function puedeEditarArticulo(string $referencia, string $codtarifa): bool
+    {
+        if (!empty($this->user->admin)) {
+            return true;
+        }
+
+        $event = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            (string) ($this->user->nick ?? ''),
+            $codtarifa
+        );
+        FSEventDispatcher::getInstance()->dispatch($event, ArticlePermissionFilterEvent::NAME);
+
+        return $event->isAllowed();
     }
 
     private function loadExtensions(): void
@@ -186,7 +335,7 @@ class VentasArticulo extends PageController
         $this->impuestos = $impuesto->all();
     }
 
-    private function editarArticulo(Request $request): void
+    protected function editarArticulo(Request $request): void
     {
         if (!$this->validateFormToken()) {
             $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
@@ -194,11 +343,26 @@ class VentasArticulo extends PageController
         }
 
         $referencia = (string) $request->request->get('sreferencia', '');
+        if (!$this->puedeEditarArticulo($referencia, $this->codtarifa)) {
+            $this->new_error_msg('No tienes permiso para editar este artículo.');
+            return;
+        }
+
         $art = $this->articulo->get($referencia);
 
         if (!$art) {
-            $art = new \articulo();
+            $art = $this->articulo_model();
             $art->referencia = $referencia;
+        }
+
+        // Reference rename rides a distinct field so a plain field save never
+        // renames by accident (AD-W2-2). A rejected rename aborts before save.
+        $nuevaReferencia = trim((string) $request->request->get('snueva_referencia', $referencia));
+        if ($nuevaReferencia !== '' && $nuevaReferencia !== $art->referencia) {
+            if (!$art->set_referencia($nuevaReferencia)) {
+                $this->new_error_msg('No se pudo cambiar la referencia del artículo.');
+                return;
+            }
         }
 
         $art->descripcion = (string) $request->request->get('sdescripcion', '');
@@ -230,12 +394,276 @@ class VentasArticulo extends PageController
 
         if ($art->save()) {
             $this->saveMultiidiomaDescriptions($art, $request);
+
+            // A per-tarifa/etiqueta failure reports an error but never discards
+            // the successful article save (ART-01/AD-W2-2).
+            if (!$this->syncTarifaArticulo($art)) {
+                $this->new_error_msg('Datos guardados, pero no se pudo sincronizar el artículo con la tarifa actual.');
+                $this->articulo = $art;
+                return;
+            }
+
+            if (!$this->saveEtiquetasArticulo($art)) {
+                $this->new_error_msg('Datos guardados, pero no se pudieron guardar las etiquetas del artículo.');
+                $this->articulo = $art;
+                return;
+            }
+
             $this->new_message('Artículo ' . $art->referencia . ' guardado correctamente.');
             $this->articulo = $art;
             return;
         }
 
         $this->new_error_msg('¡Imposible guardar el artículo!');
+    }
+
+    /**
+     * Sincroniza el artículo con la tarifa activa (ported 1:1 from
+     * tarif_articulo_edit::sync_tarifa_articulo_actual).
+     */
+    protected function syncTarifaArticulo(\articulo $art): bool
+    {
+        if (empty($this->codtarifa) || empty($art->referencia)) {
+            return true;
+        }
+
+        if (!$this->ensureTarifaFamilyAvailable($art->codfamilia)) {
+            return false;
+        }
+
+        $model = $this->tarifa_articulo_model();
+        $row = $model->get($this->codtarifa, $art->referencia);
+
+        if ($row) {
+            $row->codfamilia = $art->codfamilia;
+            return $row->save();
+        }
+
+        return false !== $model->add_articulo_to_tarifa($this->codtarifa, $art->referencia, $art->codfamilia);
+    }
+
+    /**
+     * Asegura que la familia elegida exista en la tarifa activa, creando sus
+     * ancestros para mantener la jerarquía navegable (ported 1:1).
+     */
+    protected function ensureTarifaFamilyAvailable(?string $codfamilia): bool
+    {
+        if (empty($this->codtarifa) || empty($codfamilia)) {
+            return true;
+        }
+
+        $tarifaFamilia = $this->tarifa_familia_model();
+        if ($tarifaFamilia->get($this->codtarifa, $codfamilia)) {
+            return true;
+        }
+
+        $familia = $this->familia_model()->get($codfamilia);
+        if (!$familia) {
+            return false;
+        }
+
+        if (!empty($familia->madre) && !$this->ensureTarifaFamilyAvailable($familia->madre)) {
+            return false;
+        }
+
+        return false !== $tarifaFamilia->add_familia_to_tarifa(
+            $this->codtarifa,
+            $codfamilia,
+            $familia->madre ?: null
+        );
+    }
+
+    /**
+     * Guarda las etiquetas del artículo para la tarifa activa (ported 1:1):
+     * only etiquetas previously defined for the selected family may persist.
+     */
+    protected function saveEtiquetasArticulo(\articulo $art): bool
+    {
+        if (empty($this->codtarifa) || empty($art->referencia)) {
+            return true;
+        }
+
+        $selected = $this->request->request->all('etiquetas');
+        if (!is_array($selected)) {
+            $selected = [];
+        }
+
+        if (empty($art->codfamilia)) {
+            return $this->etiqueta_model()->replace_etiquetas_articulo(
+                $this->codtarifa,
+                $art->referencia,
+                []
+            );
+        }
+
+        $allowed = $this->etiqueta_familia_model()->get_etiquetas_familia($this->codtarifa, $art->codfamilia);
+        $allowedIndex = [];
+        foreach ((array) $allowed as $tag) {
+            $allowedIndex[(string) $tag] = true;
+        }
+
+        $filtered = [];
+        foreach ($selected as $tag) {
+            $tag = trim((string) $tag);
+            if ($tag !== '' && isset($allowedIndex[$tag])) {
+                $filtered[] = $tag;
+            }
+        }
+
+        return $this->etiqueta_model()->replace_etiquetas_articulo(
+            $this->codtarifa,
+            $art->referencia,
+            $filtered
+        );
+    }
+
+    /**
+     * Etiquetas definidas para la familia actual del artículo en la tarifa
+     * seleccionada (view API, ported 1:1).
+     *
+     * @return array
+     */
+    public function getEtiquetasDisponiblesArticulo(): array
+    {
+        if (empty($this->articulo) || empty($this->articulo->codfamilia) || empty($this->codtarifa)) {
+            return [];
+        }
+
+        return $this->etiqueta_familia_model()->get_etiquetas_familia(
+            $this->codtarifa,
+            $this->articulo->codfamilia
+        );
+    }
+
+    /**
+     * Etiquetas actualmente asignadas al artículo en la tarifa seleccionada
+     * (view API, ported 1:1).
+     *
+     * @return array
+     */
+    public function getEtiquetasSeleccionadasArticulo(): array
+    {
+        if (empty($this->articulo) || empty($this->articulo->referencia) || empty($this->codtarifa)) {
+            return [];
+        }
+
+        return $this->etiqueta_model()->get_etiquetas_articulo(
+            $this->codtarifa,
+            $this->articulo->referencia
+        );
+    }
+
+    // =====================================================================
+    // Images entry point (ported 1:1 from tarif_articulo_edit, AD-W2-7).
+    // =====================================================================
+
+    protected function loadImagenes(\articulo $art): void
+    {
+        if (empty($art->referencia)) {
+            $this->imagenes = [];
+            return;
+        }
+
+        $this->imagenes = $this->imagen_model()->all_from_articulo($art->referencia);
+    }
+
+    protected function uploadImagen(\articulo $art): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if (!$this->puedeEditarArticulo((string) $art->referencia, $this->codtarifa)) {
+            $this->new_error_msg('No tienes permiso para modificar este artículo.');
+            return;
+        }
+
+        if (!isset($_FILES['imagen']) || $_FILES['imagen']['error'] !== UPLOAD_ERR_OK) {
+            $this->new_error_msg('Error al subir la imagen.');
+            return;
+        }
+
+        $imagesPath = tarif_articulo_imagen::IMAGES_DIR;
+        if (!file_exists($imagesPath) && !@mkdir($imagesPath, 0755, true)) {
+            $this->new_error_msg('No se pudo crear el directorio de imágenes. Verifica los permisos del servidor.');
+            return;
+        }
+
+        if (!is_writable($imagesPath)) {
+            $this->new_error_msg('El directorio de imágenes no tiene permisos de escritura: ' . $imagesPath);
+            return;
+        }
+
+        $imagen = tarif_articulo_imagen::upload((string) $art->referencia, $_FILES['imagen']);
+        if ($imagen) {
+            $this->new_message('Imagen subida correctamente.');
+        } else {
+            $this->new_error_msg('Error al guardar la imagen. Asegúrate de que sea un archivo de imagen válido (JPG, PNG, GIF o WEBP).');
+        }
+
+        $this->respondHtmx(true, 'Imagen procesada.');
+    }
+
+    protected function deleteImagen(\articulo $art): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if (!$this->allow_delete) {
+            $this->new_error_msg('No tienes permiso para eliminar.');
+            return;
+        }
+
+        if (!$this->puedeEditarArticulo((string) $art->referencia, $this->codtarifa)) {
+            $this->new_error_msg('No tienes permiso para modificar este artículo.');
+            return;
+        }
+
+        $id = (int) $this->request->request->get('delete_imagen', 0);
+        $imagen = $this->imagen_model()->get($id);
+
+        if ($imagen && $imagen->referencia == $art->referencia) {
+            if ($imagen->delete()) {
+                $this->new_message('Imagen eliminada correctamente.');
+                $this->respondHtmx(true, 'Imagen eliminada correctamente.');
+            } else {
+                $this->new_error_msg('Error al eliminar la imagen.');
+            }
+            return;
+        }
+
+        $this->new_error_msg('Imagen no encontrada.');
+    }
+
+    protected function destacarImagen(\articulo $art): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if (!$this->puedeEditarArticulo((string) $art->referencia, $this->codtarifa)) {
+            $this->new_error_msg('No tienes permiso para modificar este artículo.');
+            return;
+        }
+
+        $id = (int) $this->request->request->get('destacar_imagen', 0);
+        $imagen = $this->imagen_model()->get($id);
+
+        if ($imagen && $imagen->referencia == $art->referencia) {
+            if ($imagen->set_destacada()) {
+                $this->new_message('Imagen marcada como destacada.');
+                $this->respondHtmx(true, 'Imagen marcada como destacada.');
+            } else {
+                $this->new_error_msg('Error al marcar la imagen como destacada.');
+            }
+            return;
+        }
+
+        $this->new_error_msg('Imagen no encontrada.');
     }
 
     private function saveMultiidiomaDescriptions(\articulo $art, Request $request): void
@@ -349,6 +777,11 @@ class VentasArticulo extends PageController
             return;
         }
 
+        if (!$this->puedeEditarArticulo((string) $request->request->get('sreferencia', ''), $this->codtarifa)) {
+            $this->respondAjax(false, 'No tienes permiso para modificar este artículo.');
+            return;
+        }
+
         $referencia = (string) $request->request->get('sreferencia', '');
         $idOpcional = $request->request->getInt('id_opcional');
         $art = $this->articulo->get($referencia);
@@ -387,6 +820,11 @@ class VentasArticulo extends PageController
             return;
         }
 
+        if (!$this->puedeEditarArticulo((string) $request->request->get('sreferencia', ''), $this->codtarifa)) {
+            $this->respondAjax(false, 'No tienes permiso para modificar este artículo.');
+            return;
+        }
+
         $referencia = (string) $request->request->get('sreferencia', '');
         $idGrupo = $request->request->getInt('id_grupo');
         $art = $this->articulo->get($referencia);
@@ -419,6 +857,11 @@ class VentasArticulo extends PageController
             return;
         }
 
+        if (!$this->puedeEditarArticulo((string) $request->request->get('sreferencia', ''), $this->codtarifa)) {
+            $this->respondAjax(false, 'No tienes permiso para modificar este artículo.');
+            return;
+        }
+
         $referencia = (string) $request->request->get('sreferencia', '');
         $idGrupo = $request->request->getInt('id_grupo');
         $art = $this->articulo->get($referencia);
@@ -445,6 +888,11 @@ class VentasArticulo extends PageController
             return;
         }
 
+        if (!$this->puedeEditarArticulo((string) $request->request->get('sreferencia', ''), $this->codtarifa)) {
+            $this->respondAjax(false, 'No tienes permiso para modificar este artículo.');
+            return;
+        }
+
         $referencia = (string) $request->request->get('sreferencia', '');
         $idOpcional = $request->request->getInt('id_opcional');
         $art = $this->articulo->get($referencia);
@@ -468,6 +916,11 @@ class VentasArticulo extends PageController
     {
         if (!$this->validateFormToken()) {
             $this->respondToggleObligatorio(false, 'Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if (!$this->puedeEditarArticulo((string) $request->request->get('sreferencia', ''), $this->codtarifa)) {
+            $this->respondToggleObligatorio(false, 'No tienes permiso para modificar este artículo.');
             return;
         }
 
@@ -502,6 +955,11 @@ class VentasArticulo extends PageController
             return;
         }
 
+        if (!$this->puedeEditarArticulo((string) $request->request->get('sreferencia', ''), $this->codtarifa)) {
+            $this->respondToggleObligatorio(false, 'No tienes permiso para modificar este artículo.');
+            return;
+        }
+
         $referencia = (string) $request->request->get('sreferencia', '');
         $idOpcional = $request->request->getInt('id_opcional');
         $obligatorio = $request->request->getBoolean('obligatorio');
@@ -533,6 +991,36 @@ class VentasArticulo extends PageController
     }
 
     /**
+     * TRUE when the request comes from htmx (AD-W2-4): answers then carry the
+     * re-rendered fragment instead of the full page.
+     */
+    protected function isHtmxRequest(): bool
+    {
+        return $this->request->headers->has('HX-Request');
+    }
+
+    /**
+     * Echoes a re-rendered htmx fragment (AD-W2-4) and marks the request done
+     * so run() skips the full-page template. Returns TRUE when it handled the
+     * response.
+     */
+    protected function respondHtmx(bool $ok, string $message, string $template = 'partials/articulos/tab_opcionales'): bool
+    {
+        if (!$this->isHtmxRequest()) {
+            return false;
+        }
+
+        header('Content-Type: text/html; charset=UTF-8');
+        header('HX-Trigger: ' . json_encode([
+            'tarifarioMessage' => ['ok' => $ok, 'message' => $message],
+        ], JSON_UNESCAPED_UNICODE));
+        echo $this->renderPartialHtml($template);
+        $this->htmxHandled = true;
+
+        return true;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     private function sendAjaxJson(array $payload, int $statusCode = 200): void
@@ -554,6 +1042,11 @@ class VentasArticulo extends PageController
      */
     private function respondAjax(bool $ok, string $message, array $extra = []): void
     {
+        if ($this->isHtmxRequest()) {
+            $this->respondHtmx($ok, $message);
+            return;
+        }
+
         if ($this->isAjaxRequest()) {
             $reloadTab = !empty($extra['reload_opcionales_tab']);
             unset($extra['reload_opcionales_tab']);
@@ -624,7 +1117,16 @@ class VentasArticulo extends PageController
 
     private function renderOpcionalesPartialHtml(): string
     {
-        $html = Html::renderAjax('partials/articulos/tab_opcionales', [
+        return $this->renderPartialHtml('partials/articulos/tab_opcionales');
+    }
+
+    /**
+     * Renders a view partial through Html::renderAjax and strips any embedded
+     * script tags so htmx only swaps markup (AD-W2-4).
+     */
+    protected function renderPartialHtml(string $template): string
+    {
+        $html = Html::renderAjax($template, [
             'fsc' => $this,
             'user' => $this->user,
             'empresa' => $this->empresa,
@@ -636,10 +1138,15 @@ class VentasArticulo extends PageController
         return trim($withoutScripts ?? $html);
     }
 
-    private function eliminarArticulo(Request $request): void
+    protected function eliminarArticulo(Request $request): void
     {
         if (!$this->allow_delete) {
             $this->new_error_msg('No tienes permiso para eliminar en esta página.');
+            return;
+        }
+
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
             return;
         }
 
@@ -648,7 +1155,12 @@ class VentasArticulo extends PageController
             return;
         }
 
-        $ref = (string) $request->query->get('delete', '');
+        $ref = (string) $request->request->get('sreferencia', '');
+        if (!$this->puedeEditarArticulo($ref, $this->codtarifa)) {
+            $this->new_error_msg('No tienes permiso para eliminar este artículo.');
+            return;
+        }
+
         $art = $this->articulo->get($ref);
 
         if (!$art) {

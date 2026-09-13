@@ -1,83 +1,9 @@
 {{ include('header.html.twig') }}
+{% import 'Macro/Htmx.html.twig' as htmx %}
+{% import 'Macro/Alpine.html.twig' as alpine %}
 
-<script type="text/javascript">
-function delete_articulo(url) {
-    bootbox.confirm({
-        message: '¿Realmente desea eliminar este artículo?',
-        title: '<b>Atención</b>',
-        callback: function (result) {
-            if (result) {
-                window.location.href = url;
-            }
-        }
-    });
-}
-
-function cambiar_pvp() {
-    if ($("#pvp").val().search(",") >= 0) {
-        $("#pvp").val($("#pvp").val().replace(",", "."));
-    }
-    var iva = parseFloat($("#iva").val());
-    var pvp = parseFloat($("#pvp").val());
-    $("#pvpi").val(pvp * (100 + iva) / 100);
-    calcular_margen();
-}
-
-function cambiar_pvpi() {
-    if ($("#pvpi").val().search(",") >= 0) {
-        $("#pvpi").val($("#pvpi").val().replace(",", "."));
-    }
-    var iva = parseFloat($("#iva").val());
-    var pvpi = parseFloat($("#pvpi").val());
-    var pvp = (100 * pvpi) / (100 + iva);
-    $("#pvp").val(pvp);
-    calcular_margen();
-}
-
-function cambiar_margen() {
-    if ($("#coste").val().search(",") >= 0) {
-        $("#coste").val($("#coste").val().replace(",", "."));
-    }
-    if ($("#margen").val().search(",") >= 0) {
-        $("#margen").val($("#margen").val().replace(",", "."));
-    }
-    var iva = parseFloat($("#iva").val());
-    var coste = parseFloat($("#coste").val());
-    var margen = parseFloat($("#margen").val());
-    if (!isNaN(margen) && isFinite(margen)) {
-        var pvp = coste * (100 + margen) / 100;
-        $("#pvp").val(pvp);
-        $("#pvpi").val(pvp * (100 + iva) / 100);
-    }
-}
-
-function calcular_margen() {
-    var coste = parseFloat($("#coste").val());
-    var pvp = parseFloat($("#pvp").val());
-    var margen = 0;
-    if (coste > 0 && pvp !== 0) {
-        margen = (pvp * 100) / coste - 100;
-    }
-    $("#margen").val(margen);
-}
-
-$(document).ready(function () {
-    calcular_margen();
-    if (window.location.hash.substring(1) == 'precios') {
-        $('#tab_articulo a[href="#precios"]').tab('show');
-    } else if (window.location.hash.substring(1) == 'stock') {
-        $('#tab_articulo a[href="#stock"]').tab('show');
-    } else if (window.location.hash.substring(1) == 'atributos') {
-        $('#tab_articulo a[href="#atributos"]').tab('show');
-    } else if (window.location.hash.substring(1) == 'multiidioma') {
-        $('#tab_articulo a[href="#multiidioma"]').tab('show');
-    } else if (window.location.hash.substring(1) == 'opcionales') {
-        $('#tab_articulo a[href="#opcionales"]').tab('show');
-    }
-});
-</script>
-
-<div class="container-fluid">
+<div class="container-fluid" x-data="articuloDetalle"
+     x-on:tarifarioMessage.window="notify($event.detail.ok, $event.detail.message)">
     <div class="row">
         <div class="col-sm-12">
             <div class="page-header">
@@ -100,6 +26,7 @@ $(document).ready(function () {
                     </span>
                 </h1>
             </div>
+            <div class="callout" x-show="message" x-cloak :class="messageClass" x-text="message"></div>
         </div>
     </div>
 
@@ -110,21 +37,22 @@ $(document).ready(function () {
                 {{ csrf_field() }}
                 <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}"/>
 
-                <ul class="nav nav-tabs" id="tab_articulo" role="tablist">
+                <ul class="nav nav-tabs" id="tab_articulo" role="tablist"
+                    x-data="articuloTabs" x-init="activarDesdeHash()">
                     <li role="presentation" class="active">
-                        <a href="#datos" aria-controls="datos" role="tab" data-toggle="tab">{{ 'data'|trans }}</a>
+                        <a href="#datos" aria-controls="datos" role="tab" data-toggle="tab" x-on:click.prevent="activar('datos')">{{ 'data'|trans }}</a>
                     </li>
                     <li role="presentation">
-                        <a href="#precios" aria-controls="precios" role="tab" data-toggle="tab">{{ 'prices'|trans }}</a>
+                        <a href="#precios" aria-controls="precios" role="tab" data-toggle="tab" x-on:click.prevent="activar('precios')">{{ 'prices'|trans }}</a>
                     </li>
                     <li role="presentation">
-                        <a href="#stock" aria-controls="stock" role="tab" data-toggle="tab">{{ 'stock'|trans }}</a>
+                        <a href="#stock" aria-controls="stock" role="tab" data-toggle="tab" x-on:click.prevent="activar('stock')">{{ 'stock'|trans }}</a>
                     </li>
                     <li role="presentation">
-                        <a href="#multiidioma" aria-controls="multiidioma" role="tab" data-toggle="tab">{{ 'languages'|trans }}</a>
+                        <a href="#multiidioma" aria-controls="multiidioma" role="tab" data-toggle="tab" x-on:click.prevent="activar('multiidioma')">{{ 'languages'|trans }}</a>
                     </li>
                     <li role="presentation">
-                        <a href="#opcionales" aria-controls="opcionales" role="tab" data-toggle="tab">{{ 'optionals'|trans }}</a>
+                        <a href="#opcionales" aria-controls="opcionales" role="tab" data-toggle="tab" x-on:click.prevent="activar('opcionales')">{{ 'optionals'|trans }}</a>
                     </li>
                     {{- render_hook('ventas_articulo_tabs_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}
                 </ul>
@@ -149,7 +77,13 @@ $(document).ready(function () {
                                     </div>
                                 </div>
                                 <div class="row">
-                                    <div class="col-sm-4">
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            {{ 'reference'|trans }}:
+                                            <input class="form-control" type="text" name="snueva_referencia" value="{{ fsc.articulo.referencia }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'family'|trans }}:
                                             <select class="form-control" name="scodfamilia">
@@ -162,7 +96,7 @@ $(document).ready(function () {
                                             </select>
                                         </div>
                                     </div>
-                                    <div class="col-sm-4">
+                                    <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'manufacturer'|trans }}:
                                             <select class="form-control" name="scodfabricante">
@@ -175,10 +109,10 @@ $(document).ready(function () {
                                             </select>
                                         </div>
                                     </div>
-                                    <div class="col-sm-4">
+                                    <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'tax'|trans }}:
-                                            <select class="form-control" name="scodimpuesto" id="codimpuesto" onchange="cambiar_pvp()">
+                                            <select class="form-control" name="scodimpuesto" id="codimpuesto">
                                                 <option value="">{{ 'none'|trans }}</option>
                                                 {% for impuesto in fsc.impuestos %}
                                                     <option value="{{ impuesto.codimpuesto }}" {% if fsc.articulo.codimpuesto == impuesto.codimpuesto %}selected{% endif %} data-iva="{{ impuesto.iva }}">
@@ -255,39 +189,77 @@ $(document).ready(function () {
                                 </div>
                             </div>
                         </div>
+
+                        {# Imágenes del artículo (absorbido de tarif_articulo_edit, AD-W2-7) #}
+                        <div class="panel panel-default" x-data="articuloImagenes">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'images'|trans }}</h3>
+                            </div>
+                            <div class="panel-body" id="articulo-imagenes">
+                                {% if fsc.imagenes is iterable %}
+                                    {% for imagen in fsc.imagenes %}
+                                        <div class="thumbnail" style="display: inline-block; margin-right: 10px;">
+                                            <img src="{{ imagen.url_imagen() }}" alt="{{ imagen.nombre_archivo }}" style="max-height: 90px;"/>
+                                            <div class="caption text-center">
+                                                <button type="button" class="btn btn-xs btn-default"
+                                                        hx-post="{{ fsc.url() }}"
+                                                        hx-vals='{"destacar_imagen": "{{ imagen.id }}", "_csrf_token": "{{ csrf_token() }}"}'
+                                                        hx-target="#articulo-imagenes" hx-swap="outerHTML"
+                                                        x-on:click="destacar()">{{ 'feature'|trans }}</button>
+                                                <button type="button" class="btn btn-xs btn-danger"
+                                                        hx-post="{{ fsc.url() }}"
+                                                        hx-vals='{"delete_imagen": "{{ imagen.id }}", "_csrf_token": "{{ csrf_token() }}"}'
+                                                        hx-target="#articulo-imagenes" hx-swap="outerHTML"
+                                                        hx-confirm="{{ 'delete'|trans }}"
+                                                        x-on:click="eliminar()">{{ 'delete'|trans }}</button>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+                                {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                <form hx-post="{{ fsc.url() }}" hx-target="#articulo-imagenes" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+                                    {{ csrf_field() }}
+                                    <input type="hidden" name="upload_imagen" value="1"/>
+                                    <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}"/>
+                                    <input type="file" name="imagen"/>
+                                    <button class="btn btn-xs btn-primary" type="submit">{{ 'upload'|trans }}</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
 
                     {# Tab: Precios #}
                     <div role="tabpanel" class="tab-pane" id="precios">
-                        <div class="panel panel-default">
+                        <div class="panel panel-default" x-data="articuloPrecios">
                             <div class="panel-heading">
                                 <h3 class="panel-title">{{ 'prices'|trans }}</h3>
                             </div>
                             <div class="panel-body">
-                                <input type="hidden" id="iva" value="{{ fsc.articulo.get_iva() }}"/>
+                                <input type="hidden" id="iva" value="{{ fsc.articulo.get_iva() }}" x-ref="iva"/>
                                 <div class="row">
                                     <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'cost-price'|trans }}:
-                                            <input class="form-control" type="text" id="coste" value="{{ fsc.articulo.preciocoste()|number_format(2, ',', '.') }}" readonly="readonly"/>
+                                            <input class="form-control" type="text" id="coste" value="{{ fsc.articulo.preciocoste()|number_format(2, ',', '.') }}" readonly="readonly" x-ref="coste"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'sale-price'|trans }} ({{ 'without-tax'|trans }}):
-                                            <input class="form-control" type="text" id="pvp" name="spvp" value="{{ fsc.articulo.pvp|number_format(2, ',', '.') }}" oninput="cambiar_pvp()" autocomplete="off"/>
+                                            <input class="form-control" type="text" id="pvp" name="spvp" value="{{ fsc.articulo.pvp|number_format(2, ',', '.') }}" x-model="pvp" x-on:input="recalcularPvp()" autocomplete="off"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'sale-price'|trans }} ({{ 'with-tax'|trans }}):
-                                            <input class="form-control" type="text" id="pvpi" oninput="cambiar_pvpi()" autocomplete="off"/>
+                                            <input class="form-control" type="text" id="pvpi" x-model="pvpi" x-on:input="recalcularPvpi()" autocomplete="off"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'margin'|trans }} (%):
-                                            <input class="form-control" type="text" id="margen" oninput="cambiar_margen()" autocomplete="off"/>
+                                            <input class="form-control" type="text" id="margen" x-model="margen" x-on:input="recalcularMargen()" autocomplete="off"/>
                                         </div>
                                     </div>
                                 </div>
@@ -343,11 +315,13 @@ $(document).ready(function () {
 
                 <div class="panel-footer text-right" style="margin-top: 15px;">
                     {% if fsc.allow_delete is defined and fsc.allow_delete %}
-                    <a class="btn btn-sm btn-danger pull-left" onclick="delete_articulo('{{ fsc.url() }}&delete={{ fsc.articulo.referencia }}')">
+                    <button class="btn btn-sm btn-danger pull-left" type="submit" name="eliminar_articulo" value="1"
+                            formaction="{{ fsc.url() }}" hx-post="{{ fsc.url() }}" hx-target="body"
+                            hx-confirm="{{ 'delete'|trans }}">
                         <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
-                    </a>
+                    </button>
                     {% endif %}
-                    <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                    <button class="btn btn-sm btn-primary" type="submit">
                         <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
                     </button>
                 </div>
@@ -363,382 +337,113 @@ $(document).ready(function () {
     {% endif %}
 </div>
 
+<style>
+   [x-cloak] {
+      display: none !important;
+   }
+</style>
+
 {% if fsc.articulo.referencia %}
-<div id="opcionales-i18n-config" hidden
-     data-yes="{{ 'optional-required-tpv-yes'|trans }}"
-     data-no="{{ 'optional-required-tpv-no'|trans }}"
-     data-generic-error="{{ 'optional-ajax-error'|trans|default('No se pudo completar la operación.') }}"
-     data-confirm-remove-grupo="{{ 'remove-optional-group-from-article-confirm'|trans|default('¿Quitar este grupo del artículo?') }}"
-     data-confirm-remove-opcional="{{ 'remove-optional-from-article-confirm'|trans|default('¿Quitar este opcional del artículo?') }}"
-     data-select-grupo="{{ 'optional-select-group'|trans|default('Selecciona un grupo.') }}"
-     data-select-opcional="{{ 'optional-select-optional'|trans|default('Selecciona un opcional.') }}"
-     data-attention="{{ 'attention'|trans|default('Atención') }}"></div>
-<script type="text/javascript">
-(function ($) {
-    'use strict';
-
-    var cfg = document.getElementById('opcionales-i18n-config').dataset;
-
-    var labels = {
-        yes: cfg.yes,
-        no: cfg.no
-    };
-
-    var i18n = {
-        genericError: cfg.genericError,
-        confirmRemoveGrupo: cfg.confirmRemoveGrupo,
-        confirmRemoveOpcional: cfg.confirmRemoveOpcional,
-        selectGrupo: cfg.selectGrupo,
-        selectOpcional: cfg.selectOpcional,
-        attention: cfg.attention
-    };
-
-    function getPanel() {
-        return $('#opcionales');
-    }
-
-    function getArticuloRef() {
-        return getPanel().data('articulo-ref');
-    }
-
-    function getArticuloUrl() {
-        var ref = getArticuloRef();
-        var fromData = getPanel().data('articulo-url');
-
-        if (fromData && String(fromData).indexOf('ref=') >= 0) {
-            return fromData;
-        }
-
-        if (ref) {
-            return 'index.php?page=ventas_articulo&ref=' + encodeURIComponent(ref);
-        }
-
-        return fromData || 'index.php?page=ventas_articulo';
-    }
-
-    function buildOpcionalesPartialUrl() {
-        var ref = getArticuloRef();
-        if (!ref) {
-            return null;
-        }
-
-        return 'index.php?page=ventas_articulo&ref=' + encodeURIComponent(ref) + '&partial=opcionales&ajax=1';
-    }
-
-    function showMessage(message) {
-        if (window.bootbox) {
-            bootbox.alert(message);
-            return;
-        }
-
-        window.alert(message);
-    }
-
-    function securePost(payload, callbacks) {
-        var url = getArticuloUrl();
-        callbacks = callbacks || {};
-
-        var onSuccess = callbacks.onSuccess || function () {};
-        var onError = callbacks.onError || function () {
-            showMessage(i18n.genericError);
+<script {{ csp_nonce_attr() }}>
+// Host owns the htmx 4 + Alpine CSP boot (AD-W2-3): the injected Tarifas pane
+// no longer boots, so every component is registered here behind alpine:init.
+document.addEventListener('alpine:init', function () {
+    Alpine.data('articuloDetalle', function () {
+        return {
+            message: '',
+            messageClass: 'callout-success',
+            notify: function (ok, text) {
+                this.message = text || '';
+                this.messageClass = ok ? 'callout-success' : 'callout-danger';
+            }
         };
+    });
 
-        if (window.FSAjaxLoader && typeof window.FSAjaxLoader.securePost === 'function') {
-            window.FSAjaxLoader.securePost(url, payload, {
-                dataType: 'json',
-                onSuccess: onSuccess,
-                onError: onError
-            });
-            return;
-        }
-
-        var csrfToken = $('meta[name="csrf-token"]').attr('content') || '';
-        payload._csrf_token = csrfToken;
-        payload._token = csrfToken;
-
-        $.ajax({
-            url: url,
-            method: 'POST',
-            data: payload,
-            dataType: 'json',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
+    Alpine.data('articuloTabs', function () {
+        return {
+            activar: function (id) {
+                var list = document.getElementById('tab_articulo');
+                if (!list) { return; }
+                Array.prototype.slice.call(list.querySelectorAll('li')).forEach(function (li) {
+                    li.classList.remove('active');
+                });
+                var panes = document.querySelectorAll('.tab-content > .tab-pane');
+                Array.prototype.slice.call(panes).forEach(function (pane) {
+                    pane.classList.remove('active');
+                });
+                var link = list.querySelector('a[href="#' + id + '"]');
+                if (link && link.parentNode) { link.parentNode.classList.add('active'); }
+                var pane = document.getElementById(id);
+                if (pane) { pane.classList.add('active'); }
+            },
+            activarDesdeHash: function () {
+                var hash = window.location.hash.substring(1);
+                if (hash !== '') { this.activar(hash); }
             }
-        }).done(onSuccess).fail(onError);
-    }
-
-    function parseOpcionalesPanel(html) {
-        if (!html) {
-            return $();
-        }
-
-        var $parsed = $($.parseHTML(html, document, false));
-        var $panel = $parsed.filter('#opcionales').first();
-        if (!$panel.length) {
-            $panel = $parsed.find('#opcionales').first();
-        }
-
-        return $panel;
-    }
-
-    function applyOpcionalesHtml(html) {
-        var $current = getPanel();
-        if (!$current.length) {
-            return false;
-        }
-
-        var $newPanel = parseOpcionalesPanel(html);
-        if (!$newPanel.length) {
-            return false;
-        }
-
-        var keepActive = $current.hasClass('active');
-        if (keepActive) {
-            $newPanel.addClass('active');
-        }
-
-        $current.replaceWith($newPanel);
-
-        if (keepActive) {
-            $('#tab_articulo li').removeClass('active');
-            $('#tab_articulo a[href="#opcionales"]').parent('li').addClass('active');
-        }
-
-        return true;
-    }
-
-    function reloadOpcionalesTab() {
-        var reloadUrl = buildOpcionalesPartialUrl();
-        if (!reloadUrl) {
-            showMessage(i18n.genericError);
-            return;
-        }
-
-        $.ajax({
-            url: reloadUrl,
-            method: 'GET',
-            dataType: 'html',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        }).done(function (html) {
-            if (!applyOpcionalesHtml(html)) {
-                showMessage(i18n.genericError);
-            }
-        }).fail(function (xhr) {
-            var message = i18n.genericError;
-            if (xhr.responseJSON && xhr.responseJSON.message) {
-                message = xhr.responseJSON.message;
-            }
-            showMessage(message);
-        });
-    }
-
-    function handleJsonResponse(response, onOk) {
-        if (response && response.ok) {
-            if (typeof onOk === 'function') {
-                onOk(response);
-                return;
-            }
-
-            if (response.html && applyOpcionalesHtml(response.html)) {
-                return;
-            }
-
-            reloadOpcionalesTab();
-            return;
-        }
-
-        showMessage((response && response.message) ? response.message : i18n.genericError);
-    }
-
-    function updateObligatorioToggle($btn, obligatorio) {
-        var $label = $btn.find('.label');
-
-        $btn.attr('data-obligatorio', obligatorio ? '1' : '0');
-        $btn.toggleClass('btn-warning', obligatorio);
-        $btn.toggleClass('btn-default', !obligatorio);
-        $label.toggleClass('label-warning', obligatorio);
-        $label.toggleClass('label-default', !obligatorio);
-        $label.text(obligatorio ? labels.yes : labels.no);
-    }
-
-    function confirmAction(message, callback) {
-        if (window.bootbox) {
-            bootbox.confirm({
-                message: message,
-                title: '<b>' + i18n.attention + '</b>',
-                callback: function (result) {
-                    if (result) {
-                        callback();
-                    }
-                }
-            });
-            return;
-        }
-
-        if (window.confirm(message)) {
-            callback();
-        }
-    }
-
-    $(document).on('click', '#opcionales .js-toggle-obligatorio-tpv', function (event) {
-        event.preventDefault();
-
-        var $btn = $(this);
-        if ($btn.prop('disabled')) {
-            return;
-        }
-
-        var type = $btn.data('type');
-        var id = parseInt($btn.data('id'), 10);
-        var current = $btn.attr('data-obligatorio') === '1';
-        var next = !current;
-
-        var payload = {
-            sreferencia: getArticuloRef(),
-            obligatorio: next ? '1' : '0'
         };
+    });
 
-        if (type === 'grupo') {
-            payload.toggle_obligatorio_grupo = '1';
-            payload.id_grupo = id;
-        } else {
-            payload.toggle_obligatorio_opcional = '1';
-            payload.id_opcional = id;
-        }
-
-        $btn.prop('disabled', true);
-
-        securePost(payload, {
-            onSuccess: function (response) {
-                if (response && response.ok) {
-                    updateObligatorioToggle($btn, !!response.obligatorio);
-                } else {
-                    showMessage((response && response.message) ? response.message : i18n.genericError);
+    Alpine.data('articuloPrecios', function () {
+        return {
+            iva: 0,
+            pvp: 0,
+            pvpi: 0,
+            margen: 0,
+            init: function () {
+                var iva = document.getElementById('iva');
+                var pvpInput = document.getElementById('pvp');
+                this.iva = iva ? parseFloat(iva.value) || 0 : 0;
+                // Seed from the server-rendered sale price: x-model would
+                // otherwise push the hard-coded 0 into the input and drop the
+                // saved price on submit.
+                if (pvpInput && pvpInput.value !== '') {
+                    this.pvp = parseFloat(String(pvpInput.value).replace(',', '.')) || 0;
                 }
-                $btn.prop('disabled', false);
+                this.recalcularPvp();
             },
-            onError: function () {
-                showMessage(i18n.genericError);
-                $btn.prop('disabled', false);
-            }
-        });
-    });
-
-    $(document).on('click', '#opcionales .js-add-grupo-submit', function (event) {
-        event.preventDefault();
-
-        var $form = $(this).closest('.js-add-grupo-form');
-        var $submit = $form.find('.js-add-grupo-submit');
-        var idGrupo = parseInt($form.find('[name="id_grupo"]').val(), 10);
-
-        if (!idGrupo) {
-            showMessage(i18n.selectGrupo);
-            return;
-        }
-
-        $submit.prop('disabled', true);
-
-        securePost({
-            add_grupo_articulo: '1',
-            sreferencia: getArticuloRef(),
-            id_grupo: idGrupo,
-            obligatorio: $form.find('[name="obligatorio"]').is(':checked') ? '1' : '0'
-        }, {
-            onSuccess: function (response) {
-                handleJsonResponse(response);
-                $submit.prop('disabled', false);
+            recalcularPvp: function () {
+                this.pvp = parseFloat(String(this.pvp).replace(',', '.')) || 0;
+                this.pvpi = this.pvp * (100 + this.iva) / 100;
+                this.recalcularMargen();
             },
-            onError: function () {
-                showMessage(i18n.genericError);
-                $submit.prop('disabled', false);
-            }
-        });
-    });
-
-    $(document).on('click', '#opcionales .js-add-opcional-submit', function (event) {
-        event.preventDefault();
-
-        var $form = $(this).closest('.js-add-opcional-form');
-        var $submit = $form.find('.js-add-opcional-submit');
-        var idOpcional = parseInt($form.find('[name="id_opcional"]').val(), 10);
-
-        if (!idOpcional) {
-            showMessage(i18n.selectOpcional);
-            return;
-        }
-
-        $submit.prop('disabled', true);
-
-        securePost({
-            add_opcional_articulo: '1',
-            sreferencia: getArticuloRef(),
-            id_opcional: idOpcional,
-            obligatorio: $form.find('[name="obligatorio"]').is(':checked') ? '1' : '0'
-        }, {
-            onSuccess: function (response) {
-                handleJsonResponse(response);
-                $submit.prop('disabled', false);
+            recalcularPvpi: function () {
+                this.pvpi = parseFloat(String(this.pvpi).replace(',', '.')) || 0;
+                this.pvp = (100 * this.pvpi) / (100 + this.iva);
+                this.recalcularMargen();
             },
-            onError: function () {
-                showMessage(i18n.genericError);
-                $submit.prop('disabled', false);
+            recalcularMargen: function () {
+                var coste = document.getElementById('coste');
+                var costeValue = coste ? parseFloat(String(coste.value).replace(',', '.')) || 0 : 0;
+                this.margen = (costeValue > 0 && this.pvp !== 0) ? (this.pvp * 100) / costeValue - 100 : 0;
             }
-        });
+        };
     });
 
-    $(document).on('click', '#opcionales .js-remove-grupo-articulo', function (event) {
-        event.preventDefault();
-
-        var $btn = $(this);
-        var idGrupo = parseInt($btn.data('id'), 10);
-
-        confirmAction(i18n.confirmRemoveGrupo, function () {
-            $btn.prop('disabled', true);
-
-            securePost({
-                remove_grupo_articulo: '1',
-                sreferencia: getArticuloRef(),
-                id_grupo: idGrupo
-            }, {
-                onSuccess: function (response) {
-                    handleJsonResponse(response);
-                },
-                onError: function () {
-                    showMessage(i18n.genericError);
-                    $btn.prop('disabled', false);
-                }
-            });
-        });
+    Alpine.data('articuloImagenes', function () {
+        return {
+            destacar: function () {
+                // The hx-post already performs the swap; this only reflects intent.
+            },
+            eliminar: function () {
+                // The hx-post already performs the swap; this only reflects intent.
+            }
+        };
     });
 
-    $(document).on('click', '#opcionales .js-remove-opcional-articulo', function (event) {
-        event.preventDefault();
-
-        var $btn = $(this);
-        var idOpcional = parseInt($btn.data('id'), 10);
-
-        confirmAction(i18n.confirmRemoveOpcional, function () {
-            $btn.prop('disabled', true);
-
-            securePost({
-                remove_opcional_articulo: '1',
-                sreferencia: getArticuloRef(),
-                id_opcional: idOpcional
-            }, {
-                onSuccess: function (response) {
-                    handleJsonResponse(response);
-                },
-                onError: function () {
-                    showMessage(i18n.genericError);
-                    $btn.prop('disabled', false);
-                }
-            });
-        });
+    Alpine.data('articuloOpcionales', function () {
+        return {
+            notify: function (ok, text) {
+                window.dispatchEvent(new CustomEvent('tarifarioMessage', {
+                    detail: { ok: ok, message: text }
+                }));
+            }
+        };
     });
-})(jQuery);
+});
 </script>
 {% endif %}
+
+{{ htmx.boot({'allowScriptTags': false}) }}
+{{ alpine.boot() }}
 
 {{ include('footer.html.twig') }}

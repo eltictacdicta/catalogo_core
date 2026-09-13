@@ -3,22 +3,45 @@ declare(strict_types=1);
 /**
  * This file is part of catalogo_core
  * Copyright (C) 2026 FSFramework Team
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 namespace FSFramework\Plugins\catalogo_core\Controller;
 
-require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/extras/VentasOpcionalesListTrait.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
-use FSFramework\model\catalogo_opcional;
-use Symfony\Component\HttpFoundation\Request;
 
+/**
+ * Canonical opcionales management page (spec opcionales-management OUM-01).
+ *
+ * Stays on `PageController` (design AD-2) and absorbs the legacy
+ * `tarif_opcionales` rich list through `VentasOpcionalesListTrait`: tarifa
+ * selector, filters, per-tarifa state/price, CSRF-guarded toggles, creation,
+ * delete, Excel export and native pagination.
+ */
 class VentasOpcionales extends PageController
 {
-    /** @var array<int, catalogo_opcional> */
-    public array $resultados = [];
-    public string $search_query = '';
+    use \VentasOpcionalesListTrait;
+
+    /**
+     * Per-row state toggles dispatched by `privateCore()`.
+     */
+    public const TOGGLE_ACTIONS = ['toggle_activa', 'toggle_en_catalogo', 'toggle_en_tarifa'];
+
     public bool $allow_delete = false;
 
     public function __construct()
@@ -42,15 +65,35 @@ class VentasOpcionales extends PageController
 
     public function privateCore(&$response, $user, $permissions): void
     {
-        if ($this->request->request->has('delete')) {
-            $this->eliminarOpcional($this->request);
+        // Load the active-tarifa context before any create/delete dispatch so
+        // the create-modal per-tarifa prices/percentage persist (the mutation
+        // reads $this->tarifas / $this->tarifa_seleccionada).
+        $this->init_opcionales_list();
+
+        $action = (string) $this->request->query->get('action', '');
+
+        if (in_array($action, self::TOGGLE_ACTIONS, true)) {
+            $this->toggle_opcional_state($action);
+
+            return;
         }
 
-        $this->search_query = trim((string) $this->request->query->get('search', ''));
-        $opcional = new catalogo_opcional();
-        $this->resultados = $this->search_query !== ''
-            ? $opcional->search($this->search_query)
-            : $opcional->all();
+        if ($action === 'export_excel_opcionales') {
+            $this->export_excel_opcionales();
+
+            return;
+        }
+
+        if ($this->request->request->has('delete')) {
+            $this->delete_opcional();
+        }
+
+        if ($this->request->request->has('codigo') && $this->request->request->has('nombre')) {
+            $this->new_opcional();
+        }
+
+        $this->load_opcionales_state_cache();
+        $this->load_precios_cache();
     }
 
     private function loadExtensions(): void
@@ -68,39 +111,5 @@ class VentasOpcionales extends PageController
 
             $this->extensions[] = $ext;
         }
-    }
-
-    private function eliminarOpcional(Request $request): void
-    {
-        if (!$this->validateFormToken()) {
-            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
-            return;
-        }
-
-        if (!$this->allow_delete) {
-            $this->new_error_msg('No tienes permiso para eliminar en esta página.');
-            return;
-        }
-
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no puedes eliminar opcionales.');
-            return;
-        }
-
-        $id = $request->request->getInt('delete');
-        $opcional = new catalogo_opcional();
-        $item = $opcional->get($id);
-
-        if (!$item) {
-            $this->new_error_msg('Opcional no encontrado.');
-            return;
-        }
-
-        if ($item->delete()) {
-            $this->new_message('Opcional ' . $item->codigo . ' eliminado correctamente.');
-            return;
-        }
-
-        $this->new_error_msg('No se pudo eliminar el opcional.');
     }
 }

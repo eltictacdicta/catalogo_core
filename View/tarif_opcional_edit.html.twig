@@ -1,127 +1,71 @@
 {% include 'header.html.twig' %}
+{% import 'Macro/TarifarioComponents.html.twig' as tarif %}
+{% import 'Macro/Htmx.html.twig' as htmx %}
+{% import 'Macro/Alpine.html.twig' as alpine %}
+
+{# htmx 4 boot: inherited CSRF headers on every request. allowScriptTags:false
+   scrubs the scripts of the incoming body before a swap (AD-5), because this
+   page swaps its own <body> on selector change. #}
+{{ htmx.boot({'allowScriptTags': false}) }}
 
 {% if fsc.opcional %}
-<script type="text/javascript">
-   var defined_autocomplete = false;
-
-   function getPropagateValue() {
-      var checkbox = document.getElementById('propagate_opcional');
-      return checkbox && checkbox.checked ? 'true' : 'false';
+<style>
+   [x-cloak] {
+      display: none !important;
    }
-
-   function añadir_familia(cod, propagate)
-   {
-      if (propagate === undefined) {
-         propagate = getPropagateValue();
-      }
-
-      var msg = '¿Añadir la familia "' + cod + '" a este opcional?';
-      if (propagate === 'true') {
-         msg += '\nEsto también asignará el opcional a TODOS los artículos de esta familia.';
-      }
-
-      bootbox.confirm({
-         message: msg,
-         title: '<b>Atención</b>',
-         callback: function(result) {
-            if (result) {
-               window.location.href = 'index.php?page=tarif_opcional_edit&id={{ fsc.opcional.id }}&codtarifa={{ fsc.codtarifa|e('js') }}&add_familia=' + encodeURIComponent(cod) + '&propagate=' + propagate + '#familias';
-            }
-         }
-      });
+   .opcional-alpine-backdrop {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 1050;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.5);
    }
+</style>
 
-   function eliminar_familia(cod, nombre, propagate)
-   {
-      if (propagate === undefined) {
-         propagate = getPropagateValue();
-      }
-
-      var msg = '¿Eliminar la familia "' + nombre + '" de este opcional?';
-      if (propagate === 'true') {
-         msg += '\nEsto también eliminará el opcional de TODOS los artículos de esta familia.';
-      }
-
-      bootbox.confirm({
-         message: msg,
-         title: '<b>Atención</b>',
-         callback: function(result) {
-            if (result) {
-               window.location.href = 'index.php?page=tarif_opcional_edit&id={{ fsc.opcional.id }}&codtarifa={{ fsc.codtarifa|e('js') }}&remove_familia=' + encodeURIComponent(cod) + '&propagate=' + propagate + '#familias';
-            }
-         }
-      });
-   }
-
-   function eliminar_articulo(ref)
-   {
-      bootbox.confirm({
-         message: '¿Eliminar el artículo "' + ref + '" de este opcional?',
-         title: '<b>Atención</b>',
-         callback: function(result) {
-            if (result) {
-               window.location.href = 'index.php?page=tarif_opcional_edit&id={{ fsc.opcional.id }}&codtarifa={{ fsc.codtarifa|e('js') }}&remove_articulo=' + encodeURIComponent(ref) + '#articulos';
-            }
-         }
-      });
-   }
-
-   function setup_autocomplete()
-   {
-      if (!defined_autocomplete) {
-         defined_autocomplete = true;
-         $('#buscar_articulo').autocomplete({
-            serviceUrl: 'index.php?page=tarif_opcional_edit&id={{ fsc.opcional.id }}&codtarifa={{ fsc.codtarifa|e('js') }}',
-            paramName: 'buscar_articulo',
-            onSelect: function(suggestion) {
-               window.location.href = 'index.php?page=tarif_opcional_edit&id={{ fsc.opcional.id }}&codtarifa={{ fsc.codtarifa|e('js') }}&add_articulo=' + encodeURIComponent(suggestion.referencia) + '#articulos';
-            }
-         });
-      }
-   }
-
-   function toggleTarifaRow(checkbox, codtarifa) {
-      var precioInput = document.getElementById('precio_tarifa_' + codtarifa);
-      var catalogoCheckbox = document.getElementById('catalogo_tarifa_' + codtarifa);
-      var row = checkbox.closest('tr');
-
-      if (checkbox.checked) {
-         precioInput.disabled = false;
-         catalogoCheckbox.disabled = false;
-         row.classList.add('success');
-      } else {
-         precioInput.disabled = true;
-         precioInput.value = '';
-         catalogoCheckbox.disabled = true;
-         catalogoCheckbox.checked = false;
-         row.classList.remove('success');
-      }
-   }
-
-   $(document).ready(function() {
-      $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-         if ($(e.target).attr('href') == '#articulos') {
-            setup_autocomplete();
-            $('#buscar_articulo').focus();
-         }
-      });
-
-      if(window.location.hash.substring(1) == 'articulos') {
-         $('#ul_tabs a[href="#articulos"]').tab('show');
-         setup_autocomplete();
-      } else if(window.location.hash.substring(1) == 'familias') {
-         $('#ul_tabs a[href="#familias"]').tab('show');
-      } else if(window.location.hash.substring(1) == 'precios_tarifas') {
-         $('#ul_tabs a[href="#precios_tarifas"]').tab('show');
-      }
-   });
-</script>
+{% if fsc.tarifas|length > 0 %}
+{# Tarifa selector — validated by resolver_tarifa_seleccionada(); htmx swaps the
+   whole body and pushes the URL so the selected tarifa scopes the page. #}
+<div class="container-fluid" style="margin-bottom: 10px;">
+   <div class="row">
+      <div class="col-sm-5">
+         <div class="form-group" style="margin-bottom: 0;">
+            <label class="control-label"><span class="glyphicon glyphicon-tags"></span>&nbsp;Tarifa:</label>
+            <select name="codtarifa" class="form-control"
+                    hx-get="{{ fsc.opcional.url() }}"
+                    hx-trigger="change"
+                    hx-target="body"
+                    hx-select="body"
+                    hx-swap="outerHTML"
+                    hx-push-url="true"
+                    hx-boost="true">
+               {% for tarifa in fsc.tarifas %}
+               <option value="{{ tarifa.codtarifa }}"{% if tarifa.codtarifa == fsc.tarifa_seleccionada.codtarifa %} selected{% endif %}>{{ tarifa.nombre }}{% if tarifa.por_defecto %} ★{% endif %}</option>
+               {% endfor %}
+            </select>
+         </div>
+      </div>
+      <div class="col-sm-7 text-right">
+         <span class="label label-info" style="font-size: 14px;">
+            <span class="glyphicon glyphicon-tags"></span>&nbsp;
+            Tarifa activa:
+            <strong>{{ fsc.tarifa_seleccionada.nombre }}</strong>
+            {% if fsc.tarifa_seleccionada.por_defecto %}
+            <span class="glyphicon glyphicon-star" title="Tarifa por defecto"></span>
+            {% endif %}
+         </span>
+      </div>
+   </div>
+</div>
+{% endif %}
 
 <div class="container-fluid" style="margin-bottom: 10px;">
    <div class="row">
       <div class="col-xs-12">
          <div class="btn-group">
-            <a class="btn btn-sm btn-default" href="index.php?page=tarif_opcionales&codtarifa={{ fsc.codtarifa|url_encode }}" title="Volver al listado">
+            <a class="btn btn-sm btn-default" href="index.php?page=ventas_opcionales&b_codtarifa={{ fsc.codtarifa|url_encode }}" title="Volver al listado">
                <span class="glyphicon glyphicon-arrow-left"></span>
                <span class="hidden-xs">&nbsp;Volver</span>
             </a>
@@ -131,17 +75,13 @@
                <span class="glyphicon glyphicon-refresh"></span>
             </a>
          </div>
-         <div class="btn-group">
-            <a class="btn btn-sm btn-info" href="index.php?page=tarif_opcional_precios&id={{ fsc.opcional.id }}&codtarifa={{ fsc.codtarifa|url_encode }}" title="Gestionar precios por tarifa">
-               <span class="glyphicon glyphicon-tags"></span>
-               <span class="hidden-xs">&nbsp;Precios por tarifa</span>
-            </a>
-         </div>
       </div>
    </div>
 </div>
 
-<div role="tabpanel">
+{# Shared confirm component: one Alpine instance wraps the tab content so the
+   familias/artículos buttons resolve their methods through the scope chain. #}
+<div role="tabpanel" x-data="opcionalConfirmAction" data-post-url="{{ fsc.opcional.url() }}&codtarifa={{ fsc.codtarifa|url_encode }}">
    <ul id="ul_tabs" class="nav nav-tabs" role="tablist">
       <li role="presentation" class="active">
          <a href="#datos" aria-controls="datos" role="tab" data-toggle="tab">
@@ -245,8 +185,8 @@
                                  </td>
                                  <td class="text-right">
                                     {% if fsc.allow_delete %}
-                                    <a href="#" class="btn btn-xs btn-danger" onclick="eliminar_familia('{{ fam.codfamilia|e('js') }}', '{{ fam.descripcion|e('js') }}', true)" title="Quitar (con propagación)"><span class="glyphicon glyphicon-remove"></span> P</a>
-                                    <a href="#" class="btn btn-xs btn-warning" onclick="eliminar_familia('{{ fam.codfamilia|e('js') }}', '{{ fam.descripcion|e('js') }}', false)" title="Quitar (sin propagación)"><span class="glyphicon glyphicon-remove"></span></a>
+                                    <button type="button" class="btn btn-xs btn-danger" x-on:click="askRemoveFamilia('{{ fam.codfamilia|e('js') }}', '{{ fam.descripcion|e('js') }}', 'true')" title="Quitar (con propagación)"><span class="glyphicon glyphicon-remove"></span> P</button>
+                                    <button type="button" class="btn btn-xs btn-warning" x-on:click="askRemoveFamilia('{{ fam.codfamilia|e('js') }}', '{{ fam.descripcion|e('js') }}', 'false')" title="Quitar (sin propagación)"><span class="glyphicon glyphicon-remove"></span></button>
                                     {% endif %}
                                  </td>
                               </tr>
@@ -273,8 +213,8 @@
                                  <td>{{ fam.codfamilia }}</td>
                                  <td>{{ fam.nivel }}{{ fam.descripcion }}</td>
                                  <td class="text-right">
-                                    <a href="#" class="btn btn-xs btn-success" onclick="añadir_familia('{{ fam.codfamilia|e('js') }}', true)" title="Añadir (con propagación)"><span class="glyphicon glyphicon-plus"></span> P</a>
-                                    <a href="#" class="btn btn-xs btn-default" onclick="añadir_familia('{{ fam.codfamilia|e('js') }}', false)" title="Añadir (sin propagación)"><span class="glyphicon glyphicon-plus"></span></a>
+                                    <button type="button" class="btn btn-xs btn-success" x-on:click="askAddFamilia('{{ fam.codfamilia|e('js') }}', 'true')" title="Añadir (con propagación)"><span class="glyphicon glyphicon-plus"></span> P</button>
+                                    <button type="button" class="btn btn-xs btn-default" x-on:click="askAddFamilia('{{ fam.codfamilia|e('js') }}', 'false')" title="Añadir (sin propagación)"><span class="glyphicon glyphicon-plus"></span></button>
                                  </td>
                               </tr>
                               {% endfor %}
@@ -292,12 +232,27 @@
 
       <div role="tabpanel" class="tab-pane" id="articulos">
          <div class="container-fluid" style="margin-top: 15px;">
-            <div class="row"><div class="col-sm-12"><div class="panel panel-info"><div class="panel-heading"><h3 class="panel-title">Buscar artículos para añadir</h3></div><div class="panel-body"><div class="form-group"><div class="input-group"><input type="text" id="buscar_articulo" class="form-control" placeholder="Buscar por referencia o descripción..." autocomplete="off"/><span class="input-group-addon"><span class="glyphicon glyphicon-search"></span></span></div><p class="help-block">Escribe para buscar y haz clic en el resultado para añadirlo.</p></div></div></div></div></div>
+            <div class="row"><div class="col-sm-12"><div class="panel panel-info"><div class="panel-heading"><h3 class="panel-title">Buscar artículos para añadir</h3></div><div class="panel-body">
+               <div class="form-group" x-data="opcionalArticuloSearch" data-lookup-url="{{ fsc.opcional.url() }}&codtarifa={{ fsc.codtarifa|url_encode }}" data-post-url="{{ fsc.opcional.url() }}&codtarifa={{ fsc.codtarifa|url_encode }}" style="position: relative;">
+                  <div class="input-group">
+                     <input type="text" class="form-control" placeholder="Buscar por referencia o descripción..." autocomplete="off" x-model="query" x-on:input.debounce.300ms="search()"/>
+                     <span class="input-group-addon"><span class="glyphicon glyphicon-search" x-show="!loading"></span><span class="glyphicon glyphicon-refresh" x-show="loading" x-cloak></span></span>
+                  </div>
+                  <div class="list-group" x-show="open" x-cloak style="position: absolute; z-index: 1000; width: 100%; max-height: 280px; overflow-y: auto;">
+                     <template x-for="item in results" :key="item.referencia">
+                        <button type="button" class="list-group-item" x-on:click="select(item.referencia)">
+                           <span x-text="item.value"></span>
+                        </button>
+                     </template>
+                  </div>
+                  <p class="help-block">Escribe para buscar y haz clic en el resultado para añadirlo.</p>
+               </div>
+            </div></div></div></div>
             <div class="row"><div class="col-sm-12"><div class="panel panel-default"><div class="panel-heading"><h3 class="panel-title">Artículos asociados ({{ fsc.articulos|length }})</h3></div><div class="panel-body">
                {% if fsc.articulos|length > 0 %}
                <table class="table table-hover"><thead><tr><th>Referencia</th><th>Descripción</th><th>Familia</th><th class="text-right">Precio</th><th></th></tr></thead><tbody>
                {% for art in fsc.articulos %}
-               <tr><td><a href="{{ art.url() }}">{{ art.referencia }}</a></td><td>{{ art.descripcion(fsc.codidioma, 60) }}</td><td>{{ art.codfamilia }}</td><td class="text-right">{{ fsc.show_precio(art.precio, false, true, constant('FS_NF0_ART')) }}</td><td class="text-right">{% if fsc.allow_delete %}<a href="#" class="btn btn-xs btn-danger" onclick="eliminar_articulo('{{ art.referencia|e('js') }}')" title="Quitar"><span class="glyphicon glyphicon-remove"></span></a>{% endif %}</td></tr>
+               <tr><td><a href="{{ art.url() }}">{{ art.referencia }}</a></td><td>{{ art.descripcion(fsc.codidioma, 60) }}</td><td>{{ art.codfamilia }}</td><td class="text-right">{{ fsc.show_precio(art.precio, false, true, constant('FS_NF0_ART')) }}</td><td class="text-right">{% if fsc.allow_delete %}<button type="button" class="btn btn-xs btn-danger" x-on:click="askRemoveArticulo('{{ art.referencia|e('js') }}')" title="Quitar"><span class="glyphicon glyphicon-remove"></span></button>{% endif %}</td></tr>
                {% endfor %}
                </tbody></table>
                {% else %}<p class="text-muted">No hay artículos asociados a este opcional.</p>{% endif %}
@@ -305,40 +260,265 @@
          </div>
       </div>
 
-      {% if fsc.tarifas|length > 0 %}
+      {% if fsc.tarifas|length > 0 and fsc.tarifa_seleccionada %}
       <div role="tabpanel" class="tab-pane" id="precios_tarifas">
-         <form action="{{ fsc.opcional.url() }}&codtarifa={{ fsc.codtarifa|url_encode }}" method="post" class="form">
-            <input type="hidden" name="guardar_precios_tarifas" value="1"/>
-            <input type="hidden" name="codtarifa" value="{{ fsc.codtarifa }}"/>
-            <div class="container-fluid" style="margin-top: 15px;">
-               <div class="row"><div class="col-sm-8"><div class="panel panel-primary"><div class="panel-heading"><h3 class="panel-title"><span class="glyphicon glyphicon-tags"></span>&nbsp; Precios por tarifa</h3></div><div class="panel-body">
-                  <p class="text-muted">Marque en qué tarifas está disponible este opcional y defina su precio.</p>
-                  <table class="table table-hover"><thead><tr><th class="text-center" width="70">Activo</th><th class="text-center" width="70">Catálogo</th><th>Tarifa</th><th class="text-center" width="80">Por defecto</th><th class="text-right" width="150">Precio</th></tr></thead><tbody>
-                     {% for tarifa in fsc.tarifas %}
-                     <tr {% if fsc.opcional_activo_en_tarifa(tarifa.codtarifa) %}class="success"{% endif %}>
-                        <td class="text-center"><input type="checkbox" name="activo_tarifa_{{ tarifa.codtarifa }}" value="1" {% if fsc.opcional_activo_en_tarifa(tarifa.codtarifa) %}checked{% endif %} onchange="toggleTarifaRow(this, '{{ tarifa.codtarifa }}')"/></td>
-                        <td class="text-center"><input type="checkbox" name="catalogo_tarifa_{{ tarifa.codtarifa }}" value="1" id="catalogo_tarifa_{{ tarifa.codtarifa }}" {% if fsc.opcional_en_catalogo_tarifa(tarifa.codtarifa) %}checked{% endif %} {% if not fsc.opcional_activo_en_tarifa(tarifa.codtarifa) %}disabled{% endif %}/></td>
-                        <td><b>{{ tarifa.nombre }}</b> <span class="text-muted">({{ tarifa.codtarifa }})</span></td>
-                        <td class="text-center">{% if tarifa.por_defecto %}<span class="label label-primary"><span class="glyphicon glyphicon-star"></span></span>{% endif %}</td>
-                        <td class="text-right"><div class="input-group input-group-sm"><input type="text" class="form-control text-right" id="precio_tarifa_{{ tarifa.codtarifa }}" name="precio_tarifa_{{ tarifa.codtarifa }}" value="{{ fsc.get_precio_tarifa(tarifa.codtarifa) }}" placeholder="0.00" autocomplete="off" {% if not fsc.opcional_activo_en_tarifa(tarifa.codtarifa) %}disabled{% endif %}/><div class="input-group-addon">{{ fsc.simbolo_divisa(tarifa.coddivisa) }}</div></div></td>
-                     </tr>
-                     {% endfor %}
-                  </tbody></table>
-               </div><div class="panel-footer text-right"><button class="btn btn-primary" type="submit"><span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; Guardar</button></div></div></div>
-               <div class="col-sm-4"><div class="panel panel-info"><div class="panel-heading"><h3 class="panel-title">Información</h3></div><div class="panel-body"><p><span class="glyphicon glyphicon-check text-success"></span> <b>Activo:</b> El opcional está disponible en esa tarifa.</p><p><span class="glyphicon glyphicon-book text-info"></span> <b>Catálogo:</b> Visible en el catálogo de esa tarifa.</p><p><span class="glyphicon glyphicon-euro"></span> <b>Precio:</b> Puede ser diferente para cada tarifa.</p><p><span class="glyphicon glyphicon-star text-primary"></span> La tarifa marcada es la por defecto.</p><p><span class="glyphicon glyphicon-cog"></span> <a href="index.php?page=tarif_tarifas">Gestionar tarifas</a></p></div></div></div></div>
+         <div class="container-fluid" style="margin-top: 15px;">
+            <div class="row">
+               <div class="col-sm-8">
+                  <p class="text-muted">Active este opcional en la tarifa seleccionada, marque su visibilidad y defina su precio. Cambie de tarifa en el selector superior para editar otra.</p>
+                  {# Scoped editable panel: exactly one tarifa (fsc.tarifa_seleccionada). #}
+                  <form action="{{ fsc.opcional.url() }}&codtarifa={{ fsc.tarifa_seleccionada.codtarifa|url_encode }}" method="post" class="form"
+                        hx-post="{{ fsc.opcional.url() }}&codtarifa={{ fsc.tarifa_seleccionada.codtarifa|url_encode }}"
+                        hx-target="body" hx-select="body" hx-swap="outerHTML"
+                        x-data="opcionalSaveFeedback" x-on:submit="markSaving()">
+                     {{ csrf_field() }}
+                     <input type="hidden" name="guardar_precio_tarifa" value="1"/>
+                     <input type="hidden" name="codtarifa" value="{{ fsc.tarifa_seleccionada.codtarifa }}"/>
+                     <div class="panel {% if fsc.opcional_activo_en_tarifa(fsc.tarifa_seleccionada.codtarifa) %}panel-success{% else %}panel-default{% endif %}">
+                        <div class="panel-heading">
+                           <h3 class="panel-title">
+                              <span class="glyphicon glyphicon-tags"></span>&nbsp;
+                              <b>{{ fsc.tarifa_seleccionada.nombre }}</b>
+                              <span class="text-muted">({{ fsc.tarifa_seleccionada.codtarifa }})</span>
+                              {% if fsc.tarifa_seleccionada.por_defecto %}<span class="label label-primary"><span class="glyphicon glyphicon-star"></span></span>{% endif %}
+                           </h3>
+                        </div>
+                        <div class="panel-body">
+                           <div class="row">
+                              <div class="col-sm-6">
+                                 {{ tarif.toggle_button_group({'en_catalogo': fsc.opcional_en_catalogo_tarifa(fsc.tarifa_seleccionada.codtarifa), 'en_tarifa': fsc.opcional_en_tarifa_flag(fsc.tarifa_seleccionada.codtarifa), 'activa': fsc.opcional_activo_en_tarifa(fsc.tarifa_seleccionada.codtarifa)}, {'show_catalogo': true, 'show_en_tarifa': true, 'show_activa': true, 'size': 'sm'}) }}
+                              </div>
+                               <div class="col-sm-4">
+                                  {# The accepted input follows the opcional's price mode (OPG-01). #}
+                                  {% if fsc.opcional.es_precio_porcentaje() %}
+                                  <div class="input-group input-group-sm">
+                                     <input type="text" class="form-control text-right" name="porcentaje" value="{{ fsc.get_porcentaje_tarifa(fsc.tarifa_seleccionada.codtarifa) }}" placeholder="0.00" autocomplete="off"/>
+                                     <div class="input-group-addon">%</div>
+                                  </div>
+                                  {% else %}
+                                  <div class="input-group input-group-sm">
+                                     <input type="text" class="form-control text-right" name="precio" value="{{ fsc.get_precio_tarifa(fsc.tarifa_seleccionada.codtarifa) }}" placeholder="0.00" autocomplete="off"/>
+                                     <div class="input-group-addon">{{ fsc.simbolo_divisa(fsc.tarifa_seleccionada.coddivisa) }}</div>
+                                  </div>
+                                  {% endif %}
+                               </div>
+                              <div class="col-sm-2 text-right">
+                                 <button class="btn btn-sm btn-primary" type="submit" :disabled="saving" title="Guardar {{ fsc.tarifa_seleccionada.nombre }}"><span class="glyphicon glyphicon-floppy-disk" x-show="!saving"></span><span class="glyphicon glyphicon-refresh" x-show="saving" x-cloak></span></button>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  </form>
+
+                  {# Compact read-only overview of every tarifa (OTS-02). #}
+                  <div class="panel panel-default">
+                     <div class="panel-heading"><h3 class="panel-title">Resumen por tarifa</h3></div>
+                     <div class="panel-body" style="padding: 0;">
+                        <table class="table table-condensed table-hover" style="margin-bottom: 0;">
+                           <thead><tr><th>Tarifa</th><th>Activa</th><th>Catálogo</th><th>En tarifa</th><th class="text-right">Precio</th></tr></thead>
+                           <tbody>
+                              {% for codtarifa, datos in fsc.precios_tarifas %}
+                              <tr{% if codtarifa == fsc.tarifa_seleccionada.codtarifa %} class="info"{% endif %}>
+                                 <td>
+                                    {{ datos.tarifa.nombre }}
+                                    <small class="text-muted">({{ codtarifa }})</small>
+                                    {% if datos.tarifa.por_defecto %}<span class="glyphicon glyphicon-star text-primary"></span>{% endif %}
+                                 </td>
+                                 <td>{% if datos.activa %}<span class="glyphicon glyphicon-ok text-success"></span>{% else %}<span class="glyphicon glyphicon-remove text-muted"></span>{% endif %}</td>
+                                 <td>{% if datos.en_catalogo %}<span class="glyphicon glyphicon-ok text-success"></span>{% else %}<span class="glyphicon glyphicon-remove text-muted"></span>{% endif %}</td>
+                                 <td>{% if datos.en_tarifa %}<span class="glyphicon glyphicon-ok text-success"></span>{% else %}<span class="glyphicon glyphicon-remove text-muted"></span>{% endif %}</td>
+                                  <td class="text-right">
+                                     {% if datos.es_porcentaje %}
+                                        {% if datos.porcentaje is not null %}{{ datos.porcentaje }}%{% else %}<span class="text-muted">—</span>{% endif %}
+                                     {% elseif datos.precio is not null %}
+                                        {{ datos.precio }}
+                                     {% else %}
+                                        <span class="text-muted">—</span>
+                                     {% endif %}
+                                  </td>
+                              </tr>
+                              {% endfor %}
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
+               </div>
+               <div class="col-sm-4">
+                  <div class="panel panel-info">
+                     <div class="panel-heading"><h3 class="panel-title">Información</h3></div>
+                     <div class="panel-body">
+                        <p><span class="glyphicon glyphicon-eye"></span> <b>En catálogo:</b> Visible en el catálogo de esa tarifa.</p>
+                        <p><span class="glyphicon glyphicon-file-text-o"></span> <b>En tarifa:</b> Se incluye al exportar la tarifa.</p>
+                        <p><span class="glyphicon glyphicon-check"></span> <b>Activa:</b> El opcional está disponible en esa tarifa.</p>
+                        <p><span class="glyphicon glyphicon-euro"></span> <b>Precio:</b> Puede ser diferente para cada tarifa.</p>
+                        <p><span class="glyphicon glyphicon-star text-primary"></span> La tarifa marcada es la por defecto.</p>
+                        <p><span class="glyphicon glyphicon-cog"></span> <a href="index.php?page=tarif_tarifas">Gestionar tarifas</a></p>
+                     </div>
+                  </div>
+               </div>
             </div>
-         </form>
+         </div>
       </div>
       {% endif %}
    </div>
+
+   {# CSP-safe confirm dialog for the migrated familia/artículo flows. #}
+   <div class="modal opcional-alpine-backdrop" x-show="open" x-cloak role="dialog">
+      <div class="modal-dialog" role="document">
+         <div class="modal-content">
+            <div class="modal-header">
+               <button type="button" class="close" x-on:click="close()"><span>&times;</span></button>
+               <h4 class="modal-title" x-text="title"></h4>
+            </div>
+            <div class="modal-body"><p x-text="message" style="white-space: pre-line;"></p></div>
+            <div class="modal-footer">
+               <button type="button" class="btn btn-default" x-on:click="close()">Cancelar</button>
+               <button type="button" class="btn btn-primary" x-on:click="confirm()">Aceptar</button>
+            </div>
+         </div>
+      </div>
+   </div>
 </div>
+
+{# Alpine CSP registration (runs during parse, before the deferred Alpine
+   boot) + idempotent re-init after an htmx body swap. #}
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.__opcionalesAlpineRegistered === true) { return; }
+
+    function registerOpcionalesAlpineComponents() {
+        if (window.__opcionalesAlpineRegistered === true) { return; }
+        window.__opcionalesAlpineRegistered = true;
+
+        Alpine.data('opcionalConfirmAction', function () {
+            return {
+                open: false,
+                title: '',
+                message: '',
+                url: '',
+                values: {},
+                init: function () { this.url = this.$el.dataset.postUrl || ''; },
+                openModal: function (title, message, values) {
+                    this.title = title;
+                    this.message = message;
+                    this.values = values;
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                askAddFamilia: function (cod, propagate) {
+                    this.openModal('Añadir familia', '¿Añadir la familia "' + cod + '" a este opcional?',
+                        { add_familia: cod, propagate: propagate });
+                },
+                askRemoveFamilia: function (cod, nombre, propagate) {
+                    this.openModal('Eliminar familia', '¿Eliminar la familia "' + nombre + '" de este opcional?',
+                        { remove_familia: cod, propagate: propagate });
+                },
+                askRemoveArticulo: function (ref) {
+                    this.openModal('Eliminar artículo', '¿Eliminar el artículo "' + ref + '" de este opcional?',
+                        { remove_articulo: ref });
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                },
+                confirm: function () {
+                    if (window.htmx && window.htmx.ajax) {
+                        window.htmx.ajax('POST', this.url, {
+                            values: this.values,
+                            target: 'body',
+                            swap: 'outerHTML',
+                            select: 'body'
+                        });
+                    }
+                    this.close();
+                }
+            };
+        });
+
+        Alpine.data('opcionalArticuloSearch', function () {
+            return {
+                query: '',
+                results: [],
+                open: false,
+                loading: false,
+                lookupUrl: '',
+                postUrl: '',
+                init: function () {
+                    this.lookupUrl = this.$el.dataset.lookupUrl || '';
+                    this.postUrl = this.$el.dataset.postUrl || '';
+                },
+                search: function () {
+                    if (this.query.length < 2) { this.results = []; this.open = false; return; }
+                    var self = this;
+                    this.loading = true;
+                    fetch(this.lookupUrl + '&buscar_articulo=' + encodeURIComponent(this.query))
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) { self.results = data.suggestions || []; self.open = self.results.length > 0; })
+                        .finally(function () { self.loading = false; });
+                },
+                select: function (referencia) {
+                    this.open = false;
+                    this.query = '';
+                    this.results = [];
+                    if (window.htmx && window.htmx.ajax) {
+                        window.htmx.ajax('POST', this.postUrl, {
+                            values: { add_articulo: referencia },
+                            target: 'body',
+                            swap: 'outerHTML',
+                            select: 'body'
+                        });
+                    }
+                },
+                close: function () { this.open = false; }
+            };
+        });
+
+        Alpine.data('opcionalSaveFeedback', function () {
+            return {
+                saving: false,
+                init: function () {
+                    this._onDone = this.markIdle.bind(this);
+                    document.addEventListener('htmx:after:request', this._onDone);
+                },
+                destroy: function () {
+                    document.removeEventListener('htmx:after:request', this._onDone);
+                },
+                markSaving: function () { this.saving = true; },
+                markIdle: function () { this.saving = false; }
+            };
+        });
+    }
+
+    if (window.Alpine) {
+        registerOpcionalesAlpineComponents();
+    } else {
+        document.addEventListener('alpine:init', registerOpcionalesAlpineComponents);
+    }
+})();
+
+// htmx 4 re-executes swapped body scripts: the marker keeps this listener and
+// the Alpine.data registrations installed exactly once (AD-5/R11).
+(function () {
+    if (window.__opcionalesSwapBound === true) { return; }
+    window.__opcionalesSwapBound = true;
+
+    document.addEventListener('htmx:after:swap', function (evt) {
+        if (!window.Alpine || typeof window.Alpine.initTree !== 'function') { return; }
+        var ctx = evt && evt.detail ? evt.detail.ctx : null;
+        var target = ctx && ctx.target ? ctx.target : document.body;
+        window.Alpine.initTree(target);
+    });
+})();
+</script>
+
+{{ alpine.boot() }}
 
 {% else %}
 <div class="container-fluid">
    <div class="alert alert-danger">
       <span class="glyphicon glyphicon-exclamation-sign"></span>
       &nbsp;Opcional no encontrado.
-      <a href="index.php?page=tarif_opcionales">Volver al listado</a>
+      <a href="index.php?page=ventas_opcionales">Volver al listado</a>
    </div>
 </div>
 {% endif %}

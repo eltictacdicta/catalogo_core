@@ -448,15 +448,29 @@ class catalogo_opcional extends \fs_model
         return $list;
     }
 
-    public function search($query = '', $offset = 0, $codfamilia = '', $codlista = '', $solo_activos = false)
+    /**
+     * Lists opcionales honoring the legacy filters plus an optional trailing
+     * group filter (design AD-5/AD-6). `$id_grupo` is appended last so the
+     * pre-existing positional callers stay valid.
+     *
+     * @param string $query
+     * @param int    $offset
+     * @param string $codfamilia
+     * @param string $codlista
+     * @param bool   $solo_activos
+     * @param string $id_grupo    ''=all, '0'=Sin grupo, numeric=group id
+     * @return array
+     */
+    public function search($query = '', $offset = 0, $codfamilia = '', $codlista = '', $solo_activos = false, $id_grupo = '')
     {
         $list = [];
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
         $where_conditions = [];
         $familiaTable = catalogo_opcional_familia::TABLE;
         $precioTable = catalogo_opcional_precio::TABLE;
+        $grupo_condition = $this->where_id_grupo($id_grupo, 'o');
 
-        if ($codfamilia != '' || ($codlista != '' && $solo_activos)) {
+        if ($codfamilia != '' || ($codlista != '' && $solo_activos) || $grupo_condition !== '') {
             $sql = 'SELECT DISTINCT o.* FROM ' . $this->table_name . ' o';
 
             if ($codfamilia != '') {
@@ -467,6 +481,10 @@ class catalogo_opcional extends \fs_model
             if ($codlista != '' && $solo_activos) {
                 $sql .= ' INNER JOIN ' . $precioTable . ' op ON o.id = op.id_opcional';
                 $where_conditions[] = 'op.codlista = ' . $this->var2str($codlista);
+            }
+
+            if ($grupo_condition !== '') {
+                $where_conditions[] = $grupo_condition;
             }
 
             if ($query != '') {
@@ -494,6 +512,30 @@ class catalogo_opcional extends \fs_model
         }
 
         return $list;
+    }
+
+    /**
+     * Builds the group WHERE condition shared by the search paths (design
+     * AD-6): `''` disables the filter, `'0'` selects ungrouped rows, a numeric
+     * value selects that group. `intval()` keeps the id non-injectable.
+     *
+     * @param string $id_grupo
+     * @param string $alias
+     * @return string empty when no filter applies
+     */
+    protected function where_id_grupo($id_grupo, string $alias = 'o'): string
+    {
+        $id_grupo = trim((string) $id_grupo);
+        if ($id_grupo === '') {
+            return '';
+        }
+
+        $column = $alias . '.id_grupo';
+        if ($id_grupo === '0') {
+            return '(' . $column . ' IS NULL OR ' . $column . ' = 0)';
+        }
+
+        return $column . ' = ' . intval($id_grupo);
     }
 
     public function count()

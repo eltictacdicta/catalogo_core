@@ -1,36 +1,37 @@
+{% import 'Macro/Htmx.html.twig' as htmx %}
+{% import 'Macro/Alpine.html.twig' as alpine %}
 {{ include('header.html.twig') }}
 
-<script type="text/javascript">
-function show_nuevo_articulo() {
-    $('#modal_nuevo_articulo').modal('show');
-    if (document.f_nuevo_articulo && document.f_nuevo_articulo.nreferencia) {
-        document.f_nuevo_articulo.nreferencia.focus();
-    }
+{# htmx 4 boot with the CSRF header injection; allowScriptTags:false scrubs
+   any swapped fragment scripts (design AD-W3-9). #}
+{{ htmx.boot({'allowScriptTags': false}) }}
+
+{% set current_query = fsc.request.query.get('query') ?: fsc.request.query.get('search') %}
+{% set current_fabricante = fsc.request.query.get('codfabricante') %}
+{% set hx_query = current_query ? '&query=' ~ current_query|url_encode : '' %}
+{% set hx_familia = fsc.b_codfamilia ? '&b_codfamilia=' ~ fsc.b_codfamilia|url_encode : '' %}
+{% set hx_tarifa = fsc.b_codtarifa ? '&b_codtarifa=' ~ fsc.b_codtarifa|url_encode : '' %}
+{% set hx_activos = '&b_solo_activos=' ~ (fsc.b_solo_activos ? 'TRUE' : 'FALSE') %}
+{% set hx_fabricante = current_fabricante ? '&codfabricante=' ~ current_fabricante|url_encode : '' %}
+{% set hx_stock = fsc.request.query.get('con_stock') == 'TRUE' ? '&con_stock=TRUE' : '' %}
+
+<style>
+[x-cloak] {
+   display: none !important;
 }
+</style>
 
-$(document).ready(function() {
-    if (window.location.hash.substring(1) === 'nuevo') {
-        show_nuevo_articulo();
-    }
-
-    $('#b_nuevo_articulo').click(function(event) {
-        event.preventDefault();
-        show_nuevo_articulo();
-    });
-});
-</script>
-
-<div class="container-fluid">
+<div class="container-fluid" x-data="articulosList">
     <div class="row">
         <div class="col-sm-12">
             <div class="page-header">
                 <h1>
                     <i class="fa fa-cube" aria-hidden="true"></i>&nbsp; {{ 'articles'|trans }}
-                    <span class="badge">{{ fsc.resultados|length }}</span>
+                    <span class="badge" x-text="{{ fsc.resultados|length }}">{{ fsc.resultados|length }}</span>
                     <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
                         <span class="glyphicon glyphicon-refresh"></span>
                     </a>
-                    <a id="b_nuevo_articulo" class="btn btn-xs btn-success" href="#" title="{{ 'new-article'|trans }}">
+                    <a class="btn btn-xs btn-success" href="#" title="{{ 'new-article'|trans }}" x-on:click.prevent="openModal()">
                         <span class="glyphicon glyphicon-plus"></span>
                         <span class="hidden-xs">&nbsp;{{ 'new-article'|trans }}</span>
                     </a>
@@ -55,26 +56,48 @@ $(document).ready(function() {
                 </h1>
             </div>
 
-            <form class="form-inline" method="get" action="index.php">
+            {# Full-page filter navigation via hx-get + push URL: each control
+               sends its own value while the rest travel in the URL (ALC-04). #}
+            <form class="form-inline" action="{{ fsc.url() }}" method="get">
                 <input type="hidden" name="page" value="ventas_articulos"/>
                 <div class="form-group">
-                    <input type="text" name="search" class="form-control" placeholder="{{ 'search'|trans }}..." value="{{ fsc.request.query.get('search') }}" autocomplete="off"/>
+                    <input type="text" name="query" id="input_query" class="form-control" placeholder="{{ 'search'|trans }}..."
+                           value="{{ current_query }}" autocomplete="off"
+                           hx-get="{{ fsc.url() }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_fabricante }}{{ hx_stock }}"
+                           hx-trigger="keydown[key === 'Enter']"
+                           hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true"/>
                 </div>
                 <div class="form-group">
-                    <select name="codfamilia" class="form-control">
+                    <select name="b_codfamilia" class="form-control"
+                            hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_fabricante }}{{ hx_stock }}"
+                            hx-trigger="change"
+                            hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true">
                         <option value="">{{ 'family'|trans }}</option>
                         {% for familia in fsc.familias %}
-                            <option value="{{ familia.codfamilia }}" {% if fsc.request.query.get('codfamilia') == familia.codfamilia %}selected{% endif %}>
+                            <option value="{{ familia.codfamilia }}"{% if fsc.b_codfamilia == familia.codfamilia %} selected{% endif %}>
                                 {{ familia.descripcion }}
                             </option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="form-group">
-                    <select name="codfabricante" class="form-control">
+                    <select name="b_codtarifa" class="form-control" title="{{ 'tariff'|trans }}"
+                            hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_activos }}{{ hx_fabricante }}{{ hx_stock }}"
+                            hx-trigger="change"
+                            hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true">
+                        {% for tarifa in fsc.tarifas %}
+                            <option value="{{ tarifa.codtarifa }}"{% if fsc.b_codtarifa == tarifa.codtarifa %} selected{% endif %}>{{ tarifa.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <select name="codfabricante" class="form-control"
+                            hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_stock }}"
+                            hx-trigger="change"
+                            hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true">
                         <option value="">{{ 'manufacturer'|trans }}</option>
                         {% for fabricante in fsc.fabricantes %}
-                            <option value="{{ fabricante.codfabricante }}" {% if fsc.request.query.get('codfabricante') == fabricante.codfabricante %}selected{% endif %}>
+                            <option value="{{ fabricante.codfabricante }}"{% if current_fabricante == fabricante.codfabricante %} selected{% endif %}>
                                 {{ fabricante.nombre }}
                             </option>
                         {% endfor %}
@@ -82,25 +105,31 @@ $(document).ready(function() {
                 </div>
                 <div class="form-group">
                     <label class="checkbox-inline">
-                        <input type="checkbox" name="con_stock" value="TRUE" {% if fsc.request.query.get('con_stock') == 'TRUE' %}checked{% endif %}/>
+                        <input type="checkbox" name="con_stock" value="TRUE"
+                               hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_fabricante }}"
+                               hx-trigger="change"
+                               hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true"
+                               {% if fsc.request.query.get('con_stock') == 'TRUE' %}checked{% endif %}/>
                         {{ 'with-stock'|trans }}
                     </label>
                 </div>
                 <div class="form-group">
                     <label class="checkbox-inline">
-                        <input type="checkbox" name="bloqueados" value="TRUE" {% if fsc.request.query.get('bloqueados') == 'TRUE' %}checked{% endif %}/>
-                        {{ 'blocked'|trans }}
+                        <input type="checkbox" name="b_solo_activos" value="TRUE"
+                               hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_fabricante }}{{ hx_stock }}"
+                               hx-trigger="change"
+                               hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true"
+                               {% if fsc.b_solo_activos %}checked{% endif %}/>
+                        {{ 'active-only'|trans }}
                     </label>
                 </div>
                 <button type="submit" class="btn btn-primary">
                     <span class="glyphicon glyphicon-search"></span>
                 </button>
-                {% if fsc.request.query.get('search') or fsc.request.query.get('codfamilia') or fsc.request.query.get('codfabricante') or fsc.request.query.get('con_stock') or fsc.request.query.get('bloqueados') %}
                 <a href="{{ fsc.url() }}" class="btn btn-default">{{ 'clear'|trans }}</a>
-                {% endif %}
             </form>
 
-            <div class="table-responsive" style="margin-top: 15px;">
+            <div id="articulos-list" class="table-responsive" style="margin-top: 15px;">
                 <table class="table table-hover">
                     <thead>
                         <tr>
@@ -109,6 +138,14 @@ $(document).ready(function() {
                             <th class="text-left" width="150">{{ 'family'|trans }}</th>
                             <th class="text-left" width="150">{{ 'manufacturer'|trans }}</th>
                             <th class="text-right" width="100">{{ 'price'|trans }}</th>
+                            {% if fsc.tarifa_seleccionada %}
+                            <th class="text-right" width="110">
+                                {{ fsc.tarifa_seleccionada.nombre }}
+                            </th>
+                            <th class="text-center" width="70">Activo</th>
+                            <th class="text-center" width="70">Tarifa</th>
+                            <th class="text-center" width="70">Catálogo</th>
+                            {% endif %}
                             <th class="text-right" width="80">{{ 'stock'|trans }}</th>
                             <th class="text-right" width="120">{{ 'actions'|trans }}</th>
                         </tr>
@@ -123,27 +160,60 @@ $(document).ready(function() {
                             <td>
                                 {% if articulo.codfamilia %}
                                     {% set fam = articulo.get_familia() %}
-                                    {% if fam %}
-                                        {{ fam.descripcion }}
-                                    {% endif %}
+                                    {% if fam %}{{ fam.descripcion }}{% endif %}
                                 {% endif %}
                             </td>
                             <td>
                                 {% if articulo.codfabricante %}
                                     {% set fab = articulo.get_fabricante() %}
-                                    {% if fab %}
-                                        {{ fab.nombre }}
-                                    {% endif %}
+                                    {% if fab %}{{ fab.nombre }}{% endif %}
                                 {% endif %}
                             </td>
                             <td class="text-right">{{ articulo.pvp|number_format(2, ',', '.') }} €</td>
+                            {% if fsc.tarifa_seleccionada %}
+                            <td class="text-right">
+                                {% if fsc.get_precio_articulo_tarifa(articulo.referencia) > 0 %}
+                                {{ fsc.mostrar_precio_tarifa(articulo.referencia) }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if fsc.articulo_activo_tarifa(articulo.referencia) %}
+                                <span class="glyphicon glyphicon-ok text-success"></span>
+                                {% else %}
+                                <span class="glyphicon glyphicon-remove text-muted"></span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if fsc.articulo_en_tarifa_flag(articulo.referencia) %}
+                                <span class="glyphicon glyphicon-ok text-success"></span>
+                                {% else %}
+                                <span class="glyphicon glyphicon-remove text-muted"></span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if fsc.articulo_en_catalogo(articulo.referencia) %}
+                                <span class="glyphicon glyphicon-ok text-success"></span>
+                                {% else %}
+                                <span class="glyphicon glyphicon-remove text-muted"></span>
+                                {% endif %}
+                            </td>
+                            {% endif %}
                             <td class="text-right">{{ articulo.stockfis|number_format(2, ',', '.') }}</td>
                             <td class="text-right">
                                 <div class="btn-group">
                                     {% if fsc.allow_delete is defined and fsc.allow_delete %}
-                                    <a class="btn btn-sm btn-danger" href="{{ articulo.url() }}&delete={{ articulo.referencia }}" title="{{ 'delete'|trans }}" onclick="return confirm('{{ 'confirm-delete'|trans }}');">
-                                        <span class="glyphicon glyphicon-trash"></span>
-                                    </a>
+                                    <form method="post" action="{{ fsc.url() }}"
+                                          hx-post="{{ fsc.url() }}" hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML"
+                                          hx-confirm="{{ 'confirm-delete'|trans }}"
+                                          class="form-inline" style="display:inline-block;margin:0;">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="delete" value="{{ articulo.referencia }}"/>
+                                        <button type="submit" class="btn btn-sm btn-danger" title="{{ 'delete'|trans }}">
+                                            <span class="glyphicon glyphicon-trash"></span>
+                                        </button>
+                                    </form>
                                     {% endif %}
                                     <a class="btn btn-sm btn-primary" href="{{ articulo.url() }}" title="{{ 'show'|trans }}">
                                         <span class="glyphicon glyphicon-eye-open"></span>
@@ -153,7 +223,7 @@ $(document).ready(function() {
                         </tr>
                         {% else %}
                         <tr class="warning">
-                            <td colspan="7">{{ 'no-data'|trans }}. {{ 'new-article-hint'|trans }}</td>
+                            <td colspan="10">{{ 'no-data'|trans }}. {{ 'new-article-hint'|trans }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -165,14 +235,18 @@ $(document).ready(function() {
                 <ul class="pagination">
                     {% if fsc.offset > 0 %}
                     <li>
-                        <a href="{{ fsc.getPaginationUrl(max(0, fsc.offset - 50)) }}" aria-label="Previous">
+                        <a href="{{ fsc.getPaginationUrl(max(0, fsc.offset - 50)) }}"
+                           hx-get="{{ fsc.getPaginationUrl(max(0, fsc.offset - 50)) }}"
+                           hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true" aria-label="Previous">
                             <span aria-hidden="true">&laquo;</span>
                         </a>
                     </li>
                     {% endif %}
                     {% if fsc.hasMoreResults() %}
                     <li>
-                        <a href="{{ fsc.getPaginationUrl(fsc.offset + 50) }}" aria-label="Next">
+                        <a href="{{ fsc.getPaginationUrl(fsc.offset + 50) }}"
+                           hx-get="{{ fsc.getPaginationUrl(fsc.offset + 50) }}"
+                           hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML" hx-push-url="true" aria-label="Next">
                             <span aria-hidden="true">&raquo;</span>
                         </a>
                     </li>
@@ -180,11 +254,12 @@ $(document).ready(function() {
                 </ul>
             </nav>
             {% endif %}
-
         </div>
     </div>
 </div>
 
+{# Create modal — the Alpine `articulosList` component opens the partial form,
+   whose <form> submits through hx-post (ALC-04/AD-W3-9). #}
 {% include 'partials/articulos/modal_nuevo_articulo.html.twig' %}
 
 {% if fsc.can_import_export %}
@@ -199,5 +274,83 @@ $(document).ready(function() {
      data-label-close="{{ 'close'|trans }}"></div>
 <script src="plugins/catalogo_core/View/js/articulos-excel-import-wizard.js"></script>
 {% endif %}
+
+{{ csrf_field() }}
+
+{# Alpine CSP registration — nonce'd classic script, idempotent via window
+   markers because htmx re-executes swapped scripts (design AD-W3-9). #}
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.__articulosListAlpineRegistered === true) { return; }
+
+    function registerArticulosListComponents() {
+        if (window.__articulosListAlpineRegistered === true) { return; }
+        window.__articulosListAlpineRegistered = true;
+
+        Alpine.data('articulosList', function () {
+            return {
+                open: false,
+                modalMessage: '',
+                init: function () {
+                    this._onRequestDone = this.onRequestDone.bind(this);
+                    document.addEventListener('htmx:after:request', this._onRequestDone);
+                    if (window.location.hash.substring(1) === 'nuevo') { this.openModal(); }
+                    var input = document.getElementById('input_query');
+                    if (input) { input.focus(); }
+                },
+                destroy: function () {
+                    document.removeEventListener('htmx:after:request', this._onRequestDone);
+                },
+                onRequestDone: function (evt) {
+                    var verb = evt && evt.detail && evt.detail.requestConfig ? evt.detail.requestConfig.verb : '';
+                    if (this.open && String(verb).toLowerCase() === 'post') { this.closeModal(); }
+                },
+                openModal: function () {
+                    this.open = true;
+                    this.modalMessage = '';
+                    var modal = document.getElementById('modal_nuevo_articulo');
+                    if (modal) { modal.style.display = 'block'; modal.classList.add('in'); }
+                    document.body.classList.add('modal-open');
+                },
+                closeModal: function () {
+                    this.open = false;
+                    var modal = document.getElementById('modal_nuevo_articulo');
+                    if (modal) { modal.style.display = 'none'; modal.classList.remove('in'); }
+                    document.body.classList.remove('modal-open');
+                }
+            };
+        });
+
+        Alpine.data('articuloConfirm', function () {
+            return {
+                message: '',
+                confirm: function () {
+                    this.message = '';
+                }
+            };
+        });
+    }
+
+    if (window.Alpine) {
+        registerArticulosListComponents();
+    } else {
+        document.addEventListener('alpine:init', registerArticulosListComponents);
+    }
+})();
+
+(function () {
+    if (window.__articulosListSwapBound === true) { return; }
+    window.__articulosListSwapBound = true;
+
+    document.addEventListener('htmx:after:swap', function (evt) {
+        if (!window.Alpine || typeof window.Alpine.initTree !== 'function') { return; }
+        var ctx = evt && evt.detail ? evt.detail.ctx : null;
+        var target = ctx && ctx.target ? ctx.target : document.body;
+        window.Alpine.initTree(target);
+    });
+})();
+</script>
+
+{{ alpine.boot() }}
 
 {{ include('footer.html.twig') }}

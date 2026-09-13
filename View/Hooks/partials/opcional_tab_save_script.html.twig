@@ -1,0 +1,94 @@
+{#- Opcional save wiring for the injected Tarifas tab on ventas_opcional
+    (OUM-10). Migrated to htmx 4 + Alpine CSP (WU-5, AD-10): the rows partial
+    hx-posts each save to catalogo_core's tarif_opcional_tab; this nonce'd
+    classic script parses the JSON {ok, message, html} response on the htmx 4
+    colon after:request event, swaps the re-rendered rows, and reflects the
+    result through a plain-text Alpine component. Idempotent via window flags
+    because htmx re-executes swapped scripts. -#}
+<script {{ csp_nonce_attr() }}>
+(function () {
+   'use strict';
+   if (window.__tarifarioOpcionalTabRegistered === true) { return; }
+
+   function registerOpcionalTabComponents() {
+      if (window.__tarifarioOpcionalTabRegistered === true) { return; }
+      window.__tarifarioOpcionalTabRegistered = true;
+
+      Alpine.data('opcionalTabPrecios', function () {
+         return {
+            message: '',
+            messageClass: 'callout-success',
+            notify: function (ok, text) {
+               this.message = text || '';
+               this.messageClass = ok ? 'callout-success' : 'callout-danger';
+            }
+         };
+      });
+   }
+
+   if (window.Alpine) {
+      registerOpcionalTabComponents();
+   } else {
+      document.addEventListener('alpine:init', registerOpcionalTabComponents);
+   }
+})();
+
+(function () {
+   'use strict';
+   if (window.__tarifarioOpcionalTabRequestBound === true) { return; }
+   window.__tarifarioOpcionalTabRequestBound = true;
+
+   function isTabRequest(evt) {
+      var detail = evt && evt.detail ? evt.detail : null;
+      if (!detail) { return false; }
+      var elt = detail.elt;
+      if (elt && elt.getAttribute) {
+         var trigger = elt.getAttribute('hx-post') || '';
+         if (trigger.indexOf('tarif_opcional_tab') !== -1) { return true; }
+      }
+      var path = detail.pathInfo && detail.pathInfo.requestPath ? String(detail.pathInfo.requestPath) : '';
+      return path.indexOf('tarif_opcional_tab') !== -1;
+   }
+
+   document.addEventListener('htmx:after:request', function (evt) {
+      if (!isTabRequest(evt)) { return; }
+      var detail = evt.detail;
+      var data = null;
+      try {
+         data = JSON.parse(detail.xhr && detail.xhr.responseText ? detail.xhr.responseText : '');
+      } catch (e) {
+         data = null;
+      }
+      if (!data) { return; }
+
+      if (data.html) {
+         var rows = document.getElementById('tab_tarifario_precios_rows');
+         if (rows) {
+            rows.outerHTML = data.html;
+         }
+      }
+
+      var pane = document.getElementById('tab_tarifario_precios');
+      if (pane && window.Alpine && typeof window.Alpine.$data === 'function') {
+         var component = window.Alpine.$data(pane);
+         if (component && typeof component.notify === 'function') {
+            component.notify(!!data.ok, data.message || '');
+         }
+      }
+   });
+})();
+
+(function () {
+   'use strict';
+   if (window.__tarifarioOpcionalTabSwapBound === true) { return; }
+   window.__tarifarioOpcionalTabSwapBound = true;
+
+   document.addEventListener('htmx:after:swap', function (evt) {
+      if (!window.Alpine || typeof window.Alpine.initTree !== 'function') { return; }
+      var detail = evt && evt.detail ? evt.detail : null;
+      var ctx = detail && detail.ctx ? detail.ctx : null;
+      var target = ctx && ctx.target ? ctx.target : document.body;
+      window.Alpine.initTree(target);
+   });
+})();
+</script>

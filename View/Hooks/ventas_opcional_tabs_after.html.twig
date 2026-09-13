@@ -1,0 +1,13 @@
+{#- Tarifas tab header injected into catalogo_core's ventas_opcional page (OUM-10).
+    Owned by catalogo_core after WU-4 and migrated to htmx 4 (WU-5, AD-10): the
+    tab click lazily issues an hx-get that swaps the pane's rows placeholder
+    with the catalogo_core `tarif_opcional_tab` fragment. Guarded: an unsaved
+    opcional has no id and nothing to price, so the whole template renders empty. -#}
+{% if not fsc.is_new %}
+<li>
+   <a href="#tab_tarifario_precios" data-toggle="tab"
+      hx-get="index.php?page=tarif_opcional_tab&action=rows&ref={{ fsc.opcional.id }}"
+      hx-target="#tab_tarifario_precios_rows"
+      hx-swap="outerHTML">Tarifas</a>
+</li>
+{% endif %}

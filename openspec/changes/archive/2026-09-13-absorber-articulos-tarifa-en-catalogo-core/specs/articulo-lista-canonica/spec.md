@@ -1,0 +1,147 @@
+# Delta for articulo-lista-canonica
+
+New `catalogo_core` capability: the list
+`Controller/VentasArticulos.php` + `View/ventas_articulos.html.twig` absorbs
+tarifario's `tarif_articulos` filters, per-tarifa columns and quick-create. Slug,
+FQCN, pagination and RBAC ownership stay stable. Tests:
+`tests/Controller/VentasArticulosListAbsorptionTest.php`,
+`tests/ArticuloListaCanonicaOwnershipTest.php`.
+
+## ADDED Requirements
+
+### Requirement: ALC-01 — Filter absorption
+
+The list MUST accept `query`, `b_codfamilia`, `b_codtarifa` and
+`b_solo_activos` (the first two aliasing `search`/`codfamilia`), select that tarifa
+(default, else first) and keep `b_solo_activos`-active articles (default TRUE).
+
+_Strength: MUST._
+
+#### Scenario: Aliases match
+
+- GIVEN `query`/`b_codfamilia` without `b_codtarifa`
+- WHEN the `search`/`codfamilia` equivalent runs
+- THEN identical rows, default tarifa, `b_solo_activos` TRUE
+
+### Requirement: ALC-02 — Per-tarifa columns
+
+The list MUST show per row the tarifa's `precio`, `activo`, `en_tarifa`
+and `en_catalogo` (currency-priced); a missing row MUST default to
+0/TRUE/FALSE/FALSE.
+
+_Strength: MUST._
+
+#### Scenario: Rows render
+
+- GIVEN rows and a missing row for the tarifa
+- WHEN the list renders
+- THEN currency-priced price/state, missing row 0/TRUE/FALSE/FALSE
+
+### Requirement: ALC-03 — Quick-create prices
+
+`nuevoArticulo` MUST accept per tarifa a fixed price and/or a percentage (fixed
+persists; percentage derives from PVP), ordered CSRF → neutral permission event →
+`save()` → prices; failure or denial MUST persist nothing.
+
+_Strength: MUST._
+
+#### Scenario: Prices persist
+
+- GIVEN one fixed price and one percentage in the POST
+- WHEN an authorized, CSRF-valid save runs
+- THEN each tarifa stores its price
+
+#### Scenario: Denial persists nothing
+
+- GIVEN a quick-create POST with per-tarifa prices
+- WHEN CSRF is invalid or permission denied
+- THEN nothing is persisted
+
+### Requirement: ALC-04 — htmx 4 and Alpine CSP
+
+`View/ventas_articulos.html.twig` MUST use htmx 4 + Alpine CSP: `hx-get` filters
+with `hx-push-url`, `hx-post` mutations only, colon events only, nonce'd
+`Alpine.data()` behind `alpine:init`, no `bootbox`/`|raw`; locked
+view strings MUST remain.
+
+_Strength: MUST._
+
+#### Scenario: htmx hygiene
+
+- GIVEN the migrated view
+- WHEN inspected
+- THEN colon events and `hx-post` only, nonce'd `Alpine.data(` behind `alpine:init`, no `bootbox`/`|raw`/v2 names
+
+#### Scenario: Filter navigation
+
+- GIVEN the filter controls
+- WHEN a filter changes
+- THEN `hx-get` + `hx-push-url` swap rows in the target
+
+### Requirement: ALC-05 — Import/export continuity
+
+Every pre-existing Excel/JSON import-export entry point MUST keep resolving and
+the tarifario list's actions MUST NOT be lost on retirement; filtered export MUST
+preserve active filters (WU-7 unifies).
+
+_Strength: MUST._
+
+#### Scenario: Entry points
+
+- GIVEN the migrated list and filters
+- WHEN export/preview/import entry points run
+- THEN all respond and filtered export keeps the filters
+
+### Requirement: ALC-06 — `tarif_articulos` retirement
+
+The `tarif_articulos` controller and view MUST be deleted with no alias; inbound
+links/`url()` MUST repoint to `ventas_articulos`; its `fs_page` row MUST retire
+idempotently; the extension table stays (WU-4).
+
+_Strength: MUST / MUST NOT._
+
+#### Scenario: No alias
+
+- GIVEN the applied change
+- WHEN both plugins are searched
+- THEN no file exists and no alias resolves the slug
+
+#### Scenario: Links repointed
+
+- GIVEN inbound links to `page=tarif_articulos`
+- WHEN sources are searched
+- THEN each targets `ventas_articulos` with filters preserved
+
+#### Scenario: Menu row
+
+- GIVEN the retired `fs_page` row
+- WHEN `upgrade()` runs twice
+- THEN deleted once, rerun a no-op
+
+### Requirement: ALC-07 — No half-moved state
+
+No WU-3 asset MAY exist in both plugins and no catalogo_core production file MAY
+reference `plugins/tarifario/` or `@tarifario/` for the absorbed list; the RBAC
+listener and `tarif_grupo_articulo` MUST stay in `tarifario`.
+
+_Strength: MUST / MUST NOT._
+
+#### Scenario: Zero paths + RBAC
+
+- GIVEN catalogo_core production and tarifario booted
+- WHEN references and the listener are inspected
+- THEN zero tarifario hits, no duplicate, listener live on `ArticlePermissionFilterEvent::NAME`
+
+### Requirement: ALC-08 — Locked contracts
+
+`VentasArticulosControllerTest` MUST stay green unedited; tarifario tests locking
+`tarif_articulos` MUST move with their code, MUST NOT assert the slug, and the
+suite MUST stay ≥ 576/2147.
+
+_Strength: MUST._
+
+#### Scenario: Locked tests
+
+- GIVEN the migration and the retired surface
+- WHEN the controller test and both suites run
+- THEN it passes unedited, no tarifario test asserts the slug, suite ≥ 576/2147

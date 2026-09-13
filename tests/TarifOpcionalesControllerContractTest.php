@@ -23,24 +23,30 @@ namespace Tests\CatalogoCore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Source contract for the four opcional controllers absorbed from tarifario.
+ * Source contract for the surviving opcional controller absorbed from
+ * tarifario.
  *
- * After the move they must live under plugins/catalogo_core/controller/ keeping
- * their original slugs/class names, extend catalogo_core's fbase_controller, use
- * TarifarioOpcionalStateTrait (design D2), and drop every dependency on
- * tarifario's opcional code: zero tarif_controller references and zero
- * plugins/tarifario/model/tarif_*opcional* requires
- * (spec "Moved controllers decoupled from tarifario opcional code" and
- * "Opcional pages served by catalogo_core").
+ * After the unification it must live under plugins/catalogo_core/controller/
+ * keeping its original slug/class name, extend catalogo_core's
+ * fbase_controller, use TarifarioOpcionalStateTrait (design D2), and drop every
+ * dependency on tarifario's opcional code: zero tarif_controller references and
+ * zero plugins/tarifario/model/tarif_*opcional* requires
+ * (spec opcionales-management OUM-11; "surviving opcional controllers").
+ *
+ * The hierarchical configurator (`tarif_configurador_opcionales`) is
+ * deliberately absent: it is tarifario-exclusive and reverted to
+ * plugins/tarifario/controller/ (boundary correction). Its contract test lives
+ * in plugins/tarifario/tests/TarifConfiguradorOpcionalesTest.php.
+ *
+ * The legacy `tarif_opcionales` list controller and the `tarif_opcional_precios`
+ * detail are deliberately absent: both are deleted with no redirect alias
+ * (OUM-09, OUM-11).
  */
 final class TarifOpcionalesControllerContractTest extends TestCase
 {
-    /** Original slugs — slugs, class names and the fs_pages registry stay frozen. */
+    /** Surviving slugs — slugs, class names and the fs_pages registry stay frozen. */
     private const CONTROLLER_SLUGS = [
-        'tarif_opcionales',
         'tarif_opcional_edit',
-        'tarif_opcional_precios',
-        'tarif_configurador_opcionales',
     ];
 
     private function controllerPath(string $slug): string
@@ -61,7 +67,7 @@ final class TarifOpcionalesControllerContractTest extends TestCase
         return (string) file_get_contents($path);
     }
 
-    public function test_all_four_controllers_are_declared_in_catalogo_core(): void
+    public function test_all_surviving_controllers_are_declared_in_catalogo_core(): void
     {
         foreach (self::CONTROLLER_SLUGS as $slug) {
             $this->assertFileExists(
@@ -77,7 +83,7 @@ final class TarifOpcionalesControllerContractTest extends TestCase
         }
     }
 
-    public function test_all_four_controllers_extend_fbase_controller(): void
+    public function test_all_surviving_controllers_extend_fbase_controller(): void
     {
         foreach (self::CONTROLLER_SLUGS as $slug) {
             $src = $this->controllerSource($slug);
@@ -96,7 +102,7 @@ final class TarifOpcionalesControllerContractTest extends TestCase
         }
     }
 
-    public function test_all_four_controllers_have_zero_tarif_controller_references(): void
+    public function test_all_surviving_controllers_have_zero_tarif_controller_references(): void
     {
         foreach (self::CONTROLLER_SLUGS as $slug) {
             $this->assertSame(
@@ -107,7 +113,7 @@ final class TarifOpcionalesControllerContractTest extends TestCase
         }
     }
 
-    public function test_all_four_controllers_have_zero_tarifario_opcional_requires(): void
+    public function test_all_surviving_controllers_have_zero_tarifario_opcional_requires(): void
     {
         foreach (self::CONTROLLER_SLUGS as $slug) {
             // Strip quotes/whitespace/newlines so concatenated paths such as
@@ -123,7 +129,7 @@ final class TarifOpcionalesControllerContractTest extends TestCase
         }
     }
 
-    public function test_all_four_controllers_use_the_opcional_state_trait(): void
+    public function test_all_surviving_controllers_use_the_opcional_state_trait(): void
     {
         foreach (self::CONTROLLER_SLUGS as $slug) {
             $this->assertStringContainsString(

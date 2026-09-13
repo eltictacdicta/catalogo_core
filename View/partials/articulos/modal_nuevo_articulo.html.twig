@@ -1,7 +1,10 @@
 {#
- # Modal nuevo artículo (estilo tarifario tarif_articulos)
+ # Modal nuevo artículo (style tarifario tarif_articulos)
+ # Absorbed by the canonical ventas_articulos list (WU-3, AD-W3-5/AD-W3-9):
+ # per-tarifa fixed + percentage price inputs, submitted through hx-post.
  #}
-<form class="form-horizontal" role="form" name="f_nuevo_articulo" action="{{ fsc.url() }}" method="post">
+<form class="form-horizontal" role="form" name="f_nuevo_articulo" action="{{ fsc.url() }}" method="post"
+      hx-post="{{ fsc.url() }}" hx-target="#articulos-list" hx-select="#articulos-list" hx-swap="outerHTML">
     {{ csrf_field() }}
     <div class="modal fade" id="modal_nuevo_articulo" tabindex="-1" role="dialog">
         <div class="modal-dialog modal-lg" role="document">
@@ -68,6 +71,33 @@
                             </select>
                         </div>
                     </div>
+
+                    {% if fsc.tarifas|length > 0 %}
+                    <hr/>
+                    <h5><b>{{ 'tariff-prices'|trans }}</b></h5>
+                    {% for tarifa in fsc.tarifas %}
+                    <div class="form-group">
+                        <label class="col-sm-3 control-label">
+                            {{ tarifa.nombre }}
+                            {% if tarifa.por_defecto %}<span class="label label-primary">{{ 'default'|trans }}</span>{% endif %}
+                        </label>
+                        <div class="col-sm-4">
+                            <div class="input-group">
+                                <input class="form-control" type="text" name="precio_tarifa_{{ tarifa.codtarifa }}"
+                                       value="" autocomplete="off" placeholder="{{ 'fixed-price'|trans }}"/>
+                                <div class="input-group-addon">{{ fsc.simbolo_divisa_tarifa(tarifa.coddivisa) }}</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="input-group">
+                                <input class="form-control" type="text" name="porcentaje_tarifa_{{ tarifa.codtarifa }}"
+                                       value="" autocomplete="off" placeholder="{{ 'percentage-over-pvp'|trans }}"/>
+                                <div class="input-group-addon">%</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">{{ 'cancel'|trans }}</button>

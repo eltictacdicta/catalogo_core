@@ -1,0 +1,72 @@
+{#- Server-rendered per-tarifa price rows for the injected Tarifas tab on
+    ventas_opcional (OUM-10). Served by catalogo_core's tarif_opcional_tab on
+    fbase_controller, so fsc HAS the currency helper; every price call passes
+    the row tariff's own coddivisa (S27). Migrated to htmx 4 (WU-5, AD-10):
+    each row's save button hx-posts the row inputs (hx-include) to the guest
+    endpoint; the inherited X-CSRF-TOKEN header (htmx.boot) authenticates it.
+    Bare no-argument currency helper calls are forbidden in View/Hooks/ (S28).
+    The opcional model tracks precio and en_catalogo only — no activo/en_tarifa
+    columns exist for opcionales. -#}
+<div class="box" id="tab_tarifario_precios_rows" data-tipo="opcional" data-referencia="{{ id_opcional }}">
+   <div class="box-header with-border">
+      <h3 class="box-title">Precios por tarifa</h3>
+   </div>
+   <div class="box-body table-responsive no-padding">
+      <table class="table table-striped">
+         <thead>
+            <tr>
+               <th>Tarifa</th>
+               <th class="text-right">Precio</th>
+               <th class="text-center">En catálogo</th>
+               <th></th>
+            </tr>
+         </thead>
+         <tbody>
+            {% for tarifa in tarifas %}
+            {% set precio = precios[tarifa.codtarifa]|default(null) %}
+            <tr data-codtarifa="{{ tarifa.codtarifa }}">
+               <td>{{ tarifa.nombre }}</td>
+               <td class="text-right">
+                  {% if es_porcentaje %}
+                  <div class="input-group input-group-sm" style="width: 130px; margin-left: auto;">
+                     <input type="text" name="porcentaje" class="form-control text-right tarifario-tab-porcentaje"
+                            data-codtarifa="{{ tarifa.codtarifa }}"
+                            value="{{ porcentajes[tarifa.codtarifa]|default(null) is not null ? porcentajes[tarifa.codtarifa]|default(null) : '' }}"
+                            placeholder="0.00" autocomplete="off"/>
+                     <span class="input-group-addon">%</span>
+                     <input type="hidden" name="modo_porcentaje" value="1"/>
+                  </div>
+                  {% else %}
+                  <div class="input-group input-group-sm" style="width: 130px; margin-left: auto;">
+                     <input type="text" name="precio" class="form-control text-right tarifario-tab-precio"
+                            data-codtarifa="{{ tarifa.codtarifa }}"
+                            value="{{ precio ? precio.precio : '' }}"
+                            placeholder="0.00" autocomplete="off"/>
+                     <span class="input-group-addon">{{ fsc.simbolo_divisa(tarifa.coddivisa) }}</span>
+                  </div>
+                  {% endif %}
+               </td>
+               <td class="text-center">
+                  <input type="checkbox" name="en_catalogo" value="1" class="tarifario-tab-en-catalogo"
+                         data-codtarifa="{{ tarifa.codtarifa }}"{% if precio and precio.en_catalogo %} checked{% endif %}/>
+               </td>
+               <td class="text-right">
+                  <input type="hidden" name="guardar_precio_tab" value="1"/>
+                  <input type="hidden" name="codtarifa" value="{{ tarifa.codtarifa }}"/>
+                  <input type="hidden" name="referencia" value="{{ id_opcional }}"/>
+                  <button type="button" class="btn btn-xs btn-primary tarifario-tab-guardar"
+                          data-codtarifa="{{ tarifa.codtarifa }}"
+                          hx-post="index.php?page=tarif_opcional_tab"
+                          hx-include="closest tr"
+                          hx-swap="none">
+                     <span class="glyphicon glyphicon-floppy-disk"></span>
+                  </button>
+               </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-muted">No hay tarifas activas.</td></tr>
+            {% endfor %}
+         </tbody>
+      </table>
+   </div>
+</div>

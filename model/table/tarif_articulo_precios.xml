@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_articulo_precios: Precios de artículos por tarifa
+    - activo: si el artículo está activo en esta tarifa (false = solo consulta histórica)
+    - en_tarifa: si el artículo se incluye al exportar la tarifa a clientes
+    - en_catalogo: si el artículo aparece visible en el catálogo de la tarifa
+-->
+<tabla>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>precio</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>activo</nombre>
+        <tipo>boolean</tipo>
+        <defecto>true</defecto>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <defecto>false</defecto>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <defecto>false</defecto>
+    </columna>
+    <columna>
+        <nombre>en_sap</nombre>
+        <tipo>boolean</tipo>
+        <defecto>false</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_articulo_precios_pkey</nombre>
+        <consulta>PRIMARY KEY (referencia, codtarifa)</consulta>
+    </restriccion>
+</tabla>

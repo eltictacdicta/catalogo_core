@@ -21,6 +21,31 @@ final class CatalogLegacyTableMigration
         'tarif_articulo_opcional' => 'catalogo_articulo_opcional',
     ];
 
+    /**
+     * Column maps for the additive copy performed when legacy and canonical
+     * tables coexist (the rename is impossible then). Rows are copied
+     * preserving their primary id; rows already present are skipped.
+     *
+     * `select` answers to the target `columns` positionally, so it can carry
+     * literals such as the default `obligatorio = 0`.
+     *
+     * @var array<string, array{columns: list<string>, select: list<string>}>
+     */
+    private const BOTH_EXIST_COPY = [
+        'tarif_opcionales' => [
+            'columns' => ['id', 'codigo', 'nombre', 'descripcion', 'precio', 'activo'],
+            'select' => ['id', 'codigo', 'nombre', 'descripcion', 'precio', 'activo'],
+        ],
+        'tarif_opcional_familia' => [
+            'columns' => ['id', 'id_opcional', 'codfamilia'],
+            'select' => ['id', 'id_opcional', 'codfamilia'],
+        ],
+        'tarif_articulo_opcional' => [
+            'columns' => ['id', 'referencia', 'id_opcional', 'obligatorio'],
+            'select' => ['id', 'referencia', 'id_opcional', '0'],
+        ],
+    ];
+
     public static function migrateIfNeeded(\fs_db2 $db): void
     {
         foreach (self::TABLE_RENAMES as $legacy => $target) {
@@ -259,42 +284,215 @@ final class CatalogLegacyTableMigration
 
     private static function renameTableIfNeeded(\fs_db2 $db, string $legacy, string $target): void
     {
-        if (!self::tableExists($db, $legacy) || self::tableExists($db, $target)) {
+        if (!self::tableExists($db, $legacy)) {
             return;
         }
 
-        $sql = self::isPostgres($db)
-            ? 'ALTER TABLE ' . $legacy . ' RENAME TO ' . $target . ';'
-            : 'RENAME TABLE `' . $legacy . '` TO `' . $target . '`;';
+        if (!self::tableExists($db, $target)) {
+            $sql = self::isPostgres($db)
+                ? 'ALTER TABLE ' . $legacy . ' RENAME TO ' . $target . ';'
+                : 'RENAME TABLE `' . $legacy . '` TO `' . $target . '`;';
 
-        $db->exec($sql);
+            $db->exec($sql);
+            return;
+        }
+
+        // Both tables exist: a rename is impossible but the legacy table may
+        // still hold rows created before the canonical table was provisioned.
+        // Copy them additively, preserving ids, and leave legacy data untouched.
+        self::copyPendingRows($db, $legacy, $target);
+    }
+
+    /**
+     * Idempotent legacy → canonical copy for the both-tables-exist case.
+     *
+     * Only tables with an explicit column map are copied; unmapped renames are
+     * left as-is to avoid guessing schemas. A cheap LEFT JOIN pre-check keeps
+     * the per-request boot path free of bulk statements in steady state.
+     */
+    private static function copyPendingRows(\fs_db2 $db, string $legacy, string $target): void
+    {
+        if (!isset(self::BOTH_EXIST_COPY[$legacy])) {
+            return;
+        }
+
+        if (!self::hasPendingRows($db, $legacy, $target)) {
+            return;
+        }
+
+        $map = self::BOTH_EXIST_COPY[$legacy];
+        $columns = implode(', ', $map['columns']);
+        $select = implode(', ', $map['select']);
+
+        if (self::isPostgres($db)) {
+            $db->exec(
+                'INSERT INTO ' . $target . ' (' . $columns . ') '
+                . 'SELECT ' . $select . ' FROM ' . $legacy . ' '
+                . 'ON CONFLICT DO NOTHING;'
+            );
+
+            // Rows copied with an explicit id do not advance the target
+            // identity sequence, so realign it to MAX(id) to keep later
+            // inserts from colliding with the migrated rows.
+            $db->exec(
+                'SELECT setval(pg_get_serial_sequence(' . $db->var2str($target) . ", 'id'), "
+                . 'COALESCE((SELECT MAX(id) FROM ' . $target . '), 1), true);'
+            );
+            return;
+        }
+
+        $db->exec(
+            'INSERT IGNORE INTO ' . $target . ' (' . $columns . ') '
+            . 'SELECT ' . $select . ' FROM ' . $legacy . ';'
+        );
+    }
+
+    private static function hasPendingRows(\fs_db2 $db, string $legacy, string $target): bool
+    {
+        $data = $db->select(
+            'SELECT 1 FROM ' . $legacy . ' l '
+            . 'LEFT JOIN ' . $target . ' t ON t.id = l.id '
+            . 'WHERE t.id IS NULL LIMIT 1;'
+        );
+
+        return (bool) $data;
     }
 
     private static function migrateOptionalPrices(\fs_db2 $db): void
     {
-        if (!self::tableExists($db, 'tarif_opcional_precios')
-            || self::tableExists($db, 'catalogo_opcional_precios')) {
+        if (!self::tableExists($db, 'tarif_opcional_precios')) {
             return;
         }
 
-        if (!self::tableExists($db, 'catalogo_listas_precio')) {
+        $targetExists = self::tableExists($db, 'catalogo_opcional_precios');
+
+        if (!$targetExists && !self::tableExists($db, 'catalogo_listas_precio')) {
             new \FSFramework\model\catalogo_lista_precio();
+        }
+
+        // The canonical prices table has FKs on (id_opcional, codlista); make
+        // sure every referenced price list exists before inserting rows.
+        self::syncMissingPriceLists($db);
+
+        if (!$targetExists) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_opcional_precios AS '
+                    . 'SELECT id_opcional, codtarifa AS codlista, precio, en_catalogo '
+                    . 'FROM tarif_opcional_precios;'
+                );
+                $db->exec('ALTER TABLE catalogo_opcional_precios ADD PRIMARY KEY (id_opcional, codlista);');
+            } else {
+                $db->exec(
+                    'CREATE TABLE catalogo_opcional_precios '
+                    . 'SELECT id_opcional, codtarifa AS codlista, precio, en_catalogo '
+                    . 'FROM tarif_opcional_precios;'
+                );
+                $db->exec('ALTER TABLE catalogo_opcional_precios ADD PRIMARY KEY (id_opcional, codlista);');
+            }
+
+            return;
+        }
+
+        // Both tables exist: copy the pending legacy prices additively, leaving
+        // porcentaje NULL so the canonical pricing mode keeps its defaults.
+        self::copyPendingOptionalPrices($db);
+    }
+
+    private static function copyPendingOptionalPrices(\fs_db2 $db): void
+    {
+        $pending = $db->select(
+            'SELECT 1 FROM tarif_opcional_precios p '
+            . 'LEFT JOIN catalogo_opcional_precios c '
+            . 'ON c.id_opcional = p.id_opcional AND c.codlista = p.codtarifa '
+            . 'WHERE c.id_opcional IS NULL LIMIT 1;'
+        );
+
+        if (!$pending) {
+            return;
         }
 
         if (self::isPostgres($db)) {
             $db->exec(
-                'CREATE TABLE catalogo_opcional_precios AS '
-                . 'SELECT id_opcional, codtarifa AS codlista, precio, en_catalogo '
-                . 'FROM tarif_opcional_precios;'
+                'INSERT INTO catalogo_opcional_precios (id_opcional, codlista, precio, en_catalogo) '
+                . 'SELECT p.id_opcional, p.codtarifa, p.precio, COALESCE(p.en_catalogo, FALSE) '
+                . 'FROM tarif_opcional_precios p '
+                . 'ON CONFLICT (id_opcional, codlista) DO NOTHING;'
             );
-            $db->exec('ALTER TABLE catalogo_opcional_precios ADD PRIMARY KEY (id_opcional, codlista);');
+            return;
+        }
+
+        $db->exec(
+            'INSERT IGNORE INTO catalogo_opcional_precios (id_opcional, codlista, precio, en_catalogo) '
+            . 'SELECT p.id_opcional, p.codtarifa, p.precio, COALESCE(p.en_catalogo, 0) '
+            . 'FROM tarif_opcional_precios p;'
+        );
+    }
+
+    /**
+     * Ensures every tarifa that can be referenced by legacy optional prices has
+     * a matching catalogo_listas_precio row, so the FK on codlista can be added.
+     * Rows come from tarif_tarifas when available; orphan codtarifa values are
+     * synthesized so the copy is never blocked by a missing list.
+     */
+    private static function syncMissingPriceLists(\fs_db2 $db): void
+    {
+        if (!self::tableExists($db, 'catalogo_listas_precio')
+            || !self::tableExists($db, 'tarif_opcional_precios')) {
+            return;
+        }
+
+        // Cheap pre-check: only write when a referenced list is actually missing.
+        $pending = $db->select(
+            'SELECT 1 FROM tarif_opcional_precios p '
+            . 'LEFT JOIN catalogo_listas_precio l ON l.codlista = p.codtarifa '
+            . 'WHERE l.codlista IS NULL LIMIT 1;'
+        );
+
+        if (!$pending) {
+            return;
+        }
+
+        if (self::tableExists($db, 'tarif_tarifas')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'INSERT INTO catalogo_listas_precio (codlista, nombre, activa, por_defecto, coddivisa) '
+                    . 'SELECT t.codtarifa, COALESCE(NULLIF(t.nombre, \'\'), t.codtarifa), '
+                    . 'COALESCE(t.activa, FALSE), COALESCE(t.por_defecto, FALSE), '
+                    . 'COALESCE(NULLIF(t.coddivisa, \'\'), \'EUR\') '
+                    . 'FROM tarif_tarifas t '
+                    . 'WHERE NOT EXISTS (SELECT 1 FROM catalogo_listas_precio l WHERE l.codlista = t.codtarifa) '
+                    . 'ON CONFLICT (codlista) DO NOTHING;'
+                );
+            } else {
+                $db->exec(
+                    'INSERT IGNORE INTO catalogo_listas_precio (codlista, nombre, activa, por_defecto, coddivisa) '
+                    . 'SELECT t.codtarifa, COALESCE(NULLIF(t.nombre, \'\'), t.codtarifa), '
+                    . 'COALESCE(t.activa, 0), COALESCE(t.por_defecto, 0), '
+                    . 'COALESCE(NULLIF(t.coddivisa, \'\'), \'EUR\') '
+                    . 'FROM tarif_tarifas t '
+                    . 'LEFT JOIN catalogo_listas_precio l ON l.codlista = t.codtarifa '
+                    . 'WHERE l.codlista IS NULL;'
+                );
+            }
+        }
+
+        if (self::isPostgres($db)) {
+            $db->exec(
+                'INSERT INTO catalogo_listas_precio (codlista, nombre, activa, por_defecto, coddivisa) '
+                . 'SELECT DISTINCT p.codtarifa, p.codtarifa, FALSE, FALSE, \'EUR\' '
+                . 'FROM tarif_opcional_precios p '
+                . 'WHERE NOT EXISTS (SELECT 1 FROM catalogo_listas_precio l WHERE l.codlista = p.codtarifa) '
+                . 'ON CONFLICT (codlista) DO NOTHING;'
+            );
         } else {
             $db->exec(
-                'CREATE TABLE catalogo_opcional_precios '
-                . 'SELECT id_opcional, codtarifa AS codlista, precio, en_catalogo '
-                . 'FROM tarif_opcional_precios;'
+                'INSERT IGNORE INTO catalogo_listas_precio (codlista, nombre, activa, por_defecto, coddivisa) '
+                . 'SELECT DISTINCT p.codtarifa, p.codtarifa, 0, 0, \'EUR\' '
+                . 'FROM tarif_opcional_precios p '
+                . 'LEFT JOIN catalogo_listas_precio l ON l.codlista = p.codtarifa '
+                . 'WHERE l.codlista IS NULL;'
             );
-            $db->exec('ALTER TABLE catalogo_opcional_precios ADD PRIMARY KEY (id_opcional, codlista);');
         }
     }
 

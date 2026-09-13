@@ -1,0 +1,15 @@
+{#- Tarifas tab header injected into catalogo_core's ventas_articulo page (WU-1).
+    Owned by catalogo_core after the article surface move and migrated to htmx 4
+    (AD-6): the tab click lazily issues an hx-get that swaps the pane's rows
+    placeholder with the catalogo_core `tarif_tab_precios` fragment. Guarded: an
+    unsaved article has no reference and nothing to price, so the whole template
+    renders empty. The endpoint URL keeps the frozen `tipo=articulo` token that
+    the rows action expects. -#}
+{% if fsc.articulo is defined and fsc.articulo and fsc.articulo.referencia %}
+<li>
+   <a href="#tab_tarifario_precios" data-toggle="tab"
+      hx-get="index.php?page=tarif_tab_precios&action=rows&tipo=articulo&ref={{ fsc.articulo.referencia|url_encode }}"
+      hx-target="#tab_tarifario_precios_rows"
+      hx-swap="outerHTML">Tarifas</a>
+</li>
+{% endif %}

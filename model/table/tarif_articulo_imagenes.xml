@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_articulo_imagenes: Imágenes de artículos del tarifario
+    Permite múltiples imágenes por artículo con una destacada
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>nombre_archivo</nombre>
+        <tipo>character varying(255)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>destacada</nombre>
+        <tipo>boolean</tipo>
+        <nulo>YES</nulo>
+        <defecto>false</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>YES</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <columna>
+        <nombre>fecha_subida</nombre>
+        <tipo>timestamp</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <restriccion>
+        <nombre>tarif_articulo_imagenes_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_articulo_imagenes_articulos</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

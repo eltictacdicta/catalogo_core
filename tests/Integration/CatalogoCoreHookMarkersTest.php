@@ -387,11 +387,19 @@ final class CatalogoCoreHookMarkersTest extends TestCase
     {
         $this->requireCatalogoOpcionalClass();
 
+        // WU-2: ventas_articulo now imports the theme htmx/alpine boots (the
+        // host owns boot after the pane stops booting). The macro sources are
+        // chained in and the helper functions registered so the frozen marker
+        // assertions below run against the real view body.
+        $macroDir = FS_FOLDER . '/themes/AdminLTE/view/Macro';
+
         $templates = [
             'header.html.twig' => '',
             'footer.html.twig' => '',
             'partials/articulos/tab_multiidioma.html.twig' => '',
             'partials/articulos/tab_opcionales.html.twig' => '',
+            'Macro/Htmx.html.twig' => (string) @file_get_contents($macroDir . '/Htmx.html.twig'),
+            'Macro/Alpine.html.twig' => (string) @file_get_contents($macroDir . '/Alpine.html.twig'),
             self::OPCIONAL_VIEW => (string) file_get_contents(FS_FOLDER . self::VIEW_DIR . '/' . self::OPCIONAL_VIEW),
             self::ARTICULO_VIEW => (string) file_get_contents(FS_FOLDER . self::VIEW_DIR . '/' . self::ARTICULO_VIEW),
         ] + $extraTemplates;
@@ -399,6 +407,9 @@ final class CatalogoCoreHookMarkersTest extends TestCase
         $twig = new Environment(new ArrayLoader($templates), ['cache' => false, 'auto_reload' => false]);
         $twig->addFilter(new TwigFilter('trans', static fn (string $key, array $params = []): string => $key));
         $twig->addFunction(new TwigFunction('csrf_field', static fn (): string => '<input type="hidden" name="form_token" value="token"/>'));
+        $twig->addFunction(new TwigFunction('csrf_token', static fn (): string => 'csrf-token'));
+        $twig->addFunction(new TwigFunction('csp_nonce_attr', static fn (): string => 'nonce="test"'));
+        $twig->addFunction(new TwigFunction('csrf_meta', static fn (): string => ''));
         $twig->addFunction(new TwigFunction(
             'render_hook',
             static fn (string $name, array $context = []): string => ViewHookRegistry::render($twig, $name, $context),

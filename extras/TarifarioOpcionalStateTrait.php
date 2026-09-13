@@ -169,4 +169,86 @@ trait TarifarioOpcionalStateTrait
         header('Content-Type: application/json');
         echo json_encode(array('query' => $query, 'suggestions' => $json));
     }
+
+    /**
+     * Runs $work inside a single explicit database transaction.
+     *
+     * The engine auto-wraps every exec() in its own transaction; while $work
+     * runs that behaviour is disabled so all writes join the outer
+     * transaction. Commits only when $work returns true, rolls back on failure
+     * or exception, and always restores the previous auto-transaction setting.
+     *
+     * @param callable(): bool $work
+     * @return bool
+     */
+    protected function run_in_transaction(callable $work): bool
+    {
+        $previous = $this->db->get_auto_transactions();
+        $this->db->set_auto_transactions(false);
+
+        $began = false;
+        $committed = false;
+
+        try {
+            // begin_transaction() is inside the protected flow so an exception
+            // it throws still restores the saved auto-transaction setting.
+            if (!$this->db->begin_transaction()) {
+                return false;
+            }
+            $began = true;
+
+            if (!$work()) {
+                return false;
+            }
+
+            if (!$this->db->commit()) {
+                return false;
+            }
+            $committed = true;
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        } finally {
+            // Only a transaction that actually began and never committed is
+            // rolled back; a successful commit must not be followed by one.
+            if ($began && !$committed) {
+                $this->db->rollback();
+            }
+
+            $this->db->set_auto_transactions($previous);
+        }
+    }
+
+    /**
+     * Parses a user-submitted price into a float.
+     *
+     * Locale convention: a single `.` or `,` separator is ALWAYS treated as
+     * the decimal separator, never as a thousands separator. `1.234` and
+     * `1,234` therefore mean 1.234, not 1234; values without a separator stay
+     * integral (`1234` => 1234.0). Thousands grouping is intentionally not
+     * supported, so the parse never has to guess.
+     *
+     * Accepts a complete plain decimal with an optional single `.`/`,`
+     * separator; an empty string means 0.0. Partially-numeric input ("12abc"),
+     * mixed or repeated separators ("1.234,56", "1.2.3") and any non-numeric
+     * value are rejected instead of being silently truncated to 0/partial by
+     * floatval().
+     *
+     * @param mixed $raw
+     * @return float|null null when the input is invalid
+     */
+    protected function parse_price_input($raw)
+    {
+        $value = trim((string) $raw);
+        if ($value === '') {
+            return 0.0;
+        }
+
+        if (!preg_match('/^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/', $value)) {
+            return null;
+        }
+
+        return (float) str_replace(',', '.', $value);
+    }
 }

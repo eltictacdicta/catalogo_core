@@ -23,10 +23,11 @@ namespace Tests\CatalogoCore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * D3 adapter contract for the moved opcional price action (spec "Price
+ * D3 adapter contract for the moved opcional price model (spec "Price
  * save/read uses codlista"): the adapter extends the canonical price model,
- * keys every read/write on `codlista`, aliases `codtarifa`, and the moved
- * controller persists prices through the catalogo_core adapter only.
+ * keys every read/write on `codlista`, and never creates the dead legacy
+ * `tarif_opcional_precios` table. The `tarif_opcional_precios` detail page is
+ * deleted with no alias (OUM-11), so only the adapter contract survives here.
  */
 final class PrecioQuerySpyDb
 {
@@ -73,7 +74,6 @@ final class PrecioQuerySpyDb
 final class TarifOpcionalPreciosControllerTest extends TestCase
 {
     private const ADAPTER_RELATIVE = 'plugins/catalogo_core/model/tarif_opcional_precio.php';
-    private const CONTROLLER_RELATIVE = 'plugins/catalogo_core/controller/tarif_opcional_precios.php';
 
     private function loadAdapter(): void
     {
@@ -152,27 +152,6 @@ final class TarifOpcionalPreciosControllerTest extends TestCase
             0,
             (int) preg_match('/CREATE TABLE\s+`?tarif_opcional_precios`?/i', $source),
             'the adapter must not create the legacy price table'
-        );
-    }
-
-    public function test_moved_controller_persists_through_the_catalogo_core_adapter(): void
-    {
-        $path = FS_FOLDER . '/' . self::CONTROLLER_RELATIVE;
-        if (!is_file($path)) {
-            self::fail('missing catalogo_core path: ' . self::CONTROLLER_RELATIVE);
-        }
-
-        $source = (string) file_get_contents($path);
-
-        $this->assertStringContainsString(
-            self::ADAPTER_RELATIVE,
-            $source,
-            'the moved price controller must require the catalogo_core adapter'
-        );
-        $this->assertStringContainsString(
-            'new tarif_opcional_precio()',
-            $source,
-            'the moved price controller must persist through the adapter'
         );
     }
 }

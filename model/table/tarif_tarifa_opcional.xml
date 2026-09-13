@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Table tarif_tarifa_opcional: master state per (tarifa, opcional).
+    Authoritative source for activation, catalog/export visibility and the
+    default order of each tarifa, mirroring tarif_tarifa_familia.
+    A missing row inherits from tarif_opcional_ext without persisting.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <columna>
+        <nombre>activa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_opcional_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, id_opcional)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opcional_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_opcional_opcional</nombre>
+        <consulta>FOREIGN KEY (id_opcional)
+            REFERENCES catalogo_opcionales (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

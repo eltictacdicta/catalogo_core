@@ -98,7 +98,7 @@ class tarif_opcional extends catalogo_opcional
     public function url()
     {
         if (is_null($this->id)) {
-            return 'index.php?page=tarif_opcionales';
+            return 'index.php?page=ventas_opcionales';
         }
 
         return 'index.php?page=tarif_opcional_edit&id=' . $this->id;
@@ -242,37 +242,81 @@ class tarif_opcional extends catalogo_opcional
         return parent::delete();
     }
 
-    public function search($query = '', $offset = 0, $codfamilia = '', $codtarifa = '', $solo_activos = false)
+    /**
+     * @param string $query
+     * @param int    $offset
+     * @param string $codfamilia
+     * @param string $codtarifa
+     * @param bool   $solo_activos
+     * @param string $id_grupo    ''=all, '0'=Sin grupo, numeric=group id (AD-5/AD-6)
+     * @return array
+     */
+    public function search($query = '', $offset = 0, $codfamilia = '', $codtarifa = '', $solo_activos = false, $id_grupo = '')
     {
         $list = [];
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
         $where_conditions = [];
         $familiaTable = catalogo_opcional_familia::TABLE;
+        $grupo_condition = $this->where_id_grupo($id_grupo, 'o');
 
-        if ($codfamilia != '' || ($codtarifa != '' && $solo_activos)) {
-            $sql = 'SELECT DISTINCT o.*, e.ref_sap, e.en_catalogo, e.en_tarifa FROM ' . $this->table_name . ' o '
+        if ($codfamilia != '' || $codtarifa != '' || $grupo_condition !== '') {
+            $joins = ' FROM ' . $this->table_name . ' o '
                 . 'LEFT JOIN ' . $this->ext_table . ' e ON o.id = e.id_opcional';
+            $order_expr = null;
 
             if ($codfamilia != '') {
-                $sql .= ' INNER JOIN ' . $familiaTable . ' of ON o.id = of.id_opcional';
+                $joins .= ' INNER JOIN ' . $familiaTable . ' of ON o.id = of.id_opcional';
                 $where_conditions[] = 'of.codfamilia = ' . $this->var2str($codfamilia);
             }
 
+            if ($codtarifa != '') {
+                // Master `orden` is the default order for the per-tarifa
+                // listing (design AD4); a family-scoped orden overrides it.
+                $joins .= ' LEFT JOIN tarif_tarifa_opcional mto ON mto.codtarifa = ' . $this->var2str($codtarifa)
+                    . ' AND mto.id_opcional = o.id';
+                $order_expr = 'COALESCE(mto.orden, 999999)';
+
+                if ($codfamilia != '') {
+                    $joins .= ' LEFT JOIN tarif_tarifa_opcional_familia fto ON fto.codtarifa = ' . $this->var2str($codtarifa)
+                        . ' AND fto.id_opcional = o.id AND fto.codfamilia = ' . $this->var2str($codfamilia);
+                    $order_expr = 'COALESCE(fto.orden, mto.orden, 999999)';
+                }
+            }
+
             if ($codtarifa != '' && $solo_activos) {
-                $sql .= ' INNER JOIN catalogo_opcional_precios op ON o.id = op.id_opcional';
-                $where_conditions[] = 'op.codlista = ' . $this->var2str($codtarifa);
+                // Activation is authoritative on the per-tarifa master: keep
+                // opcionales without a master row (lazy inherit => active) and
+                // drop only those explicitly set activa = FALSE. Price rows
+                // never activate (design AD2).
+                $where_conditions[] = 'NOT EXISTS (SELECT 1 FROM tarif_tarifa_opcional tto'
+                    . ' WHERE tto.codtarifa = ' . $this->var2str($codtarifa)
+                    . ' AND tto.id_opcional = o.id AND tto.activa = FALSE)';
+            }
+
+            if ($grupo_condition !== '') {
+                $where_conditions[] = $grupo_condition;
             }
 
             if ($query != '') {
                 $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR lower(COALESCE(e.ref_sap, '')) LIKE '%" . $query . "%')";
             }
 
+            // SELECT DISTINCT + an ORDER BY expression requires the expression
+            // to be in the select list (MySQL error 3065 otherwise).
+            $sql = 'SELECT DISTINCT o.*, e.ref_sap, e.en_catalogo, e.en_tarifa';
+            if ($order_expr !== null) {
+                $sql .= ', ' . $order_expr . ' AS orden_tarifa';
+            }
+            $sql .= $joins;
+
             if (count($where_conditions) > 0) {
                 $sql .= ' WHERE ' . implode(' AND ', $where_conditions);
             }
-            $sql .= ' ORDER BY o.nombre ASC';
+            $sql .= $order_expr !== null
+                ? ' ORDER BY orden_tarifa ASC, o.nombre ASC'
+                : ' ORDER BY o.nombre ASC';
         } else {
-            return parent::search($query, $offset, $codfamilia, $codtarifa, $solo_activos);
+            return parent::search($query, $offset, $codfamilia, $codtarifa, $solo_activos, $id_grupo);
         }
 
         $data = $this->db->select_limit($sql, FS_ITEM_LIMIT, $offset);
@@ -294,15 +338,17 @@ class tarif_opcional extends catalogo_opcional
      * @param string $codfamilia
      * @param string $codtarifa
      * @param bool $solo_activos
+     * @param string $id_grupo    ''=all, '0'=Sin grupo, numeric=group id (AD-5/AD-6)
      * @return int
      */
-    public function count_filtered($query = '', $codfamilia = '', $codtarifa = '', $solo_activos = false)
+    public function count_filtered($query = '', $codfamilia = '', $codtarifa = '', $solo_activos = false, $id_grupo = '')
     {
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
         $where_conditions = [];
         $familiaTable = catalogo_opcional_familia::TABLE;
+        $grupo_condition = $this->where_id_grupo($id_grupo, 'o');
 
-        if ($codfamilia != '' || ($codtarifa != '' && $solo_activos)) {
+        if ($codfamilia != '' || $codtarifa != '' || $grupo_condition !== '') {
             $sql = 'SELECT COUNT(DISTINCT o.id) as total FROM ' . $this->table_name . ' o '
                 . 'LEFT JOIN ' . $this->ext_table . ' e ON o.id = e.id_opcional';
 
@@ -312,8 +358,17 @@ class tarif_opcional extends catalogo_opcional
             }
 
             if ($codtarifa != '' && $solo_activos) {
-                $sql .= ' INNER JOIN catalogo_opcional_precios op ON o.id = op.id_opcional';
-                $where_conditions[] = 'op.codlista = ' . $this->var2str($codtarifa);
+                // Activation is authoritative on the per-tarifa master: keep
+                // opcionales without a master row (lazy inherit => active) and
+                // drop only those explicitly set activa = FALSE. Price rows
+                // never activate (design AD2).
+                $where_conditions[] = 'NOT EXISTS (SELECT 1 FROM tarif_tarifa_opcional tto'
+                    . ' WHERE tto.codtarifa = ' . $this->var2str($codtarifa)
+                    . ' AND tto.id_opcional = o.id AND tto.activa = FALSE)';
+            }
+
+            if ($grupo_condition !== '') {
+                $where_conditions[] = $grupo_condition;
             }
 
             if ($query != '') {
@@ -360,8 +415,17 @@ class tarif_opcional extends catalogo_opcional
 
     public function get_precio_tarifa($codtarifa)
     {
-        $precio_model = new tarif_opcional_precio();
+        $precio_model = $this->opcional_precio_model();
         return $precio_model->get($this->id, $codtarifa);
+    }
+
+    /**
+     * Price-adapter factory (design AD-4). Overridable seam so the writer
+     * symmetry is unit-testable without a live database.
+     */
+    public function opcional_precio_model(): tarif_opcional_precio
+    {
+        return new tarif_opcional_precio();
     }
 
     public function precio_en_tarifa($codtarifa, $articulo = null)
@@ -384,18 +448,52 @@ class tarif_opcional extends catalogo_opcional
         return $this->precio_en_lista($codtarifa);
     }
 
+    /**
+     * Stores a fixed price for a tarifa and clears any stored percentage
+     * (symmetry with `catalogo_opcional::set_precio_lista()`, design AD-2).
+     *
+     * @param string $codtarifa
+     * @param mixed  $precio
+     */
     public function set_precio_tarifa($codtarifa, $precio)
     {
-        $precio_model = new tarif_opcional_precio();
+        $precio_model = $this->opcional_precio_model();
         $p = $precio_model->get($this->id, $codtarifa);
 
         if ($p) {
             $p->precio = floatval($precio);
+            $p->limpiar_porcentaje();
         } else {
-            $p = new tarif_opcional_precio();
+            $p = $this->opcional_precio_model();
             $p->id_opcional = $this->id;
             $p->codtarifa = $codtarifa;
             $p->precio = floatval($precio);
+        }
+
+        return $p->save();
+    }
+
+    /**
+     * Stores an effective percentage for a tarifa and zeroes the price
+     * (design AD-2). Counterpart of {@see set_precio_tarifa()}.
+     *
+     * @param string $codtarifa
+     * @param mixed  $porcentaje
+     */
+    public function set_porcentaje_tarifa($codtarifa, $porcentaje)
+    {
+        $precio_model = $this->opcional_precio_model();
+        $p = $precio_model->get($this->id, $codtarifa);
+
+        if ($p) {
+            $p->porcentaje = floatval($porcentaje);
+            $p->precio = 0.0;
+        } else {
+            $p = $this->opcional_precio_model();
+            $p->id_opcional = $this->id;
+            $p->codtarifa = $codtarifa;
+            $p->porcentaje = floatval($porcentaje);
+            $p->precio = 0.0;
         }
 
         return $p->save();

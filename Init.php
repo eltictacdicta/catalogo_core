@@ -6,12 +6,50 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core;
 
+use FSFramework\Event\FSEventDispatcher;
+use FSFramework\Event\TwigInitEvent;
+use FSFramework\Event\TwigLoaderEvent;
 use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
+use FSFramework\View\ViewHookRegistry;
+use Twig\Loader\FilesystemLoader;
 
 final class Init
 {
     private const WIZARD_TMP_TTL = 86400;
+
+    /**
+     * Frozen opcional view hooks injected into catalogo_core's own
+     * ventas_opcional page (OUM-10, AD-8). Mapping is 1:1 hook → template for
+     * grep auditability.
+     */
+    private const OPCIONAL_HOOK_TEMPLATES = [
+        'ventas_opcional_tabs_after' => '@catalogo_core/Hooks/ventas_opcional_tabs_after.html.twig',
+        'ventas_opcional_tab_pane_after' => '@catalogo_core/Hooks/ventas_opcional_tab_pane_after.html.twig',
+    ];
+
+    /**
+     * Frozen article view hooks injected into catalogo_core's own
+     * ventas_articulo page (WU-1, AD-5). Mapping is 1:1 hook → template for
+     * grep auditability. Owned by catalogo_core after the tarifario article
+     * surface move.
+     */
+    private const ARTICULO_HOOK_TEMPLATES = [
+        'ventas_articulo_tabs_after' => '@catalogo_core/Hooks/ventas_articulo_tabs_after.html.twig',
+        'ventas_articulo_tab_pane_after' => '@catalogo_core/Hooks/ventas_articulo_tab_pane_after.html.twig',
+    ];
+
+    /**
+     * Guards the TwigInitEvent hook registration so repeated Twig builds
+     * (env cache cleared) never duplicate the registered hooks.
+     */
+    private static bool $hooksRegistered = false;
+
+    /**
+     * Guards the TwigLoaderEvent/TwigInitEvent listener registration so
+     * repeated boots never duplicate the listeners.
+     */
+    private static bool $viewExtensionsRegistered = false;
 
     /** @var list<string> Modelos PSR-4 con install() que deben sembrarse al activar. */
     private const DEFAULT_SEED_MODELS = [
@@ -38,6 +76,21 @@ final class Init
         } catch (\Throwable $e) {
             error_log('[catalogo_core] opcionales tarifa tables ensure failed: ' . $e->getMessage());
         }
+        try {
+            self::ensureArticuloTarifaTables();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] articulo tarifa tables ensure failed: ' . $e->getMessage());
+        }
+        try {
+            self::ensureArticuloDetalleTables();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] articulo detalle tables ensure failed: ' . $e->getMessage());
+        }
+        try {
+            self::registerViewExtensions();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] view extensions registration failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -55,6 +108,8 @@ final class Init
             self::ensureCatalogTables();
             self::ensureFamiliasTarifaTables();
             self::ensureOpcionalesTarifaTables();
+            self::ensureArticuloTarifaTables();
+            self::ensureArticuloDetalleTables();
             foreach (self::DEFAULT_SEED_MODELS as $modelName) {
                 self::seedNamespacedModel($modelName);
             }
@@ -66,6 +121,85 @@ final class Init
         } catch (\Throwable $e) {
             error_log('[catalogo_core] ventas_familias page retirement failed: ' . $e->getMessage());
         }
+        try {
+            self::retireTarifOpcionalesPage();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] tarif_opcionales page retirement failed: ' . $e->getMessage());
+        }
+        try {
+            self::retireTarifOpcionalPreciosPage();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] tarif_opcional_precios page retirement failed: ' . $e->getMessage());
+        }
+        try {
+            self::retireTarifArticuloEditPage();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] tarif_articulo_edit page retirement failed: ' . $e->getMessage());
+        }
+        try {
+            self::retireTarifArticuloPreciosPage();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] tarif_articulo_precios page retirement failed: ' . $e->getMessage());
+        }
+        try {
+            self::retireTarifArticulosPage();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] tarif_articulos page retirement failed: ' . $e->getMessage());
+        }
+        try {
+            self::registerViewExtensions();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] view extensions registration failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * TwigLoaderEvent self-registers the @catalogo_core namespace over this
+     * plugin's View dir so the injected tabs are self-contained and testable
+     * without $GLOBALS['plugins']; TwigInitEvent registers the opcional and
+     * article hook pairs (they need the registry during the Twig build).
+     * Idempotent behind the static guard.
+     */
+    private static function registerViewExtensions(): void
+    {
+        if (self::$viewExtensionsRegistered) {
+            return;
+        }
+        self::$viewExtensionsRegistered = true;
+
+        $dispatcher = FSEventDispatcher::getInstance();
+
+        $dispatcher->addListener(TwigLoaderEvent::NAME, static function (TwigLoaderEvent $event): void {
+            $loader = $event->getLoader();
+            if ($loader instanceof FilesystemLoader) {
+                $loader->addPath(__DIR__ . '/View', 'catalogo_core');
+            }
+        });
+
+        $dispatcher->addListener(TwigInitEvent::NAME, static function (TwigInitEvent $event): void {
+            self::registerHooks();
+        });
+    }
+
+    /**
+     * Registers the frozen opcional and article view hooks, guarded by the
+     * static flag so repeated Twig builds never duplicate them (AD-5).
+     */
+    private static function registerHooks(): void
+    {
+        if (self::$hooksRegistered) {
+            return;
+        }
+
+        foreach (self::OPCIONAL_HOOK_TEMPLATES as $hook => $template) {
+            ViewHookRegistry::register($hook, $template);
+        }
+
+        foreach (self::ARTICULO_HOOK_TEMPLATES as $hook => $template) {
+            ViewHookRegistry::register($hook, $template);
+        }
+
+        self::$hooksRegistered = true;
     }
 
     /**
@@ -137,6 +271,79 @@ final class Init
                 new $fqcn();
             }
         }
+
+        // Per-(tarifa, opcional) master: FK → tarif_tarifas + catalogo_opcionales,
+        // both ensured above. Dedicated step after the moved-table loop (design
+        // AD6) so the pinned 5-table FK_SAFE_SEQUENCE literal stays frozen.
+        // fs_model ensures the table only when missing, so re-running is a no-op.
+        $masterFile = FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_opcional.php';
+        if (is_file($masterFile)) {
+            require_once $masterFile;
+        }
+        $masterFqcn = 'FSFramework\\model\\tarif_tarifa_opcional';
+        if (class_exists($masterFqcn, false) && is_subclass_of($masterFqcn, \fs_model::class)) {
+            new $masterFqcn();
+        }
+    }
+
+    /**
+     * Asegura la tabla tarif_articulo_precios (precio/estado por tarifa de un
+     * artículo) absorbida desde tarifario cuando el plugin tarifario NO está
+     * activo (instalación standalone). Idempotente: require_once + fs_model
+     * solo crea la tabla si falta. tarif_tarifas se asegura primero porque
+     * tarif_articulo_precio::install() la consume (AD-8).
+     */
+    public static function ensureArticuloTarifaTables(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+
+        // tarif_tarifas debe existir antes de la tabla de precios (install()).
+        self::ensureFamiliasTarifaTables();
+
+        $file = FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_precio.php';
+        if (is_file($file)) {
+            require_once $file;
+        }
+
+        $fqcn = 'FSFramework\\model\\tarif_articulo_precio';
+        if (class_exists($fqcn, false) && is_subclass_of($fqcn, \fs_model::class)) {
+            new $fqcn();
+        }
+    }
+
+    /**
+     * Asegura las tres tablas del detalle canónico de artículo absorbidas
+     * desde tarifario por WU-2 (tarif_tarifa_articulo, su etiqueta y las
+     * imágenes) cuando el plugin tarifario NO está activo (instalación
+     * standalone). Idempotente: require_once + fs_model solo crea la tabla si
+     * falta. Orden FK-seguro: tarif_tarifas primero, luego
+     * tarif_tarifa_articulo → tarif_tarifa_articulo_etiqueta →
+     * tarif_articulo_imagen (AD-W2-8). No modifica el cuerpo congelado de
+     * ensureArticuloTarifaTables() (WU-1).
+     */
+    public static function ensureArticuloDetalleTables(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+
+        // tarif_tarifas debe existir antes de las tablas con FK (install()).
+        self::ensureFamiliasTarifaTables();
+
+        $models = [
+            FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_articulo.php',
+            FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_articulo_etiqueta.php',
+            FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_imagen.php',
+        ];
+
+        foreach ($models as $file) {
+            if (is_file($file)) {
+                require_once $file;
+            }
+
+            $fqcn = 'FSFramework\\model\\' . basename($file, '.php');
+            if (class_exists($fqcn, false) && is_subclass_of($fqcn, \fs_model::class)) {
+                new $fqcn();
+            }
+        }
     }
 
     /**
@@ -155,6 +362,116 @@ final class Init
 
         $page = new \fs_page();
         $existing = $page->get('ventas_familias');
+        if ($existing !== false) {
+            $existing->delete();
+        }
+    }
+
+    /**
+     * Retira la página plana tarif_opcionales, eliminada por la unificación
+     * de opcionales en ventas_opcionales (OUM-09, AD-9). Sin alias de
+     * redirección: fs_user::get_menu() no filtra páginas muertas, así que una
+     * fila huérfana renderizaría un item de menú roto. Idempotente:
+     * fs_page::get() devuelve FALSE si la fila no existe; delete() ejecuta el
+     * DELETE y limpia la caché m_fs_page_all.
+     */
+    private static function retireTarifOpcionalesPage(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        if (!class_exists('fs_page', false)) {
+            require_once FS_FOLDER . '/model/fs_page.php';
+        }
+
+        $page = new \fs_page();
+        $existing = $page->get('tarif_opcionales');
+        if ($existing !== false) {
+            $existing->delete();
+        }
+    }
+
+    /**
+     * Retira la página tarif_opcional_precios, absorbida por
+     * tarif_opcional_edit y eliminada sin alias (OUM-11, AD-11). Sin alias de
+     * redirección: fs_user::get_menu() no filtra páginas muertas, así que una
+     * fila huérfana renderizaría un item de menú roto. Idempotente:
+     * fs_page::get() devuelve FALSE si la fila no existe; delete() ejecuta el
+     * DELETE y limpia la caché m_fs_page_all.
+     */
+    private static function retireTarifOpcionalPreciosPage(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        if (!class_exists('fs_page', false)) {
+            require_once FS_FOLDER . '/model/fs_page.php';
+        }
+
+        $page = new \fs_page();
+        $existing = $page->get('tarif_opcional_precios');
+        if ($existing !== false) {
+            $existing->delete();
+        }
+    }
+
+    /**
+     * Retira la página tarif_articulo_edit, absorbida por el detalle canónico
+     * ventas_articulo y eliminada sin alias (ART-06, AD-W2-5/W2-6). Sin alias
+     * de redirección: fs_user::get_menu() no filtra páginas muertas, así que
+     * una fila huérfana renderizaría un item de menú roto. Idempotente:
+     * fs_page::get() devuelve FALSE si la fila no existe; delete() ejecuta el
+     * DELETE y limpia la caché m_fs_page_all.
+     */
+    private static function retireTarifArticuloEditPage(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        if (!class_exists('fs_page', false)) {
+            require_once FS_FOLDER . '/model/fs_page.php';
+        }
+
+        $page = new \fs_page();
+        $existing = $page->get('tarif_articulo_edit');
+        if ($existing !== false) {
+            $existing->delete();
+        }
+    }
+
+    /**
+     * Retira la página tarif_articulo_precios, absorbida por el detalle
+     * canónico ventas_articulo y eliminada sin alias (ART-06, AD-W2-5/W2-6).
+     * Sin alias de redirección: fs_user::get_menu() no filtra páginas muertas,
+     * así que una fila huérfana renderizaría un item de menú roto. Idempotente:
+     * fs_page::get() devuelve FALSE si la fila no existe; delete() ejecuta el
+     * DELETE y limpia la caché m_fs_page_all.
+     */
+    private static function retireTarifArticuloPreciosPage(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        if (!class_exists('fs_page', false)) {
+            require_once FS_FOLDER . '/model/fs_page.php';
+        }
+
+        $page = new \fs_page();
+        $existing = $page->get('tarif_articulo_precios');
+        if ($existing !== false) {
+            $existing->delete();
+        }
+    }
+
+    /**
+     * Retira la página tarif_articulos, absorbida por el listado canónico
+     * ventas_articulos y eliminada sin alias (ALC-06, AD-W3-7). Sin alias de
+     * redirección: fs_user::get_menu() no filtra páginas muertas, así que una
+     * fila huérfana renderizaría un item de menú roto. Idempotente:
+     * fs_page::get() devuelve FALSE si la fila no existe; delete() ejecuta el
+     * DELETE y limpia la caché m_fs_page_all.
+     */
+    private static function retireTarifArticulosPage(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+        if (!class_exists('fs_page', false)) {
+            require_once FS_FOLDER . '/model/fs_page.php';
+        }
+
+        $page = new \fs_page();
+        $existing = $page->get('tarif_articulos');
         if ($existing !== false) {
             $existing->delete();
         }

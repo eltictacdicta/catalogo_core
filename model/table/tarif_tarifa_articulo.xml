@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla tarif_tarifa_articulo: Configuración de artículos por tarifa
+    Permite que cada tarifa tenga sus propios artículos con familia específica
+    y niveles de visibilidad (en_tarifa para exportar, en_catalogo para web).
+    
+    Nota: La relación con tarif_tarifa_familia no usa FK porque:
+    1. codfamilia puede ser NULL
+    2. La familia puede no existir todavía en la tarifa cuando se crea el artículo
+    3. ON DELETE SET NULL no funciona con FKs compuestas parciales
+    La integridad se gestiona a nivel de aplicación.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_articulo_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, referencia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_articulo_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_articulo_articulo</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

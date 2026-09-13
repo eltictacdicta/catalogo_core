@@ -55,10 +55,11 @@
                             </td>
                             <td class="text-center">
                                 <button type="button"
-                                        class="btn btn-xs js-toggle-obligatorio-tpv {{ grupo.obligatorio_en_articulo ? 'btn-warning' : 'btn-default' }}"
-                                        data-type="grupo"
-                                        data-id="{{ grupo.id }}"
-                                        data-obligatorio="{{ grupo.obligatorio_en_articulo ? '1' : '0' }}"
+                                        class="btn btn-xs {{ grupo.obligatorio_en_articulo ? 'btn-warning' : 'btn-default' }}"
+                                        hx-post="{{ fsc.url() }}"
+                                        hx-vals='{"toggle_obligatorio_grupo": "1", "id_grupo": "{{ grupo.id }}", "obligatorio": "{{ grupo.obligatorio_en_articulo ? "0" : "1" }}"}'
+                                        hx-include="closest form"
+                                        hx-target="#opcionales" hx-swap="outerHTML"
                                         title="{{ 'optional-required-tpv-help'|trans }}">
                                     <span class="label {{ grupo.obligatorio_en_articulo ? 'label-warning' : 'label-default' }}">
                                         {% if grupo.obligatorio_en_articulo %}
@@ -71,8 +72,12 @@
                             </td>
                             <td class="text-right">
                                 <button type="button"
-                                        class="btn btn-xs btn-danger js-remove-grupo-articulo"
-                                        data-id="{{ grupo.id }}"
+                                        class="btn btn-xs btn-danger"
+                                        hx-post="{{ fsc.url() }}"
+                                        hx-vals='{"remove_grupo_articulo": "1", "id_grupo": "{{ grupo.id }}"}'
+                                        hx-include="closest form"
+                                        hx-target="#opcionales" hx-swap="outerHTML"
+                                        hx-confirm="{{ 'remove-optional-group-from-article-confirm'|trans|default('¿Quitar este grupo del artículo?') }}"
                                         title="{{ 'remove-optional-group'|trans }}">
                                     <span class="glyphicon glyphicon-trash"></span>
                                 </button>
@@ -88,7 +93,7 @@
             </div>
 
             {% if fsc.grupos_disponibles|length > 0 %}
-            <div class="form-inline js-add-grupo-form" style="margin-bottom: 20px;">
+            <div class="form-inline" style="margin-bottom: 20px;">
                 <div class="form-group">
                     <label for="id_grupo">{{ 'add-optional-group'|trans }}</label>
                     <select class="form-control" name="id_grupo" id="id_grupo" required>
@@ -100,11 +105,15 @@
                 </div>
                 <div class="checkbox" style="margin-left: 10px;">
                     <label>
-                        <input type="checkbox" name="obligatorio" value="1"/>
+                        <input type="checkbox" name="obligatorio" id="id_grupo_obligatorio" value="1"/>
                         {{ 'optional-required-tpv'|trans }}
                     </label>
                 </div>
-                <button type="button" class="btn btn-success js-add-grupo-submit">
+                <button type="button" class="btn btn-success"
+                        hx-post="{{ fsc.url() }}"
+                        hx-vals='{"add_grupo_articulo": "1"}'
+                        hx-include="#id_grupo, #id_grupo_obligatorio, closest form"
+                        hx-target="#opcionales" hx-swap="outerHTML">
                     <span class="glyphicon glyphicon-plus"></span>&nbsp; {{ 'add'|trans }}
                 </button>
             </div>
@@ -135,10 +144,11 @@
                             <td class="text-right">{{ opcional.precio_para_articulo(fsc.articulo, fsc.lista_precio_defecto)|number_format(2, ',', '.') }}</td>
                             <td class="text-center">
                                 <button type="button"
-                                        class="btn btn-xs js-toggle-obligatorio-tpv {{ opcional.obligatorio_en_articulo ? 'btn-warning' : 'btn-default' }}"
-                                        data-type="opcional"
-                                        data-id="{{ opcional.id }}"
-                                        data-obligatorio="{{ opcional.obligatorio_en_articulo ? '1' : '0' }}"
+                                        class="btn btn-xs {{ opcional.obligatorio_en_articulo ? 'btn-warning' : 'btn-default' }}"
+                                        hx-post="{{ fsc.url() }}"
+                                        hx-vals='{"toggle_obligatorio_opcional": "1", "id_opcional": "{{ opcional.id }}", "obligatorio": "{{ opcional.obligatorio_en_articulo ? "0" : "1" }}"}'
+                                        hx-include="closest form"
+                                        hx-target="#opcionales" hx-swap="outerHTML"
                                         title="{{ 'optional-required-tpv-help'|trans }}">
                                     <span class="label {{ opcional.obligatorio_en_articulo ? 'label-warning' : 'label-default' }}">
                                         {% if opcional.obligatorio_en_articulo %}
@@ -151,8 +161,12 @@
                             </td>
                             <td class="text-right">
                                 <button type="button"
-                                        class="btn btn-xs btn-danger js-remove-opcional-articulo"
-                                        data-id="{{ opcional.id }}"
+                                        class="btn btn-xs btn-danger"
+                                        hx-post="{{ fsc.url() }}"
+                                        hx-vals='{"remove_opcional_articulo": "1", "id_opcional": "{{ opcional.id }}"}'
+                                        hx-include="closest form"
+                                        hx-target="#opcionales" hx-swap="outerHTML"
+                                        hx-confirm="{{ 'remove-optional-from-article-confirm'|trans|default('¿Quitar este opcional del artículo?') }}"
                                         title="{{ 'remove-optional'|trans }}">
                                     <span class="glyphicon glyphicon-trash"></span>
                                 </button>
@@ -168,7 +182,7 @@
             </div>
 
             {% if fsc.opcionales_disponibles|length > 0 %}
-            <div class="form-inline js-add-opcional-form">
+            <div class="form-inline">
                 <div class="form-group">
                     <label for="id_opcional">{{ 'add-optional-loose'|trans }}</label>
                     <select class="form-control" name="id_opcional" id="id_opcional" required>
@@ -180,11 +194,15 @@
                 </div>
                 <div class="checkbox" style="margin-left: 10px;">
                     <label>
-                        <input type="checkbox" name="obligatorio" value="1"/>
+                        <input type="checkbox" name="obligatorio" id="id_opcional_obligatorio" value="1"/>
                         {{ 'optional-required-tpv'|trans }}
                     </label>
                 </div>
-                <button type="button" class="btn btn-success js-add-opcional-submit">
+                <button type="button" class="btn btn-success"
+                        hx-post="{{ fsc.url() }}"
+                        hx-vals='{"add_opcional_articulo": "1"}'
+                        hx-include="#id_opcional, #id_opcional_obligatorio, closest form"
+                        hx-target="#opcionales" hx-swap="outerHTML">
                     <span class="glyphicon glyphicon-plus"></span>&nbsp; {{ 'add'|trans }}
                 </button>
             </div>

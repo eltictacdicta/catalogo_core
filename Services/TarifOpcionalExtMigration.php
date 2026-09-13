@@ -54,15 +54,36 @@ final class TarifOpcionalExtMigration
 
     private static function resolveSourceTable(\fs_db2 $db): ?string
     {
-        if (self::tableExists($db, 'catalogo_opcionales')) {
-            return 'catalogo_opcionales';
-        }
+        // The extension columns (ref_sap / en_catalogo / en_tarifa) only exist
+        // on legacy-shaped tables. Pick the first table that carries them AND
+        // still has rows missing an ext row, so an empty or already-migrated
+        // catalogo_opcionales never shadows the populated legacy table.
+        foreach (['catalogo_opcionales', 'tarif_opcionales'] as $candidate) {
+            if (!self::tableExists($db, $candidate)) {
+                continue;
+            }
 
-        if (self::tableExists($db, 'tarif_opcionales')) {
-            return 'tarif_opcionales';
+            if (!self::hasLegacyExtensionColumns($db, $candidate)) {
+                continue;
+            }
+
+            if (self::hasPendingLegacyRows($db, $candidate)) {
+                return $candidate;
+            }
         }
 
         return null;
+    }
+
+    private static function hasLegacyExtensionColumns(\fs_db2 $db, string $table): bool
+    {
+        foreach (['ref_sap', 'codigo2', 'en_catalogo', 'en_tarifa'] as $column) {
+            if (self::columnExists($db, $table, $column)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function copyLegacyRows(\fs_db2 $db, string $sourceTable): void

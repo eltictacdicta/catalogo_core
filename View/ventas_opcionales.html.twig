@@ -1,126 +1,684 @@
-{{ include('header.html.twig') }}
+{% import 'Macro/TarifarioComponents.html.twig' as tarif %}
+{% import 'Macro/Htmx.html.twig' as htmx %}
+{% import 'Macro/Alpine.html.twig' as alpine %}
+{% include 'header.html.twig' %}
 
-<script type="text/javascript">
-function delete_opcional(url, id) {
-    bootbox.confirm({
-        message: '{{ 'confirm-delete-optional'|trans|e('js') }}',
-        title: '<b>{{ 'attention'|trans|default('Atención') }}</b>',
-        callback: function (result) {
-            if (result) {
-                var form = document.createElement('form');
-                form.method = 'POST';
-                form.action = url;
+{# htmx 4 boot: inherited CSRF headers on every request. allowScriptTags:false
+   scrubs the scripts of any incoming body fragment before a filter/mutation
+   swap (design AD-10). #}
+{{ htmx.boot({'allowScriptTags': false}) }}
 
-                var deleteField = document.createElement('input');
-                deleteField.type = 'hidden';
-                deleteField.name = 'delete';
-                deleteField.value = id;
-                form.appendChild(deleteField);
+{% set current_query = fsc.request.query.get('query') ?: fsc.request.query.get('search') %}
 
-                var csrfField = document.createElement('input');
-                csrfField.type = 'hidden';
-                csrfField.name = 'form_token';
-                csrfField.value = document.querySelector('input[name="form_token"]').value;
-                form.appendChild(csrfField);
-
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-    });
+<style>
+[x-cloak] {
+   display: none !important;
 }
-</script>
+.opcional-alpine-modal {
+   position: fixed;
+   top: 0;
+   right: 0;
+   bottom: 0;
+   left: 0;
+   z-index: 1050;
+   overflow-y: auto;
+   outline: 0;
+}
+.opcional-alpine-backdrop {
+   position: fixed;
+   top: 0;
+   right: 0;
+   bottom: 0;
+   left: 0;
+   z-index: 1040;
+   background-color: #000;
+   opacity: 0.5;
+}
+</style>
 
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-sm-12">
-            <div class="page-header">
-                <h1>
-                    <i class="fa fa-puzzle-piece" aria-hidden="true"></i>&nbsp; {{ 'optionals'|trans }}
-                    <span class="badge">{{ fsc.resultados|length }}</span>
-                    <a class="btn btn-xs btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
-                        <span class="glyphicon glyphicon-refresh"></span>
-                    </a>
-                    <a class="btn btn-xs btn-success" href="index.php?page=ventas_opcional" title="{{ 'optional-new'|trans }}">
-                        <span class="glyphicon glyphicon-plus"></span>
-                        <span class="hidden-xs">&nbsp;{{ 'optional-new'|trans }}</span>
-                    </a>
-                    <a class="btn btn-xs btn-default" href="index.php?page=ventas_opcional_grupos" title="{{ 'optional-groups'|trans }}">
-                        <span class="glyphicon glyphicon-th-large"></span>
-                        <span class="hidden-xs">&nbsp;{{ 'optional-groups'|trans }}</span>
-                    </a>
-                    <span class="btn-group">
-                        {% for ext in fsc.extensions %}
-                            {% if ext.type == 'button' %}
-                            <a href="index.php?page={{ ext.from }}{{ ext.params }}" class="btn btn-xs btn-default">{{ ext.text }}</a>
-                            {% endif %}
-                        {% endfor %}
-                    </span>
-                </h1>
+<div class="container-fluid" style="margin-bottom: 10px;">
+   <div class="row">
+      <div class="col-xs-12">
+         <div class="btn-group hidden-xs">
+            <a class="btn btn-sm btn-default" href="{{ fsc.url() }}" title="{{ 'reload'|trans }}">
+               <span class="glyphicon glyphicon-refresh"></span>
+            </a>
+         </div>
+
+         {# Nuevo opcional — Alpine CSP component: opens the create modal, whose
+            form submits through hx-post to the unified controller (OUM-05). #}
+         <div class="btn-group" x-data="opcionalNew">
+            <button type="button" class="btn btn-sm btn-success" @click="openModal()">
+               <span class="glyphicon glyphicon-plus"></span>
+               <span class="hidden-xs">&nbsp;Nuevo opcional</span>
+            </button>
+
+            <div class="opcional-alpine-modal" x-show="open" x-cloak tabindex="-1" role="dialog">
+               <div class="modal-dialog modal-lg" role="document">
+                  <div class="modal-content">
+                     <div class="modal-header">
+                        <button type="button" class="close" @click="close()">&times;</button>
+                        <h4 class="modal-title"><i class="fa fa-plus"></i> Nuevo opcional</h4>
+                     </div>
+                     <form class="form-horizontal" role="form" name="f_nuevo_opcional" action="{{ fsc.url() }}" method="post"
+                           hx-post="{{ fsc.url() }}" hx-target="body" hx-select="body" hx-swap="outerHTML">
+                        {{ csrf_field() }}
+                        <div class="modal-body">
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">Código</label>
+                              <div class="col-sm-10">
+                                 <input class="form-control" type="text" name="codigo" maxlength="20" autocomplete="off"/>
+                                 <p class="help-block">Dejar en blanco para asignar automáticamente.</p>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">REF</label>
+                              <div class="col-sm-10">
+                                 <input class="form-control" type="text" name="ref_sap" maxlength="50" autocomplete="off" placeholder="SKU / Referencia SAP"/>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">Nombre</label>
+                              <div class="col-sm-10">
+                                 <input class="form-control" type="text" name="nombre" maxlength="100" autocomplete="off" required/>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">Descripción</label>
+                              <div class="col-sm-10">
+                                 <textarea class="form-control" name="descripcion" rows="2"></textarea>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">Tipo de precio</label>
+                              <div class="col-sm-10">
+                                 <label class="radio-inline">
+                                    <input type="radio" name="tipo_precio" value="fijo" x-model="tipo_precio"/> Fijo
+                                 </label>
+                                 <label class="radio-inline">
+                                    <input type="radio" name="tipo_precio" value="porcentaje" x-model="tipo_precio"/> Porcentaje
+                                 </label>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">Grupo</label>
+                              <div class="col-sm-10">
+                                 <select class="form-control" name="sid_grupo">
+                                    <option value="">Sin grupo</option>
+                                    {% for grupo in fsc.grupos_opcional %}
+                                    <option value="{{ grupo.id }}">{{ grupo.nombre }}</option>
+                                    {% endfor %}
+                                 </select>
+                                 <p class="help-block"><a href="index.php?page=ventas_opcional_grupos">Gestionar grupos</a></p>
+                              </div>
+                           </div>
+                           {% if fsc.tarifas|length > 0 %}
+                           <hr/>
+                           <div x-show="tipo_precio === 'fijo'">
+                           <h5><b>Precios por tarifa</b></h5>
+                           {% for tarifa in fsc.tarifas %}
+                           <div class="form-group">
+                              <label class="col-sm-4 control-label">
+                                 {{ tarifa.nombre }}
+                                 {% if tarifa.por_defecto %}<span class="label label-primary label-xs">defecto</span>{% endif %}
+                              </label>
+                              <div class="col-sm-4">
+                                 <div class="input-group">
+                                    <input class="form-control" type="text" name="precio_tarifa_{{ tarifa.codtarifa }}" value="" autocomplete="off" placeholder="0.00"/>
+                                    <div class="input-group-addon">{{ fsc.simbolo_divisa_tarifa(tarifa.coddivisa) }}</div>
+                                 </div>
+                              </div>
+                           </div>
+                           {% endfor %}
+                           </div>
+                           <div x-show="tipo_precio === 'porcentaje'" x-cloak>
+                           <h5><b>Porcentaje sobre PVP</b></h5>
+                           <div class="form-group">
+                              <label class="col-sm-4 control-label">Porcentaje</label>
+                              <div class="col-sm-4">
+                                 <div class="input-group">
+                                    <input class="form-control" type="text" name="porcentaje" value="" autocomplete="off" placeholder="0.00"/>
+                                    <div class="input-group-addon">%</div>
+                                 </div>
+                              </div>
+                           </div>
+                           </div>
+                           {% else %}
+                           <div class="form-group">
+                              <div class="col-sm-12">
+                                 <div class="alert alert-warning">
+                                    <i class="fa fa-warning"></i> No hay tarifas definidas.
+                                    <a href="index.php?page=tarif_tarifas">Crear tarifas</a> para poder asignar precios.
+                                 </div>
+                              </div>
+                           </div>
+                           {% endif %}
+                           <hr/>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">Familias</label>
+                              <div class="col-sm-10">
+                                 <select class="form-control" name="familias[]" multiple size="6">
+                                    {% for fam in fsc.familia.all() %}
+                                    <option value="{{ fam.codfamilia }}">{{ fam.nivel }}{{ fam.descripcion }}</option>
+                                    {% endfor %}
+                                 </select>
+                                 <p class="help-block">Mantén Ctrl para seleccionar varias familias.</p>
+                              </div>
+                           </div>
+                        </div>
+                        <div class="modal-footer">
+                           <button type="button" class="btn btn-default" @click="close()">Cancelar</button>
+                           <button class="btn btn-primary" type="submit">
+                              <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; Guardar
+                           </button>
+                        </div>
+                     </form>
+                  </div>
+               </div>
             </div>
+         </div>
 
-            <form class="form-inline" method="get" action="{{ fsc.url() }}">
-                <div class="form-group">
-                    <input type="text" name="search" class="form-control" placeholder="{{ 'search'|trans }}..." value="{{ fsc.search_query }}" autocomplete="off"/>
-                </div>
-                <button type="submit" class="btn btn-primary">
-                    <span class="glyphicon glyphicon-search"></span>
-                </button>
-                {% if fsc.search_query %}
-                <a href="{{ fsc.url() }}" class="btn btn-default">{{ 'clear'|trans }}</a>
-                {% endif %}
-            </form>
+         <div class="btn-group">
+            <a class="btn btn-sm btn-default" href="index.php?page=ventas_opcional" title="{{ 'optional-new'|trans }}">
+               <span class="glyphicon glyphicon-edit"></span>
+               <span class="hidden-xs">&nbsp;Nueva ficha</span>
+            </a>
+            <a class="btn btn-sm btn-default" href="index.php?page=ventas_opcional_grupos" title="{{ 'optional-groups'|trans }}">
+               <span class="glyphicon glyphicon-th-large"></span>
+               <span class="hidden-xs">&nbsp;{{ 'optional-groups'|trans }}</span>
+            </a>
+            <a class="btn btn-sm btn-default" href="index.php?page=ventas_articulos">
+               <span class="glyphicon glyphicon-th-list"></span>
+               <span class="hidden-xs">&nbsp;Artículos</span>
+            </a>
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_familias">
+               <i class="fa fa-folder-open-o"></i>
+               <span class="hidden-xs">&nbsp;Familias</span>
+            </a>
+         </div>
 
-            <div class="table-responsive" style="margin-top: 15px;">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th class="text-left">{{ 'optional-code'|trans }}</th>
-                            <th class="text-left">{{ 'optional-name'|trans }}</th>
-                            <th class="text-left">{{ 'optional-group'|trans }}</th>
-                            <th class="text-right">{{ 'optional-base-price'|trans }}</th>
-                            <th class="text-center">{{ 'status'|trans|default('Estado') }}</th>
-                            <th class="text-right">{{ 'actions'|trans }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for opcional in fsc.resultados %}
-                        <tr{% if not opcional.activo %} class="danger"{% endif %}>
-                            <td><a href="{{ opcional.url() }}">{{ opcional.codigo }}</a></td>
-                            <td>{{ opcional.nombre }}</td>
-                            <td>{{ opcional.etiqueta_grupo() }}</td>
-                            <td class="text-right">{{ opcional.etiqueta_precio_base() }}</td>
-                            <td class="text-center">
-                                {% if opcional.activo %}
-                                    <span class="label label-success">{{ 'active'|trans|default('Activo') }}</span>
-                                {% else %}
-                                    <span class="label label-danger">{{ 'inactive'|trans|default('Inactivo') }}</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-right">
-                                <div class="btn-group">
-                                    <a class="btn btn-sm btn-default" href="{{ opcional.url() }}" title="{{ 'edit'|trans|default('Editar') }}">
-                                        <span class="glyphicon glyphicon-edit"></span>
-                                    </a>
-                                    {% if fsc.allow_delete is defined and fsc.allow_delete %}
-                                    <a class="btn btn-sm btn-danger" onclick="delete_opcional('{{ fsc.url() }}', '{{ opcional.id }}')" title="{{ 'delete'|trans }}">
-                                        <span class="glyphicon glyphicon-trash"></span>
-                                    </a>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
+         {# Exportar Excel — Alpine CSP component: the download stays a GET. #}
+         <div class="btn-group" x-data="opcionalExport"
+              data-export-url="{{ fsc.url() }}&action=export_excel_opcionales&codtarifa={{ fsc.b_codtarifa|url_encode }}">
+            <button type="button" class="btn btn-sm btn-success" @click="openModal()">
+               <i class="fa fa-file-excel-o"></i>
+               <span class="hidden-xs">&nbsp;Exportar Excel</span>
+            </button>
+
+            <div class="opcional-alpine-modal" x-show="open" x-cloak tabindex="-1" role="dialog">
+               <div class="modal-dialog" role="document">
+                  <div class="modal-content">
+                     <div class="modal-header">
+                        <button type="button" class="close" @click="close()">&times;</button>
+                        <h4 class="modal-title">
+                           <i class="fa fa-file-excel-o text-success"></i> Exportar Opcionales a Excel
+                        </h4>
+                     </div>
+                     <div class="modal-body">
+                        <div class="alert alert-info">
+                           <i class="fa fa-info-circle"></i>
+                           <strong>Exportación de Opcionales:</strong>
+                           <p style="margin-top: 10px; margin-bottom: 0;">
+                              Exporta los opcionales con las columnas:
+                              <strong>Codigo (No editar), Ref SAP:, Descripción, Precio, Familia y Subfamilia</strong>.
+                           </p>
+                        </div>
+
+                        {% if fsc.tarifa_seleccionada %}
+                        <div class="form-group">
+                           <label>Tarifa:</label>
+                           <p class="form-control-static">
+                              <strong>{{ fsc.tarifa_seleccionada.nombre }}</strong>
+                              <span class="text-muted">({{ fsc.tarifa_seleccionada.codtarifa }})</span>
+                           </p>
+                        </div>
                         {% else %}
-                        <tr class="warning">
-                            <td colspan="9">{{ 'optional-no-results'|trans }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                        <div class="alert alert-warning">
+                           <i class="fa fa-warning"></i> No hay tarifa seleccionada. Los precios se exportarán como 0.
+                        </div>
+                        {% endif %}
+                     </div>
+                     <div class="modal-footer">
+                        <button type="button" class="btn btn-default" @click="close()">
+                           <i class="fa fa-times"></i> Cancelar
+                        </button>
+                        <button type="button" class="btn btn-success" @click="exportar()">
+                           <i class="fa fa-download"></i> Exportar Excel
+                        </button>
+                     </div>
+                  </div>
+               </div>
             </div>
-        </div>
-    </div>
+         </div>
+      </div>
+   </div>
+</div>
+
+{# opcionalConfirm root wraps the list so the per-row delete buttons can open
+   its confirmation modal; the modal itself is rendered once at the bottom. #}
+<div x-data="opcionalConfirm" data-post-url="{{ fsc.url() }}" data-csrf-token="{{ csrf_token() }}">
+
+   <div class="container-fluid">
+      {# Filtros de página completa vía hx-get + push de URL (OUM-08/AD-10): cada
+         control conserva su name y envía su propio valor; el resto viaja en la URL. #}
+      {% set hx_query = '&query=' ~ current_query|url_encode %}
+      {% set hx_familia = '&b_codfamilia=' ~ fsc.b_codfamilia|url_encode %}
+      {% set hx_tarifa = '&b_codtarifa=' ~ fsc.b_codtarifa|url_encode %}
+      {% set hx_activos = '&b_solo_activos=' ~ (fsc.b_solo_activos ? 'TRUE' : 'FALSE') %}
+      {% set hx_grupo = '&b_id_grupo=' ~ fsc.b_id_grupo|url_encode %}
+      <form name="f_buscar" action="{{ fsc.url() }}" method="get" class="form">
+         <div class="row">
+            <div class="col-sm-2">
+               <div class="form-group{% if current_query %} has-success{% endif %}">
+                  <div class="input-group">
+                     <input class="form-control" type="text" name="query" value="{{ current_query }}" autocomplete="off" placeholder="Buscar..."
+                             id="input_query"
+                             hx-get="{{ fsc.url() }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_grupo }}"
+                             hx-trigger="keydown[key === 'Enter']"
+                            hx-target="body"
+                            hx-select="body"
+                            hx-swap="outerHTML"
+                            hx-push-url="true"
+                            hx-boost="true">
+                     <span class="input-group-btn">
+                        <button class="btn btn-primary" type="button"
+                                hx-get="{{ fsc.url() }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_grupo }}"
+                                hx-include="#input_query"
+                                hx-trigger="click"
+                                hx-target="body"
+                                hx-select="body"
+                                hx-swap="outerHTML"
+                                hx-push-url="true"
+                                hx-boost="true">
+                           <span class="glyphicon glyphicon-search"></span>
+                        </button>
+                     </span>
+                  </div>
+               </div>
+            </div>
+            <div class="col-sm-2">
+               <div class="form-group{% if fsc.b_codfamilia %} has-success{% endif %}">
+                   <select class="form-control" name="b_codfamilia"
+                           hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_tarifa }}{{ hx_activos }}{{ hx_grupo }}"
+                          hx-trigger="change"
+                          hx-target="body"
+                          hx-select="body"
+                          hx-swap="outerHTML"
+                          hx-push-url="true"
+                          hx-boost="true">
+                     <option value="">Todas las familias</option>
+                     {% for fam in fsc.familia.all() %}
+                        <option value="{{ fam.codfamilia }}"{% if fam.codfamilia == fsc.b_codfamilia %} selected{% endif %}>{{ fam.nivel }}{{ fam.descripcion }}</option>
+                     {% endfor %}
+                  </select>
+               </div>
+            </div>
+            <div class="col-sm-2">
+               <div class="form-group{% if fsc.b_codtarifa %} has-success{% endif %}">
+                   <select class="form-control" name="b_codtarifa"
+                           hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_activos }}{{ hx_grupo }}"
+                          hx-trigger="change"
+                          hx-target="body"
+                          hx-select="body"
+                          hx-swap="outerHTML"
+                          hx-push-url="true"
+                          hx-boost="true"
+                          title="Tarifa de precios">
+                     {% for tarifa in fsc.tarifas %}
+                        <option value="{{ tarifa.codtarifa }}"{% if tarifa.codtarifa == fsc.b_codtarifa %} selected{% endif %}>{{ tarifa.nombre }}{% if tarifa.por_defecto %} ★{% endif %}</option>
+                     {% endfor %}
+                  </select>
+               </div>
+            </div>
+            <div class="col-sm-2">
+               <div class="form-group{% if fsc.b_id_grupo != '' %} has-success{% endif %}">
+                  <select class="form-control" name="b_id_grupo"
+                          hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_activos }}"
+                          hx-trigger="change"
+                          hx-target="body"
+                          hx-select="body"
+                          hx-swap="outerHTML"
+                          hx-push-url="true"
+                          hx-boost="true"
+                          title="Grupo del opcional">
+                     <option value="">Todos los grupos</option>
+                     <option value="0"{% if fsc.b_id_grupo == '0' %} selected{% endif %}>Sin grupo</option>
+                     {% for grupo in fsc.grupos_opcional %}
+                        <option value="{{ grupo.id }}"{% if grupo.id == fsc.b_id_grupo %} selected{% endif %}>{{ grupo.nombre }}</option>
+                     {% endfor %}
+                  </select>
+               </div>
+            </div>
+            <div class="col-sm-2">
+               <div class="form-group">
+                  <label class="checkbox-inline">
+                     <input type="checkbox" name="b_solo_activos" value="TRUE"
+                            hx-get="{{ fsc.url() }}{{ hx_query }}{{ hx_familia }}{{ hx_tarifa }}{{ hx_grupo }}"
+                            hx-trigger="change"
+                            hx-target="body"
+                            hx-select="body"
+                            hx-swap="outerHTML"
+                            hx-push-url="true"
+                            hx-boost="true"{% if fsc.b_solo_activos %} checked{% endif %}/>
+                     Solo activos en tarifa
+                  </label>
+               </div>
+            </div>
+            <div class="col-sm-2 text-right">
+               <span class="badge">{{ fsc.total_resultados }} opcionales</span>
+            </div>
+         </div>
+      </form>
+   </div>
+
+   <div class="table-responsive">
+      <table class="table table-hover">
+         <thead>
+            <tr>
+               <th class="text-left">Código</th>
+               <th class="text-left">Ref ERP</th>
+               <th class="text-left">Nombre</th>
+               <th class="text-left">Familias</th>
+               <th class="text-left">Grupo</th>
+               <th class="text-right">
+                  Precio
+                  {% if fsc.tarifa_seleccionada %}
+                  <small class="text-muted">({{ fsc.tarifa_seleccionada.nombre }})</small>
+                  {% endif %}
+               </th>
+               <th class="text-center">Estado</th>
+               <th class="text-center">
+                  Tarifa
+                  {% if fsc.tarifa_seleccionada %}
+                  <small class="text-muted">({{ fsc.tarifa_seleccionada.nombre }})</small>
+                  {% endif %}
+               </th>
+               <th class="text-center">Catálogo</th>
+               <th class="text-right"></th>
+            </tr>
+         </thead>
+         <tbody>
+            {% for value in fsc.resultados %}
+            <tr class="{% if not fsc.opcional_activo_en_tarifa(value.id) %}warning{% endif %}">
+               <td>
+                  <a href="{{ value.url() }}">{{ value.codigo }}</a>
+               </td>
+               <td>
+                  {% if value.ref_sap %}
+                  <span class="text-muted">{{ value.ref_sap }}</span>
+                  {% else %}
+                  <span class="text-muted">-</span>
+                  {% endif %}
+               </td>
+               <td>
+                  {{ value.nombre }}
+               </td>
+               <td>
+                  {% set familias = value.get_familias() %}
+                  {% if familias|length > 0 %}
+                     {% for fam in familias %}
+                        <span class="label label-info">{{ fam.codfamilia }}</span>
+                     {% endfor %}
+                   {% else %}
+                      <span class="text-muted">-</span>
+                   {% endif %}
+                </td>
+                <td>
+                   {# Grupo resuelto desde un único mapa en el controlador (OPG-02). #}
+                   {{ fsc.nombre_grupo_opcional(value.id) }}
+                </td>
+                <td class="text-right">
+                   {% set precio_tarifa = fsc.get_precio_opcional_tarifa(value.id) %}
+                   {% if fsc.es_opcional_porcentaje(value.id) or precio_tarifa is not null %}
+                   <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" class="cancel_clickable" title="Ver/editar precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">
+                      {{ fsc.show_precio_opcional(value.id) }}
+                   </a>
+                   {% else %}
+                   <span class="text-muted">-</span>
+                   {% endif %}
+                </td>
+               <td class="text-center">
+                  {# "Estado" is the per-tarifa master `activa` (OUM-03). #}
+                  <form method="post" action="{{ fsc.url() }}&action=toggle_activa&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
+                        hx-post="{{ fsc.url() }}&action=toggle_activa&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
+                        hx-target="body" hx-select="body" hx-swap="outerHTML"
+                        class="form-inline cancel_clickable" style="display:inline-block;margin:0;">
+                     {{ csrf_field() }}
+                     <input type="hidden" name="id" value="{{ value.id }}"/>
+                     <input type="hidden" name="codtarifa" value="{{ fsc.b_codtarifa }}"/>
+                     <input type="hidden" name="query" value="{{ current_query }}"/>
+                     <input type="hidden" name="b_codfamilia" value="{{ fsc.b_codfamilia }}"/>
+                     <input type="hidden" name="b_id_grupo" value="{{ fsc.b_id_grupo }}"/>
+                     <input type="hidden" name="b_solo_activos" value="{{ fsc.b_solo_activos ? 'TRUE' : 'FALSE' }}"/>
+                     <input type="hidden" name="offset" value="{{ fsc.offset }}"/>
+                     {{ tarif.toggle_button_group({'activa': fsc.opcional_activo_en_tarifa(value.id)}, {'show_catalogo': false, 'show_en_tarifa': false, 'size': 'xs'}) }}
+                     <button type="submit" class="btn btn-xs btn-primary" title="Guardar estado en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}"><span class="glyphicon glyphicon-floppy-disk"></span></button>
+                  </form>
+               </td>
+               <td class="text-center">
+                  {# "Tarifa" is the per-tarifa master `en_tarifa` (export inclusion). #}
+                  <form method="post" action="{{ fsc.url() }}&action=toggle_en_tarifa&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
+                        hx-post="{{ fsc.url() }}&action=toggle_en_tarifa&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
+                        hx-target="body" hx-select="body" hx-swap="outerHTML"
+                        class="form-inline cancel_clickable" style="display:inline-block;margin:0;">
+                     {{ csrf_field() }}
+                     <input type="hidden" name="id" value="{{ value.id }}"/>
+                     <input type="hidden" name="codtarifa" value="{{ fsc.b_codtarifa }}"/>
+                     <input type="hidden" name="query" value="{{ current_query }}"/>
+                     <input type="hidden" name="b_codfamilia" value="{{ fsc.b_codfamilia }}"/>
+                     <input type="hidden" name="b_id_grupo" value="{{ fsc.b_id_grupo }}"/>
+                     <input type="hidden" name="b_solo_activos" value="{{ fsc.b_solo_activos ? 'TRUE' : 'FALSE' }}"/>
+                     <input type="hidden" name="offset" value="{{ fsc.offset }}"/>
+                     {{ tarif.toggle_button_group({'en_tarifa': fsc.opcional_en_tarifa_flag(value.id)}, {'show_catalogo': false, 'show_activa': false, 'size': 'xs'}) }}
+                     <button type="submit" class="btn btn-xs btn-info" title="Guardar inclusión en tarifa de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}"><span class="glyphicon glyphicon-floppy-disk"></span></button>
+                  </form>
+               </td>
+               <td class="text-center">
+                  {# "Catálogo" is the per-tarifa master `en_catalogo`. #}
+                  <form method="post" action="{{ fsc.url() }}&action=toggle_en_catalogo&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
+                        hx-post="{{ fsc.url() }}&action=toggle_en_catalogo&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
+                        hx-target="body" hx-select="body" hx-swap="outerHTML"
+                        class="form-inline cancel_clickable" style="display:inline-block;margin:0;">
+                     {{ csrf_field() }}
+                     <input type="hidden" name="id" value="{{ value.id }}"/>
+                     <input type="hidden" name="codtarifa" value="{{ fsc.b_codtarifa }}"/>
+                     <input type="hidden" name="query" value="{{ current_query }}"/>
+                     <input type="hidden" name="b_codfamilia" value="{{ fsc.b_codfamilia }}"/>
+                     <input type="hidden" name="b_id_grupo" value="{{ fsc.b_id_grupo }}"/>
+                     <input type="hidden" name="b_solo_activos" value="{{ fsc.b_solo_activos ? 'TRUE' : 'FALSE' }}"/>
+                     <input type="hidden" name="offset" value="{{ fsc.offset }}"/>
+                     {{ tarif.toggle_button_group({'en_catalogo': fsc.opcional_en_catalogo_tarifa(value.id)}, {'show_en_tarifa': false, 'show_activa': false, 'size': 'xs'}) }}
+                     <button type="submit" class="btn btn-xs btn-success" title="Guardar catálogo de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}"><span class="glyphicon glyphicon-floppy-disk"></span></button>
+                  </form>
+               </td>
+               <td class="text-right">
+                  <div class="btn-group btn-group-xs">
+                      <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" class="btn btn-info cancel_clickable" title="Precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">
+                        <span class="glyphicon glyphicon-tags"></span>
+                     </a>
+                     <a href="{{ value.url() }}" class="btn btn-default cancel_clickable" title="Editar datos generales">
+                        <span class="glyphicon glyphicon-edit"></span>
+                     </a>
+                     {% if fsc.allow_delete %}
+                     <button type="button" class="btn btn-danger cancel_clickable" title="Eliminar"
+                             @click="openModal({{ value.id }}, '{{ value.nombre|e('js') }}')">
+                        <span class="glyphicon glyphicon-trash"></span>
+                     </button>
+                     {% endif %}
+                  </div>
+               </td>
+            </tr>
+            {% else %}
+            <tr class="warning">
+               <td colspan="10">Ningún opcional encontrado. Pulsa el botón <b>Nuevo opcional</b> para crear uno.</td>
+            </tr>
+            {% endfor %}
+         </tbody>
+      </table>
+   </div>
+
+   {# Native pagination: getPaginationItems() carries query/b_*/offset. #}
+   {% set pagination = fsc.getPaginationItems() %}
+   {% if pagination|length > 0 %}
+   <div class="text-center">
+      <ul class="pagination">
+         {% for item in pagination %}
+         <li{% if item.active %} class="active"{% endif %}>
+            <a href="{{ item.url }}"
+               hx-get="{{ item.url }}"
+               hx-target="body"
+               hx-select="body"
+               hx-swap="outerHTML"
+               hx-push-url="true"
+               hx-boost="true">{{ loop.index }}</a>
+         </li>
+         {% endfor %}
+      </ul>
+   </div>
+   {% endif %}
+
+   {# Delete confirmation — Alpine CSP, posts through htmx.ajax('POST') so the
+      CSRF token travels in the request body (AD-4/AD-10). #}
+   <div class="opcional-alpine-backdrop" x-show="open" x-cloak @click="close()"></div>
+   <div class="opcional-alpine-modal" x-show="open" x-cloak tabindex="-1" role="dialog">
+      <div class="modal-dialog" role="document">
+         <div class="modal-content">
+            <div class="modal-header">
+               <button type="button" class="close" @click="close()">&times;</button>
+               <h4 class="modal-title" x-text="title"></h4>
+            </div>
+            <div class="modal-body">
+               <p x-text="message"></p>
+            </div>
+            <div class="modal-footer">
+               <button type="button" class="btn btn-default" @click="close()">Cancelar</button>
+               <button type="button" class="btn btn-danger" @click="confirm()">Eliminar</button>
+            </div>
+         </div>
+      </div>
+   </div>
 </div>
 
 {{ csrf_field() }}
-{{ include('footer.html.twig') }}
+
+{# Alpine CSP component registration — nonce'd classic script, idempotent via
+   window markers because htmx re-executes swapped body scripts (AD-10). #}
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.__opcionalesListAlpineRegistered === true) { return; }
+
+    function registerOpcionalesListComponents() {
+        if (window.__opcionalesListAlpineRegistered === true) { return; }
+        window.__opcionalesListAlpineRegistered = true;
+
+        Alpine.data('opcionalConfirm', function () {
+            return {
+                open: false,
+                id: 0,
+                title: '',
+                message: '',
+                postUrl: '',
+                init: function () {
+                    this.postUrl = this.$el.dataset.postUrl || '';
+                    this.csrfToken = this.$el.dataset.csrfToken || '';
+                },
+                openModal: function (id, nombre) {
+                    this.id = id;
+                    this.title = 'Atención';
+                    this.message = '¿Realmente desea eliminar el opcional "' + nombre + '"?';
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                },
+                confirm: function () {
+                    if (window.htmx && window.htmx.ajax) {
+                        window.htmx.ajax('POST', this.postUrl, {
+                            values: { delete: this.id, _csrf_token: this.csrfToken },
+                            target: 'body',
+                            swap: 'outerHTML',
+                            select: 'body'
+                        });
+                    }
+                    this.close();
+                }
+            };
+        });
+
+        Alpine.data('opcionalNew', function () {
+            return {
+                open: false,
+                tipo_precio: 'fijo',
+                init: function () {
+                    this._onRequestDone = this.onRequestDone.bind(this);
+                    document.addEventListener('htmx:after:request', this._onRequestDone);
+                },
+                destroy: function () {
+                    document.removeEventListener('htmx:after:request', this._onRequestDone);
+                },
+                onRequestDone: function () {
+                    if (this.open) { this.close(); }
+                },
+                openModal: function () {
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                }
+            };
+        });
+
+        Alpine.data('opcionalExport', function () {
+            return {
+                open: false,
+                exportUrl: '',
+                init: function () {
+                    this.exportUrl = this.$el.dataset.exportUrl || '';
+                },
+                openModal: function () {
+                    this.open = true;
+                    document.body.classList.add('modal-open');
+                },
+                close: function () {
+                    this.open = false;
+                    document.body.classList.remove('modal-open');
+                },
+                exportar: function () {
+                    if (this.exportUrl) {
+                        window.location.href = this.exportUrl;
+                    }
+                    this.close();
+                }
+            };
+        });
+    }
+
+    if (window.Alpine) {
+        registerOpcionalesListComponents();
+    } else {
+        document.addEventListener('alpine:init', registerOpcionalesListComponents);
+    }
+})();
+
+// htmx 4 re-executes swapped body scripts: the marker keeps the re-init
+// listener installed exactly once and re-binds Alpine after a body swap.
+(function () {
+    if (window.__opcionalesListSwapBound === true) { return; }
+    window.__opcionalesListSwapBound = true;
+
+    document.addEventListener('htmx:after:swap', function (evt) {
+        if (!window.Alpine || typeof window.Alpine.initTree !== 'function') { return; }
+        var ctx = evt && evt.detail ? evt.detail.ctx : null;
+        var target = ctx && ctx.target ? ctx.target : document.body;
+        window.Alpine.initTree(target);
+    });
+})();
+</script>
+
+{{ alpine.boot() }}
+
+{% include 'footer.html.twig' %}

@@ -24,6 +24,9 @@ namespace FSFramework\Plugins\catalogo_core\Controller;
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/fabricante.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/extras/VentasArticulosListTrait.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloListActionRegistry.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
@@ -32,17 +35,21 @@ use FSFramework\Event\FSEventDispatcher;
 use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
+use FSFramework\Plugins\catalogo_core\Services\ArticuloListActionRegistry;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Component\HttpFoundation\Request;
 
 class VentasArticulos extends PageController
 {
+    use \VentasArticulosListTrait;
+
     public array $resultados = [];
     public ?\articulo $articulo = null;
     public array $familias = [];
     public array $fabricantes = [];
     public bool $allow_delete = false;
     public bool $can_import_export = false;
+    public string $permissionDenialReason = '';
     public int $price_decimals = 2;
     /** @var array<int, \FSFramework\model\impuesto> */
     public array $impuestos = [];
@@ -76,6 +83,8 @@ class VentasArticulos extends PageController
     {
         $this->loadImpuestos();
         $this->articulo = new \articulo();
+        $this->load_list_idiomas();
+        $this->init_list_filters();
 
         if ($this->processExcelAction()) {
             return;
@@ -85,13 +94,19 @@ class VentasArticulos extends PageController
             $this->nuevoArticulo($this->request);
         }
 
-        $this->offset = (int) $this->request->query->get('offset', 0);
+        if ($this->request->isMethod('POST') && $this->request->request->has('delete')) {
+            $this->eliminarArticulo($this->request);
+        }
 
-        $search = $this->request->query->get('search', '');
-        $codfamilia = $this->request->query->get('codfamilia', '');
-        $codfabricante = $this->request->query->get('codfabricante', '');
-        $con_stock = $this->request->query->get('con_stock', '') === 'TRUE';
-        $bloqueados = $this->request->query->get('bloqueados', '') === 'TRUE';
+        // Filter aliases (query/b_codfamilia/b_codtarifa/b_solo_activos) are
+        // normalized by the trait; the canonical search()/codfamilia keys win.
+        $args = $this->list_search_args();
+        $this->offset = (int) $args['offset'];
+        $search = (string) $args['search'];
+        $codfamilia = (string) $args['codfamilia'];
+        $codfabricante = (string) $args['codfabricante'];
+        $con_stock = (bool) $args['con_stock'];
+        $bloqueados = (bool) $args['bloqueados'];
 
         if ($search !== '' || $codfamilia !== '' || $codfabricante !== '' || $con_stock || $bloqueados) {
             $this->resultados = $this->articulo->search(
@@ -106,7 +121,21 @@ class VentasArticulos extends PageController
             $this->resultados = $this->articulo->all($this->offset);
         }
 
+        $this->load_articulo_tarifa_columns($this->resultado_referencias());
         $this->loadFilterOptions();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resultado_referencias(): array
+    {
+        $refs = [];
+        foreach ($this->resultados as $resultado) {
+            $refs[] = (string) ($resultado->referencia ?? '');
+        }
+
+        return array_values(array_filter($refs, static fn (string $ref): bool => $ref !== ''));
     }
 
     private function initImportExportPermissions(): void
@@ -179,7 +208,33 @@ class VentasArticulos extends PageController
                 return $this->handleExcelImportSse();
         }
 
-        return false;
+        return ArticuloListActionRegistry::dispatch($action, $this->request, $this->exportState());
+    }
+
+    /**
+     * Neutral list state carried to a registered action handler (ALC-05).
+     *
+     * @return array<string, mixed>
+     */
+    private function exportState(): array
+    {
+        // Resolve through the trait so the absorbed aliases (query -> search,
+        // b_codfamilia -> codfamilia, b_solo_activos -> bloqueados) are applied
+        // by the registered action handlers, not just carried in the URL.
+        $args = $this->list_search_args();
+
+        return [
+            'search' => (string) $args['search'],
+            'codfamilia' => (string) $args['codfamilia'],
+            'codfabricante' => (string) $args['codfabricante'],
+            'con_stock' => (bool) $args['con_stock'],
+            'bloqueados' => (bool) $args['bloqueados'],
+            'b_codtarifa' => (string) $this->b_codtarifa,
+            'b_solo_activos' => (bool) $this->b_solo_activos,
+            'idiomas' => $this->idiomas,
+            'tarifas' => $this->tarifas,
+            'allow_delete' => $this->allow_delete,
+        ];
     }
 
     private function handleExcelImportSse(): bool
@@ -364,11 +419,15 @@ class VentasArticulos extends PageController
     private function loadArticulosForExportFiltered(): array
     {
         $model = new \articulo();
-        $search = $this->request->query->get('search', '');
-        $codfamilia = $this->request->query->get('codfamilia', '');
-        $codfabricante = $this->request->query->get('codfabricante', '');
-        $con_stock = $this->request->query->get('con_stock', '') === 'TRUE';
-        $bloqueados = $this->request->query->get('bloqueados', '') === 'TRUE';
+        // Resolve through the trait so alias-only filters (query, b_codfamilia)
+        // and the solo_activos -> bloqueados semantics are actually applied at
+        // export execution (ALC-05), not just preserved in the URL.
+        $args = $this->list_search_args();
+        $search = (string) $args['search'];
+        $codfamilia = (string) $args['codfamilia'];
+        $codfabricante = (string) $args['codfabricante'];
+        $con_stock = (bool) $args['con_stock'];
+        $bloqueados = (bool) $args['bloqueados'];
 
         if ($search !== '' || $codfamilia !== '' || $codfabricante !== '' || $con_stock || $bloqueados) {
             return $model->search(
@@ -416,20 +475,14 @@ class VentasArticulos extends PageController
         }
 
         // Neutral permission gate (R-TAR-HOOK-004/005): listeners may deny the
-        // quick-create before persistence. Default resolution is allow.
-        $permissionEvent = new ArticlePermissionFilterEvent(
-            $referencia,
-            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
-            (string) ($this->user->nick ?? '')
-        );
-        FSEventDispatcher::getInstance()->dispatch($permissionEvent, ArticlePermissionFilterEvent::NAME);
-
-        if (!$permissionEvent->isAllowed()) {
-            $this->new_error_msg('No tienes permisos para crear este artículo: ' . $permissionEvent->getDenialReason());
+        // quick-create before persistence. Default resolution is allow. The
+        // resolved codtarifa of the list context rides the event (AD-W3-5).
+        if (!$this->puedeCrearArticulo($referencia, $this->tarifa_actual())) {
+            $this->new_error_msg('No tienes permisos para crear este artículo: ' . $this->permissionDenialReason);
             return;
         }
 
-        $art = new \articulo();
+        $art = $this->articulo_nuevo();
         $art->referencia = $referencia;
         $art->descripcion = $descripcion;
         $art->codfamilia = ($codfamilia !== null && $codfamilia !== '') ? (string) $codfamilia : null;
@@ -442,10 +495,87 @@ class VentasArticulos extends PageController
         $art->set_impuesto($codimpuesto);
 
         if ($art->save()) {
+            // Per-tarifa prices only after a successful save (ALC-03): a save
+            // failure persists nothing. No transaction wrapper on purpose.
+            $this->persist_quick_create_tarifa_prices($art, $request);
             $this->new_message('Artículo ' . $art->referencia . ' guardado correctamente.');
         } else {
             $this->new_error_msg('¡Imposible guardar el artículo!');
         }
+    }
+
+    /**
+     * Neutral permission gate for the article quick-create (AD-W3-5): an admin
+     * short-circuits to allow; otherwise the neutral event resolves the action
+     * (zero listeners ⇒ allow).
+     */
+    protected function puedeCrearArticulo(string $referencia, string $codtarifa): bool
+    {
+        if (!empty($this->user->admin)) {
+            return true;
+        }
+
+        $event = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            (string) ($this->user->nick ?? ''),
+            $codtarifa
+        );
+        FSEventDispatcher::getInstance()->dispatch($event, ArticlePermissionFilterEvent::NAME);
+
+        $this->permissionDenialReason = $event->isAllowed() ? '' : $event->getDenialReason();
+
+        return $event->isAllowed();
+    }
+
+    /**
+     * Article factory seam so the quick-create is unit-testable without a DB.
+     */
+    protected function articulo_nuevo(): \articulo
+    {
+        return new \articulo();
+    }
+
+    /**
+     * CSRF-guarded POST delete of a list row (spec ALC-08, AD-W3-8). The dead
+     * `articulo.url()&delete=` GET link is gone: the mutation rides a POST
+     * field, not a query parameter.
+     */
+    private function eliminarArticulo(Request $request): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if (!$this->allow_delete) {
+            $this->new_error_msg('No tienes permiso para eliminar en esta página.');
+            return;
+        }
+
+        if (defined('FS_DEMO') && FS_DEMO) {
+            $this->new_error_msg('En el modo demo no se pueden eliminar artículos.');
+            return;
+        }
+
+        $referencia = (string) $request->request->get('delete', '');
+        if ($referencia === '') {
+            $this->new_error_msg('Artículo no encontrado.');
+            return;
+        }
+
+        $art = $this->articulo->get($referencia);
+        if (!$art) {
+            $this->new_error_msg('Artículo no encontrado.');
+            return;
+        }
+
+        if ($art->delete()) {
+            $this->new_message('Artículo ' . $art->referencia . ' eliminado correctamente.');
+            return;
+        }
+
+        $this->new_error_msg('¡Error al eliminar el artículo!');
     }
 
     private function loadExtensions(): void
@@ -495,17 +625,6 @@ class VentasArticulos extends PageController
         $separator = str_contains($baseUrl, '?') ? '&' : '?';
 
         return $baseUrl . $separator . http_build_query($params);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function getListQueryParams(): array
-    {
-        $params = $this->request->query->all();
-        unset($params['page'], $params['action']);
-
-        return $params;
     }
 
     public function hasMoreResults(): bool

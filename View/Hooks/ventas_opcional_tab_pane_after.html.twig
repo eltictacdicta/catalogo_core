@@ -1,0 +1,27 @@
+{#- Tarifas tab pane injected into catalogo_core's ventas_opcional page (OUM-10).
+    Owned by catalogo_core after WU-4 and migrated to htmx 4 + Alpine CSP
+    (WU-5, AD-10). Guarded like the header: nothing to price on an unsaved
+    opcional. The tab header's hx-get swaps the rows placeholder; the save
+    handler is the nonce'd Alpine component registered by the save-script
+    partial. Bare no-argument currency helper calls are forbidden under
+    View/Hooks (S28). -#}
+{% import 'Macro/Htmx.html.twig' as htmx %}
+{% import 'Macro/Alpine.html.twig' as alpine %}
+{% if not fsc.is_new %}
+<style>
+   [x-cloak] {
+      display: none !important;
+   }
+</style>
+<div class="tab-pane" id="tab_tarifario_precios" data-tipo="opcional"
+     x-data="opcionalTabPrecios" x-cloak>
+   <div class="callout tarifario-tab-msg" x-show="message" x-cloak
+        :class="messageClass" x-text="message"></div>
+   <div id="tab_tarifario_precios_rows">
+      <p class="text-muted">Abre la pestaña para cargar los precios por tarifa.</p>
+   </div>
+</div>
+{{ htmx.boot({'allowScriptTags': false}) }}
+{% include '@catalogo_core/Hooks/partials/opcional_tab_save_script.html.twig' %}
+{{ alpine.boot() }}
+{% endif %}

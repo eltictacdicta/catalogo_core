@@ -37,6 +37,12 @@ class tarif_opcional_precio extends catalogo_opcional_precio
     /** @var array<string, mixed> Dynamic legacy extras (nombre, codigo, ...). */
     private $extra = [];
 
+    /**
+     * Force flag set by {@see limpiar_porcentaje()}: the next save() must NOT
+     * resurrect the stored percentage through the read-modify-write (design AD-3).
+     */
+    private bool $porcentaje_limpiado = false;
+
     public function __construct($data = FALSE)
     {
         if (is_array($data) && array_key_exists('codtarifa', $data) && !array_key_exists('codlista', $data)) {
@@ -91,10 +97,20 @@ class tarif_opcional_precio extends catalogo_opcional_precio
     public function url()
     {
         if (is_null($this->id_opcional)) {
-            return "index.php?page=tarif_opcionales";
+            return "index.php?page=ventas_opcionales";
         }
 
         return "index.php?page=tarif_opcional_edit&id=" . $this->id_opcional;
+    }
+
+    /**
+     * Marks this row as explicitly switching to fixed price: the next save()
+     * must persist a NULL percentage instead of preserving the stored one.
+     */
+    public function limpiar_porcentaje(): void
+    {
+        $this->porcentaje = null;
+        $this->porcentaje_limpiado = true;
     }
 
     public function save()
@@ -107,8 +123,9 @@ class tarif_opcional_precio extends catalogo_opcional_precio
         $precio_anterior = $actual ? floatval($actual->precio) : 0.0;
 
         // Read-modify-write: preserve the stored percentage unless this
-        // instance explicitly carries one.
-        if ($this->porcentaje === null && $actual) {
+        // instance explicitly carries one, or the explicit clear force flag
+        // was raised (legacy callers keep preserving; explicit clearing works).
+        if (!$this->porcentaje_limpiado && $this->porcentaje === null && $actual) {
             $this->porcentaje = $actual->porcentaje;
         }
 
