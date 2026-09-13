@@ -1,0 +1,533 @@
+{#
+ # Gestión de Tarifas del Tarifario
+ # Vista Twig nativa con asignación de grupos
+ #}
+{% import 'Macro/TarifarioComponents.html.twig' as tarif %}
+
+{% include 'header.html.twig' %}
+
+{{ tarif.styles_common() }}
+<style>
+.grupo-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    margin: 1px 2px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.grupo-badge:hover {
+    opacity: 0.8;
+}
+.grupo-badge.activo {
+    background-color: #3c8dbc;
+    color: white;
+}
+.grupo-badge.inactivo {
+    background-color: #d2d6de;
+    color: #666;
+}
+.grupo-asignar-btn {
+    cursor: pointer;
+    color: #999;
+    font-size: 12px;
+    transition: color 0.2s ease;
+}
+.grupo-asignar-btn:hover {
+    color: #3c8dbc;
+}
+.tarifa-row:hover {
+    background-color: #f5f5f5;
+}
+.empty-state-icon {
+    font-size: 48px;
+    color: #ddd;
+}
+</style>
+
+<div class="container-fluid" style="margin-bottom: 10px;">
+   <div class="row">
+      <div class="col-xs-6">
+         <div class="btn-group">
+            <a class="btn btn-sm btn-default" href="index.php?page=ventas_articulos" title="Artículos">
+               <span class="glyphicon glyphicon-arrow-left"></span>
+               <span class="hidden-xs">&nbsp;Artículos</span>
+            </a>
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_familias" title="Familias">
+               <i class="fa fa-folder-open-o"></i>
+               <span class="hidden-xs">&nbsp;Familias</span>
+            </a>
+         </div>
+      </div>
+      <div class="col-xs-6 text-right">
+         <div class="btn-group">
+            {% if fsc.tarifario_activo %}
+            <a class="btn btn-sm btn-default" href="index.php?page=tarif_roles" title="Gestionar roles de usuarios">
+               <i class="fa fa-users"></i>
+               <span class="hidden-xs">&nbsp;Roles</span>
+            </a>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-success" onclick="nueva_tarifa()">
+               <span class="glyphicon glyphicon-plus"></span>
+               <span class="hidden-xs">&nbsp;Nueva tarifa</span>
+            </button>
+         </div>
+      </div>
+   </div>
+</div>
+
+{% for error in fsc.get_errors() %}
+<div class="container-fluid">
+    <div class="alert alert-danger alert-dismissible">
+        <button type="button" class="close" data-dismiss="alert">&times;</button>
+        <i class="fa fa-exclamation-circle"></i> {{ error }}
+    </div>
+</div>
+{% endfor %}
+
+{% for msg in fsc.get_messages() %}
+<div class="container-fluid">
+    <div class="alert alert-success alert-dismissible">
+        <button type="button" class="close" data-dismiss="alert">&times;</button>
+        <i class="fa fa-check-circle"></i> {{ msg|raw }}
+    </div>
+</div>
+{% endfor %}
+
+<div class="container-fluid">
+   <div class="row">
+      <div class="col-sm-12">
+         <div class="panel panel-primary">
+            <div class="panel-heading">
+               <h3 class="panel-title">
+                  <span class="glyphicon glyphicon-tags"></span>&nbsp; Tarifas de precios
+               </h3>
+            </div>
+            <div class="panel-body">
+               <p class="text-muted">
+                  Las tarifas permiten definir diferentes estructuras de familias y precios para los artículos.
+                  Al crear una tarifa nueva, puede heredar la estructura de otra tarifa existente.
+                  Cada tarifa puede asignarse a un grupo de roles para controlar el acceso de los usuarios.
+               </p>
+            </div>
+            {% if fsc.resultados|length > 0 %}
+            <div class="table-responsive">
+               <table class="table table-hover">
+                  <thead>
+                     <tr>
+                        <th>Código</th>
+                        <th>Nombre</th>
+                        <th class="text-center">Activa</th>
+                        <th class="text-center">Por defecto</th>
+                        {% if fsc.tarifario_activo %}
+                        <th>Grupo</th>
+                        {% endif %}
+                        <th class="text-right" title="Familias en esta tarifa">Familias</th>
+                        <th class="text-right" title="Artículos totales en esta tarifa">Artículos</th>
+                        <th class="text-right" title="Artículos con precio definido">Precios</th>
+                        {% if fsc.tarifario_activo %}
+                        <th class="text-right" title="Usuarios con acceso">Usuarios</th>
+                        {% endif %}
+                        <th class="text-right" width="180"></th>
+                     </tr>
+                  </thead>
+                  <tbody>
+                     {% for tarifa in fsc.resultados %}
+                     {% set grupos_tarifa = fsc.get_grupos_tarifa(tarifa.codtarifa) %}
+                     <tr class="tarifa-row">
+                        <td><b>{{ tarifa.codtarifa }}</b></td>
+                        <td>
+                           <a href="index.php?page=tarif_familias&codtarifa={{ tarifa.codtarifa }}" title="Ver familias de esta tarifa">
+                              {{ tarifa.nombre }}
+                           </a>
+                        </td>
+                        <td class="text-center">
+                           {% if tarifa.activa %}
+                           <span class="label label-success">Sí</span>
+                           {% else %}
+                           <span class="label label-default">No</span>
+                           {% endif %}
+                        </td>
+                        <td class="text-center">
+                           {% if tarifa.por_defecto %}
+                           <span class="label label-primary"><span class="glyphicon glyphicon-star"></span> Por defecto</span>
+                           {% else %}
+                           <form method="post" action="{{ fsc.url() }}" style="display:inline;">
+                              {{ csrf_field() }}
+                              <input type="hidden" name="action" value="set_default">
+                              <input type="hidden" name="set_default" value="{{ tarifa.codtarifa }}">
+                              <button type="submit" class="btn btn-xs btn-default" title="Establecer como por defecto">
+                                 <span class="glyphicon glyphicon-star-empty"></span>
+                              </button>
+                           </form>
+                           {% endif %}
+                         </td>
+                         {% if fsc.tarifario_activo %}
+                         <td>
+                            {% if grupos_tarifa|length > 0 %}
+                              {% for grupo in grupos_tarifa %}
+                              <span class="grupo-badge {{ grupo.activo ? 'activo' : 'inactivo' }}" 
+                                    title="{{ grupo.nombre }}{% if not grupo.activo %} (Inactivo){% endif %} - Clic para gestionar">
+                                 <i class="fa fa-users"></i> {{ grupo.nombre }}
+                              </span>
+                              {% endfor %}
+                              <button type="button" class="grupo-asignar-btn btn btn-xs btn-link" 
+                                      onclick="abrirAsignarGrupo({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }})"
+                                      title="Cambiar grupo">
+                                 <i class="fa fa-pencil"></i>
+                              </button>
+                           {% else %}
+                              <button type="button" class="btn btn-xs btn-warning" 
+                                      onclick="abrirAsignarGrupo({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }})"
+                                      title="Asignar a un grupo">
+                                 <i class="fa fa-exclamation-triangle"></i> Sin grupo
+                              </button>
+                            {% endif %}
+                         </td>
+                         {% endif %}
+                         <td class="text-right">
+                            <a href="index.php?page=tarif_familias&codtarifa={{ tarifa.codtarifa }}" class="badge" style="background-color:#5bc0de;">
+                              {{ fsc.count_familias_tarifa(tarifa.codtarifa) }}
+                           </a>
+                        </td>
+                        <td class="text-right">
+                           <span class="badge" style="background-color:#5cb85c;">
+                              {{ fsc.count_articulos_en_tarifa(tarifa.codtarifa) }}
+                           </span>
+                        </td>
+                        <td class="text-right">{{ fsc.count_articulos_tarifa(tarifa.codtarifa) }}</td>
+                        {% if fsc.tarifario_activo %}
+                        <td class="text-right">
+                           <a href="index.php?page=tarif_roles&codtarifa={{ tarifa.codtarifa }}" class="badge" style="background-color:#9b59b6;" title="Gestionar usuarios">
+                              {{ fsc.count_usuarios_tarifa(tarifa.codtarifa) }}
+                           </a>
+                        </td>
+                        {% endif %}
+                        <td class="text-right">
+                           <div class="btn-group btn-group-xs">
+                              <a href="index.php?page=tarif_familias&codtarifa={{ tarifa.codtarifa }}" class="btn btn-info" title="Ver familias">
+                                 <i class="fa fa-folder-open-o"></i>
+                              </a>
+                              <button type="button" class="btn btn-default" onclick="copiar_estructura({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }})" title="Copiar estructura a otra tarifa">
+                                 <i class="fa fa-copy"></i>
+                              </button>
+                              <button type="button" class="btn btn-default" onclick="editar_tarifa({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }}, {{ tarifa.activa ? 'true' : 'false' }}, {{ tarifa.por_defecto ? 'true' : 'false' }}, {{ tarifa.coddivisa|default('EUR')|json_encode|e('html_attr') }})" title="Editar">
+                                 <span class="glyphicon glyphicon-edit"></span>
+                              </button>
+                              {% if fsc.allow_delete and not tarifa.por_defecto %}
+                              <button type="button" class="btn btn-danger" onclick="eliminar_tarifa({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }})" title="Eliminar">
+                                 <span class="glyphicon glyphicon-trash"></span>
+                              </button>
+                              {% endif %}
+                           </div>
+                        </td>
+                     </tr>
+                     {% endfor %}
+                  </tbody>
+               </table>
+            </div>
+            {% else %}
+            <div class="panel-body text-center text-muted">
+               <span class="glyphicon glyphicon-tags empty-state-icon"></span>
+               <p>No hay tarifas definidas.</p>
+               <button type="button" class="btn btn-success" onclick="nueva_tarifa()">
+                  <span class="glyphicon glyphicon-plus"></span>&nbsp; Crear primera tarifa
+               </button>
+            </div>
+            {% endif %}
+         </div>
+      </div>
+   </div>
+</div>
+
+{# Modal Nueva/Editar Tarifa #}
+<div class="modal fade" id="modal_tarifa" tabindex="-1" role="dialog">
+   <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <form action="{{ fsc.url() }}" method="post">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="guardar_tarifa">
+            <div class="modal-header">
+               <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                  <span aria-hidden="true">&times;</span>
+               </button>
+               <h4 class="modal-title" id="modal_title">Nueva tarifa</h4>
+            </div>
+            <div class="modal-body">
+               <div class="form-group">
+                  <label>Código</label>
+                  <input type="text" class="form-control" name="codtarifa" id="modal_codtarifa" maxlength="20" placeholder="Ej: 2025"/>
+                  <p class="help-block">Máximo 20 caracteres. Déjelo vacío para generar automáticamente.</p>
+               </div>
+               <div class="form-group">
+                  <label>Nombre <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" name="nombre" id="modal_nombre" maxlength="50" required placeholder="Ej: Tarifa 2025"/>
+               </div>
+               <div class="form-group" id="heredar_group">
+                  <label>Heredar estructura de</label>
+                  <select class="form-control" name="heredar_de" id="modal_heredar_de">
+                     <option value="">-- Tarifa vacía (sin familias ni artículos) --</option>
+                     {% for t in fsc.resultados %}
+                     <option value="{{ t.codtarifa }}">{{ t.nombre }}</option>
+                     {% endfor %}
+                  </select>
+                   <p class="help-block">Si selecciona una tarifa, se copiarán: familias, artículos, precios (incluyendo estado "En SAP"), grupos de acceso, etiquetas y relaciones de opcionales.</p>
+               </div>
+               {% if fsc.tarifario_activo %}
+               <div class="form-group">
+                  <label>Grupo de roles</label>
+                  <select class="form-control" name="codgrupo" id="modal_codgrupo">
+                     <option value="">-- Sin grupo (asignar después) --</option>
+                     {% for grupo in fsc.grupos_disponibles %}
+                     <option value="{{ grupo.codgrupo }}">{{ grupo.nombre }}{% if not grupo.activo %} (Inactivo){% endif %}</option>
+                     {% endfor %}
+                  </select>
+                  <p class="help-block">Asigne la tarifa a un grupo para que los usuarios del grupo hereden acceso con su rol.</p>
+               </div>
+               {% endif %}
+               <div class="form-group">
+                  <label class="checkbox-inline">
+                     <input type="checkbox" name="activa" id="modal_activa" checked/>
+                     Tarifa activa
+                  </label>
+               </div>
+               <div class="form-group">
+                  <label class="checkbox-inline">
+                     <input type="checkbox" name="por_defecto" id="modal_por_defecto"/>
+                     Tarifa por defecto
+                  </label>
+                  <p class="help-block">La tarifa por defecto se usará cuando no se especifique otra.</p>
+               </div>
+               <div class="form-group">
+                  <label>Moneda <span class="text-danger">*</span></label>
+                  <select class="form-control" name="coddivisa" id="modal_coddivisa" required>
+                     <option value="EUR"{% if tarifa is defined and tarifa.coddivisa == 'EUR' %} selected{% endif %}>EUR — Euro</option>
+                     <option value="MXN"{% if tarifa is defined and tarifa.coddivisa == 'MXN' %} selected{% endif %}>MXN — Peso mexicano</option>
+                     <option value="USD"{% if tarifa is defined and tarifa.coddivisa == 'USD' %} selected{% endif %}>USD — Dólar estadounidense</option>
+                  </select>
+                  <p class="help-block">La moneda de la tarifa determina el símbolo que se muestra en los precios. No se aplica conversión automática de divisas; los precios numéricos se interpretan en la moneda seleccionada.</p>
+               </div>
+            </div>
+            <div class="modal-footer">
+               <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+               <button type="submit" class="btn btn-primary">
+                  <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; Guardar
+               </button>
+            </div>
+         </form>
+      </div>
+   </div>
+</div>
+
+{# Modal Asignar Grupo a Tarifa #}
+{% if fsc.tarifario_activo %}
+<div class="modal fade" id="modal_asignar_grupo" tabindex="-1" role="dialog">
+   <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <form action="{{ fsc.url() }}" method="post">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="asignar_grupo">
+            <input type="hidden" name="codtarifa" id="asignar_grupo_codtarifa" value="">
+            <div class="modal-header">
+               <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                  <span aria-hidden="true">&times;</span>
+               </button>
+               <h4 class="modal-title">
+                  <i class="fa fa-users"></i> Gestionar grupos de: <strong id="asignar_grupo_nombre_tarifa"></strong>
+               </h4>
+            </div>
+            <div class="modal-body">
+               <p class="text-muted">
+                  Seleccione los grupos a los que desea asignar esta tarifa.
+                  Los usuarios de cada grupo heredarán acceso a la tarifa con el rol que tengan asignado en el grupo.
+               </p>
+               
+               {% if fsc.grupos_disponibles|length > 0 %}
+               <div class="list-group" id="lista_grupos_asignar">
+                  {% for grupo in fsc.grupos_disponibles %}
+                  <label class="list-group-item" style="cursor: pointer;">
+                     <div class="row">
+                        <div class="col-xs-1">
+                           <input type="checkbox" name="grupos[]" value="{{ grupo.codgrupo }}" 
+                                  id="chk_grupo_{{ grupo.codgrupo }}" class="chk-grupo-asignar">
+                        </div>
+                        <div class="col-xs-8">
+                           <strong>{{ grupo.nombre }}</strong>
+                           {% if not grupo.activo %}
+                           <span class="label label-default">Inactivo</span>
+                           {% endif %}
+                           {% if grupo.descripcion %}
+                           <br><small class="text-muted">{{ grupo.descripcion }}</small>
+                           {% endif %}
+                        </div>
+                        <div class="col-xs-3 text-right">
+                           <span class="badge" title="Usuarios"><i class="fa fa-user"></i> {{ grupo.count_usuarios() }}</span>
+                           <span class="badge" title="Tarifas"><i class="fa fa-list"></i> {{ grupo.count_tarifas() }}</span>
+                        </div>
+                     </div>
+                  </label>
+                  {% endfor %}
+               </div>
+               {% else %}
+               <div class="alert alert-warning">
+                  <i class="fa fa-exclamation-triangle"></i> 
+                  No hay grupos creados. 
+                  <a href="index.php?page=tarif_roles">Crear un grupo primero</a>.
+               </div>
+               {% endif %}
+            </div>
+            <div class="modal-footer">
+               <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+               {% if fsc.grupos_disponibles|length > 0 %}
+               <button type="submit" class="btn btn-primary">
+                  <i class="fa fa-save"></i>&nbsp; Guardar asignación
+               </button>
+               {% endif %}
+            </div>
+         </form>
+      </div>
+   </div>
+</div>
+{% endif %}
+
+{# Shared POST form for row mutations (delete / copy structure). These
+   mutations must never travel in the query string. #}
+<form id="tarif_mutacion_form" method="post" action="{{ fsc.url() }}" style="display:none;">
+   {{ csrf_field() }}
+   <input type="hidden" name="action" id="mutacion_action" value="">
+   <input type="hidden" name="delete" id="mutacion_delete" value="">
+   <input type="hidden" name="set_default" id="mutacion_set_default" value="">
+   <input type="hidden" name="copy_from" id="mutacion_copy_from" value="">
+   <input type="hidden" name="copy_to" id="mutacion_copy_to" value="">
+</form>
+
+{{ csrf_meta() }}
+
+<script type="text/javascript">
+   /**
+    * Sends a row mutation as a POST with the shared CSRF-protected form.
+    */
+   function ejecutar_mutacion(action, datos)
+   {
+      var $form = $('#tarif_mutacion_form');
+      // Solo limpiar los campos de mutación: no tocar los tokens CSRF.
+      $('#mutacion_delete, #mutacion_set_default, #mutacion_copy_from, #mutacion_copy_to').val('');
+      $('#mutacion_action').val(action);
+      $.each(datos, function(campo, valor) {
+         $('#mutacion_' + campo).val(valor);
+      });
+      $form.trigger('submit');
+   }
+
+   function eliminar_tarifa(cod, nombre)
+   {
+      bootbox.confirm({
+         message: '¿Eliminar la tarifa "'+nombre+'"?<br><br><strong>Nota:</strong> Se eliminarán también todas las familias, artículos y precios asociados a esta tarifa.',
+         title: '<b>Atención</b>',
+         callback: function(result) {
+            if (result) {
+               ejecutar_mutacion('delete', {delete: cod});
+            }
+         }
+      });
+   }
+
+   function editar_tarifa(cod, nombre, activa, por_defecto, coddivisa)
+   {
+      $('#modal_codtarifa').val(cod);
+      $('#modal_codtarifa').prop('readonly', true);
+      $('#modal_nombre').val(nombre);
+      $('#modal_activa').prop('checked', activa);
+      $('#modal_por_defecto').prop('checked', por_defecto);
+      $('#modal_coddivisa').val(coddivisa || 'EUR');
+      $('#modal_title').text('Editar tarifa');
+      $('#heredar_group').hide();
+      // Ocultar grupo en edición (se gestiona desde el botón de la tabla)
+      $('#modal_codgrupo').closest('.form-group').hide();
+      $('#modal_tarifa').modal('show');
+   }
+
+   function nueva_tarifa()
+   {
+      $('#modal_codtarifa').val('');
+      $('#modal_codtarifa').prop('readonly', false);
+      $('#modal_nombre').val('');
+      $('#modal_activa').prop('checked', true);
+      $('#modal_por_defecto').prop('checked', false);
+      $('#modal_heredar_de').val('');
+      $('#modal_codgrupo').val('');
+      $('#modal_coddivisa').val('EUR');
+      $('#modal_title').text('Nueva tarifa');
+      $('#heredar_group').show();
+      $('#modal_codgrupo').closest('.form-group').show();
+      $('#modal_tarifa').modal('show');
+   }
+
+   function copiar_estructura(cod_origen, nombre_origen)
+   {
+      var opciones = '';
+      {% for tarifa in fsc.resultados %}
+      if ('{{ tarifa.codtarifa }}' != cod_origen) {
+         opciones += '<option value="{{ tarifa.codtarifa }}">{{ tarifa.nombre }}</option>';
+      }
+      {% endfor %}
+      
+      bootbox.dialog({
+         title: '<b>Copiar estructura</b>',
+         message: '<p>Copiar la estructura de <b>'+nombre_origen+'</b> a otra tarifa:</p>' +
+                  '<p class="text-warning"><i class="fa fa-exclamation-triangle"></i> Esto reemplazará las familias, artículos y precios de la tarifa destino.</p>' +
+                  '<select id="copy_destino" class="form-control">' + opciones + '</select>',
+         buttons: {
+            cancel: {
+               label: 'Cancelar',
+               className: 'btn-default'
+            },
+            confirm: {
+               label: '<i class="fa fa-copy"></i> Copiar',
+               className: 'btn-primary',
+               callback: function() {
+                  var destino = $('#copy_destino').val();
+                  if (destino) {
+                     ejecutar_mutacion('copy_structure', {copy_from: cod_origen, copy_to: destino});
+                  }
+               }
+            }
+         }
+      });
+   }
+
+   /**
+    * Abre el modal de asignación de grupos para una tarifa.
+    * Pre-marca los checkboxes de los grupos que ya tienen asignada la tarifa.
+    */
+   function abrirAsignarGrupo(codtarifa, nombreTarifa)
+   {
+      $('#asignar_grupo_codtarifa').val(codtarifa);
+      $('#asignar_grupo_nombre_tarifa').text(nombreTarifa);
+      
+      // Desmarcar todos los checkboxes
+      $('.chk-grupo-asignar').prop('checked', false);
+      
+      // Consultar qué grupos ya tienen la tarifa asignada vía AJAX
+      $.ajax({
+         url: '{{ fsc.url() }}&ajax_grupos_tarifa=' + encodeURIComponent(codtarifa),
+         dataType: 'json',
+         success: function(data) {
+            if (data && data.grupos) {
+               for (var i = 0; i < data.grupos.length; i++) {
+                  $('#chk_grupo_' + data.grupos[i]).prop('checked', true);
+               }
+            }
+            $('#modal_asignar_grupo').modal('show');
+         },
+         error: function() {
+            // No abrir el modal con selecciones vacías: mostrar el error y
+            // permitir al usuario reintentar.
+            bootbox.alert('No se pudieron cargar los grupos asignados a esta tarifa. Vuelva a intentarlo.');
+         }
+      });
+   }
+</script>
+
+{% include 'footer.html.twig' %}

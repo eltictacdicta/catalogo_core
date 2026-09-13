@@ -43,7 +43,7 @@ final class ArticuloListaCanonicaOwnershipTest extends TestCase
     private const REPOINTED_LINKS = [
         'plugins/catalogo_core/View/ventas_opcionales.html.twig' => ['page=ventas_articulos', ''],
         'plugins/catalogo_core/View/Macro/TarifarioComponents.html.twig' => ['page=ventas_articulos', 'b_codtarifa'],
-        'plugins/tarifario/View/tarif_tarifas.html.twig' => ['page=ventas_articulos', ''],
+        'plugins/catalogo_core/View/tarif_tarifas.html.twig' => ['page=ventas_articulos', ''],
         'plugins/tarifario/View/tarif_actualizar_precios.html.twig' => ['page=ventas_articulos', ''],
         'plugins/tarifario/View/tarif_historial_precios.html.twig' => ['page=ventas_articulos', ''],
         'plugins/tarifario/View/tarif_articulo.html.twig' => ['page=ventas_articulos', ''],
