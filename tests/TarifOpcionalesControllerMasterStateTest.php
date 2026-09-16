@@ -145,8 +145,6 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
 
                 return $this->states[$id] ?? [
                     'activa' => true,
-                    'en_catalogo' => true,
-                    'en_tarifa' => false,
                     'orden' => 0,
                     'source' => 'inherit',
                 ];
@@ -156,24 +154,67 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
             {
                 return (bool) $this->effective($codtarifa, $id_opcional)['activa'];
             }
+        };
+    }
 
-            public function resolve_en_catalogo($codtarifa, $id_opcional): bool
+    /**
+     * D12 visibility-resolver double: `[codigo][id] => bool|null`, recording
+     * every call so a test can prove the indicator is derived, not stored.
+     *
+     * @param array<string, array<int, bool|null>> $map
+     */
+    private function visibilityResolverStub(array $map = []): object
+    {
+        return new class($map) {
+            /** @var list<array{0: int, 1: string, 2: string}> */
+            public array $calls = [];
+
+            /** @param array<string, array<int, bool|null>> $map */
+            public function __construct(private array $map)
             {
-                return (bool) $this->effective($codtarifa, $id_opcional)['en_catalogo'];
+            }
+
+            public function resolve_opcional_visibility(int $id_opcional, string $codtarifa, string $codigo): ?bool
+            {
+                $this->calls[] = [$id_opcional, $codtarifa, $codigo];
+
+                return $this->map[$codigo][$id_opcional] ?? null;
+            }
+
+            /**
+             * @param array<int, int|string> $id_opcionales
+             * @return array<int, bool|null>
+             */
+            public function resolve_opcionales_visibility(array $id_opcionales, string $codtarifa, string $codigo): array
+            {
+                $result = [];
+                foreach ($id_opcionales as $id) {
+                    $result[(int) $id] = $this->map[$codigo][(int) $id] ?? null;
+                }
+
+                return $result;
             }
         };
     }
 
-    private function buildListController(object $master): object
+    private function buildListController(object $master, ?object $resolver = null): object
     {
         $this->loadController(self::LIST_CONTROLLER);
 
-        return new class($master) extends \FSFramework\Plugins\catalogo_core\Controller\VentasOpcionales {
+        return new class($master, $resolver) extends \FSFramework\Plugins\catalogo_core\Controller\VentasOpcionales {
             private $masterStub;
+            private $resolverStub;
 
-            public function __construct($master)
+            public function __construct($master, $resolver = null)
             {
                 $this->masterStub = $master;
+                $this->resolverStub = $resolver;
+            }
+
+            protected function opcional_visibility_resolver()
+            {
+                return $this->resolverStub
+                    ?? new \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver();
             }
 
             protected function opcional_master_state()
@@ -183,21 +224,28 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
         };
     }
 
-    private function buildEditController(object $master): object
+    private function buildEditController(object $master, ?object $resolver = null): object
     {
         $this->loadController(self::EDIT_CONTROLLER);
 
-        return new class($master) extends \tarif_opcional_edit {
+        return new class($master, $resolver) extends \tarif_opcional_edit {
             private $masterStub;
+            private $resolverStub;
 
-            public function __construct($master)
+            public function __construct($master, $resolver = null)
             {
                 $this->masterStub = $master;
+                $this->resolverStub = $resolver;
             }
 
             protected function opcional_master_state()
             {
                 return $this->masterStub;
+            }
+
+            protected function opcional_visibility_resolver()
+            {
+                return $this->resolverStub;
             }
         };
     }
@@ -209,40 +257,58 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
     public function test_list_state_cache_resolves_effective_master_per_tarifa(): void
     {
         $master = $this->masterStub([
-            7 => ['activa' => false, 'en_catalogo' => true, 'en_tarifa' => true, 'orden' => 0, 'source' => 'master'],
+            7 => ['activa' => false, 'orden' => 0, 'source' => 'master'],
         ]);
-        $controller = $this->buildListController($master);
+        $resolver = $this->visibilityResolverStub([
+            'en_catalogo' => [7 => true],
+            'en_tarifa' => [7 => true],
+        ]);
+        $controller = $this->buildListController($master, $resolver);
         $controller->resultados = [(object) ['id' => 7]];
         $controller->tarifa_seleccionada = (object) ['codtarifa' => 'T1'];
 
         $this->invoke($controller, 'load_opcionales_state_cache');
+        $this->invoke($controller, 'load_opcionales_visibility_cache');
 
         self::assertSame([['T1', 7]], $master->effectiveCalls, 'the master must be queried per (tarifa, opcional)');
         self::assertFalse($controller->opcional_activo_en_tarifa(7), 'master activa=FALSE must win');
-        self::assertTrue($controller->opcional_en_catalogo_tarifa(7), 'catalog flag must come from the master');
+        self::assertTrue(
+            $controller->opcional_en_catalogo_tarifa(7),
+            'the catalog indicator is derived from the parent product (D12/OUM-03)'
+        );
     }
 
     public function test_list_state_cache_marks_master_active_without_price_rows(): void
     {
         $master = $this->masterStub([
-            9 => ['activa' => true, 'en_catalogo' => false, 'en_tarifa' => false, 'orden' => 0, 'source' => 'master'],
+            9 => ['activa' => true, 'orden' => 0, 'source' => 'master'],
         ]);
-        $controller = $this->buildListController($master);
+        $resolver = $this->visibilityResolverStub([
+            'en_catalogo' => [9 => false],
+            'en_tarifa' => [9 => null],
+        ]);
+        $controller = $this->buildListController($master, $resolver);
         $controller->resultados = [(object) ['id' => 9]];
         $controller->tarifa_seleccionada = (object) ['codtarifa' => 'T2'];
 
         $this->invoke($controller, 'load_opcionales_state_cache');
+        $this->invoke($controller, 'load_opcionales_visibility_cache');
 
         self::assertTrue($controller->opcional_activo_en_tarifa(9), 'master activa=TRUE is active without any price row');
         self::assertFalse($controller->opcional_en_catalogo_tarifa(9));
+        self::assertFalse($controller->opcional_en_tarifa_flag(9), 'a NULL derivation resolves to hidden');
     }
 
     public function test_edit_matrix_reads_master_flags(): void
     {
         $master = $this->masterStub([
-            7 => ['activa' => true, 'en_catalogo' => false, 'en_tarifa' => true, 'orden' => 0, 'source' => 'master'],
+            7 => ['activa' => true, 'orden' => 0, 'source' => 'master'],
         ]);
-        $controller = $this->buildEditController($master);
+        $resolver = $this->visibilityResolverStub([
+            'en_catalogo' => [7 => false],
+            'en_tarifa' => [7 => true],
+        ]);
+        $controller = $this->buildEditController($master, $resolver);
         $controller->opcional = new class() {
             public $id = 7;
 
@@ -257,7 +323,10 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
 
         self::assertSame([['T1', 7]], $master->effectiveCalls);
         self::assertTrue($controller->opcional_activo_en_tarifa('T1'));
-        self::assertFalse($controller->opcional_en_catalogo_tarifa('T1'));
+        self::assertFalse(
+            $controller->opcional_en_catalogo_tarifa('T1'),
+            'the matrix renders the parent-product-derived catalog value read-only'
+        );
         self::assertTrue($controller->opcional_en_tarifa_flag('T1'));
     }
 
@@ -301,25 +370,49 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
         self::assertStringContainsString("['activa']", $activa, 'activation must read the master state');
         self::assertStringNotContainsString('precios_cache', $activa, 'price rows must not activate');
 
+        // OUM-03: catalog/tarifa visibility is derived, never persisted or read
+        // from an opcional-owned flag.
         $catalogo = $this->methodBody($src, 'opcional_en_catalogo_tarifa');
         self::assertNotSame('', $catalogo, 'opcional_en_catalogo_tarifa() body must be found');
-        self::assertStringContainsString("['en_catalogo']", $catalogo, 'catalog flag must read the master state');
-        self::assertStringNotContainsString('precios_cache', $catalogo, 'price rows must not drive the catalog flag');
+        self::assertStringContainsString(
+            'opcionales_visibility_cache',
+            $catalogo,
+            'the catalog indicator must read the derived D12 cache'
+        );
+        self::assertStringNotContainsString('precios_cache', $catalogo, 'price rows must not drive the catalog indicator');
+        self::assertStringNotContainsString(
+            'opcionales_state_cache',
+            $catalogo,
+            'the indicator must not read the opcional-owned master state'
+        );
 
         self::assertStringContainsString('effective(', $src, 'the list must build its state cache from effective()');
+        self::assertStringContainsString(
+            'resolve_opcionales_visibility(',
+            $src,
+            'the list must derive visibility through the parent-product resolver'
+        );
     }
 
     public function test_list_declares_csrf_guarded_toggle_endpoints(): void
     {
         $controller = $this->source(self::LIST_CONTROLLER);
 
-        foreach (['toggle_activa', 'toggle_en_catalogo', 'toggle_en_tarifa'] as $action) {
-            self::assertStringContainsString(
-                "'" . $action . "'",
-                $controller,
-                'the list controller must declare the ' . $action . ' endpoint'
-            );
-        }
+        self::assertStringContainsString(
+            "'toggle_activa'",
+            $controller,
+            'the list controller must declare the surviving activation endpoint'
+        );
+        self::assertStringNotContainsString(
+            "'toggle_en_catalogo'",
+            $controller,
+            'the retired catalog toggle must not be dispatchable'
+        );
+        self::assertStringNotContainsString(
+            "'toggle_en_tarifa'",
+            $controller,
+            'the retired tarifa toggle must not be dispatchable'
+        );
 
         // The mutation handlers live in the composed list trait and must go
         // through the PageController CSRF guard, never the legacy requireCsrf().
@@ -327,8 +420,8 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
         self::assertStringContainsString('validateFormToken(', $trait, 'toggle endpoints must enforce CSRF');
         self::assertStringNotContainsString('requireCsrf(', $trait, 'the PageController trait must not use the legacy CSRF helper');
         self::assertStringContainsString('set_activa(', $trait);
-        self::assertStringContainsString('set_en_catalogo(', $trait);
-        self::assertStringContainsString('set_en_tarifa(', $trait);
+        self::assertStringNotContainsString('set_en_catalogo(', $trait, 'the retired visibility setter must be gone');
+        self::assertStringNotContainsString('set_en_tarifa(', $trait, 'the retired visibility setter must be gone');
     }
 
     public function test_edit_matrix_reads_and_writes_master(): void
@@ -338,6 +431,11 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
         $load = $this->methodBody($src, 'load_precios_tarifas');
         self::assertStringContainsString('effective(', $load, 'the matrix must load the master state');
         self::assertStringContainsString("'activa'", $load);
+        self::assertStringContainsString(
+            'resolve_opcional_visibility(',
+            $load,
+            'the matrix must derive visibility from the parent product (OTS-02)'
+        );
 
         $activa = $this->methodBody($src, 'opcional_activo_en_tarifa');
         self::assertStringContainsString("['activa']", $activa);
@@ -348,13 +446,14 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
 
         $bulk = $this->methodBody($src, 'guardar_precios_tarifas');
         self::assertStringContainsString('set_activa(', $bulk);
-        self::assertStringContainsString('set_en_catalogo(', $bulk);
+        self::assertStringNotContainsString('set_en_catalogo(', $bulk, 'OTS-02: the matrix never writes visibility');
+        self::assertStringNotContainsString('set_en_tarifa(', $bulk, 'OTS-02: the matrix never writes visibility');
 
         $single = $this->methodBody($src, 'guardar_precio_tarifa');
         self::assertStringContainsString('requireCsrf()', $single, 'the single-tarifa save must enforce CSRF');
         self::assertStringContainsString('set_activa(', $single);
-        self::assertStringContainsString('set_en_catalogo(', $single);
-        self::assertStringContainsString('set_en_tarifa(', $single);
+        self::assertStringNotContainsString('set_en_catalogo(', $single, 'OTS-05: posted visibility fields are ignored');
+        self::assertStringNotContainsString('set_en_tarifa(', $single, 'OTS-05: posted visibility fields are ignored');
     }
 
     public function test_edit_bulk_matrix_save_is_csrf_guarded_and_atomic(): void
@@ -379,13 +478,18 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
             'a failed bulk write must roll back and report an error, never report success'
         );
 
-        foreach (['set_activa', 'set_en_catalogo', 'set_en_tarifa'] as $setter) {
+        foreach (['set_activa'] as $setter) {
             self::assertStringContainsString(
                 '!$master->' . $setter . '(',
                 $bulk,
                 'the bulk path must check the ' . $setter . ' result'
             );
         }
+
+        // OTS-02/OTS-05: visibility is derived from the parent product, so the
+        // bulk path has no visibility setter to check.
+        self::assertStringNotContainsString('!$master->set_en_catalogo(', $bulk);
+        self::assertStringNotContainsString('!$master->set_en_tarifa(', $bulk);
 
         self::assertStringContainsString(
             '!$precio->save()',

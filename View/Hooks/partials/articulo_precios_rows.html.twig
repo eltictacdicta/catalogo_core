@@ -42,11 +42,11 @@
                </td>
                <td class="text-center">
                   <input type="checkbox" name="en_tarifa" value="1" class="tarifario-tab-en-tarifa"
-                         data-codtarifa="{{ tarifa.codtarifa }}"{% if precio and precio.en_tarifa %} checked{% endif %}/>
+                         data-codtarifa="{{ tarifa.codtarifa }}"{% if visibilidad[tarifa.codtarifa].en_tarifa|default(false) %} checked{% endif %}/>
                </td>
                <td class="text-center">
                   <input type="checkbox" name="en_catalogo" value="1" class="tarifario-tab-en-catalogo"
-                         data-codtarifa="{{ tarifa.codtarifa }}"{% if precio and precio.en_catalogo %} checked{% endif %}/>
+                         data-codtarifa="{{ tarifa.codtarifa }}"{% if visibilidad[tarifa.codtarifa].en_catalogo|default(false) %} checked{% endif %}/>
                </td>
                <td class="text-right">
                   <input type="hidden" name="guardar_precio_tab" value="1"/>

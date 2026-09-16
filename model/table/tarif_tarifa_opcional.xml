@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     Table tarif_tarifa_opcional: master state per (tarifa, opcional).
-    Authoritative source for activation, catalog/export visibility and the
-    default order of each tarifa, mirroring tarif_tarifa_familia.
-    A missing row inherits from tarif_opcional_ext without persisting.
+    Authoritative source for activation and the default order of each tarifa,
+    mirroring tarif_tarifa_familia. Catalog/tarifa visibility is NOT owned
+    here: it is derived from the parent product (caracteristicas-producto
+    CAR-12 / D12) and rendered read-only.
+    A missing row inherits the master defaults without persisting.
 -->
 <tabla>
     <columna>
@@ -15,18 +17,6 @@
         <nombre>id_opcional</nombre>
         <tipo>integer</tipo>
         <nulo>NO</nulo>
-    </columna>
-    <columna>
-        <nombre>en_catalogo</nombre>
-        <tipo>boolean</tipo>
-        <nulo>NO</nulo>
-        <defecto>TRUE</defecto>
-    </columna>
-    <columna>
-        <nombre>en_tarifa</nombre>
-        <tipo>boolean</tipo>
-        <nulo>NO</nulo>
-        <defecto>FALSE</defecto>
     </columna>
     <columna>
         <nombre>activa</nombre>

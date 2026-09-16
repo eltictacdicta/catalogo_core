@@ -10,6 +10,8 @@ use FSFramework\Event\FSEventDispatcher;
 use FSFramework\Event\TwigInitEvent;
 use FSFramework\Event\TwigLoaderEvent;
 use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaBackfillMigration;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaRegistry;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 use FSFramework\View\ViewHookRegistry;
 use Twig\Loader\FilesystemLoader;
@@ -87,6 +89,25 @@ final class Init
             error_log('[catalogo_core] articulo detalle tables ensure failed: ' . $e->getMessage());
         }
         try {
+            self::ensureCaracteristicasTables();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] caracteristicas tables ensure failed: ' . $e->getMessage());
+        }
+        try {
+            CaracteristicaRegistry::registerDefaults();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] caracteristicas defaults registration failed: ' . $e->getMessage());
+        }
+        try {
+            require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaBackfillMigration.php';
+            $db = self::plugin_db();
+            if ($db instanceof \fs_db2) {
+                CaracteristicaBackfillMigration::migrateIfNeeded($db);
+            }
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] caracteristicas backfill failed: ' . $e->getMessage());
+        }
+        try {
             self::registerViewExtensions();
         } catch (\Throwable $e) {
             error_log('[catalogo_core] view extensions registration failed: ' . $e->getMessage());
@@ -110,6 +131,17 @@ final class Init
             self::ensureOpcionalesTarifaTables();
             self::ensureArticuloTarifaTables();
             self::ensureArticuloDetalleTables();
+            self::ensureCaracteristicasTables();
+            CaracteristicaRegistry::registerDefaults();
+            try {
+                require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaBackfillMigration.php';
+                $db = self::plugin_db();
+                if ($db instanceof \fs_db2) {
+                    CaracteristicaBackfillMigration::migrateIfNeeded($db);
+                }
+            } catch (\Throwable $e) {
+                error_log('[catalogo_core] caracteristicas backfill failed: ' . $e->getMessage());
+            }
             foreach (self::DEFAULT_SEED_MODELS as $modelName) {
                 self::seedNamespacedModel($modelName);
             }
@@ -347,6 +379,32 @@ final class Init
     }
 
     /**
+     * Asegura las cinco tablas de características de producto (CAR-05)
+     * cuando el plugin tarifario NO está activo o en una instalación fría.
+     *
+     * Idempotente: `fs_model` solo crea la tabla cuando falta. Orden FK-seguro
+     * (design §9.1): definiciones → catálogo de valores → destinos FK
+     * (articulos, familias, tarif_tarifas) → las tres tablas de ámbito.
+     * No usa `seed_if_empty`: los defaults los registra `CaracteristicaRegistry`.
+     */
+    public static function ensureCaracteristicasTables(): void
+    {
+        require_once FS_FOLDER . '/base/fs_model.php';
+
+        self::touchNamespacedModel('catalogo_caracteristica');
+        self::touchNamespacedModel('catalogo_caracteristica_valor');
+        self::touchNamespacedModel('articulo');
+        self::touchNamespacedModel('familia');
+
+        // tarif_tarifas debe existir antes de las tablas de ámbito con FK.
+        self::ensureFamiliasTarifaTables();
+
+        self::touchNamespacedModel('catalogo_caracteristica_global');
+        self::touchNamespacedModel('catalogo_caracteristica_familia');
+        self::touchNamespacedModel('catalogo_caracteristica_articulo');
+    }
+
+    /**
      * Retira la página plana ventas_familias (Amendment 1). Necesario porque
      * fs_user::get_menu() no filtra páginas muertas — una fila huérfana
      * renderizaría un item de menú roto. Idempotente: fs_page::get() devuelve
@@ -492,8 +550,31 @@ final class Init
     }
 
     /**
-     * Migra ref_sap/en_catalogo/en_tarifa hacia tarif_opcional_ext. Absorbido
-     * desde tarifario/Init.php::migrateOpcionalExtension() junto con el modelo.
+     * DB seam for the boot migrations. Returns null when the container (or a
+     * live connection) is unavailable so a cold/failed boot never fatals.
+     */
+    private static function plugin_db(): ?\fs_db2
+    {
+        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
+            return null;
+        }
+
+        try {
+            return \FSFramework\DependencyInjection\Container::db();
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] DB unavailable for a boot migration: ' . $e->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
+     * Migra ref_sap hacia tarif_opcional_ext. Absorbido desde
+     * tarifario/Init.php::migrateOpcionalExtension() junto con el modelo.
+     *
+     * `en_catalogo`/`en_tarifa` are no longer copied: the opcional-owned
+     * visibility flags were removed by D12 (`caracteristicas-producto` CAR-12 /
+     * CAR-15 clause 1) and are derived from the parent product.
      */
     private static function migrateOpcionalExtension(): void
     {

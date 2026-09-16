@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Table catalogo_caracteristica_valores: predefined value catalog.
+    Per definition and unique on (id_caracteristica, valor). Bool definitions
+    get the '1' / '0' pair seeded by CaracteristicaRegistry.
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_caracteristica</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>valor</nombre>
+        <tipo>character varying(255)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <columna>
+        <nombre>activo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_caracteristica_valores_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>catalogo_caracteristica_valores_unique</nombre>
+        <consulta>UNIQUE (id_caracteristica, valor)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_valores_caracteristica</nombre>
+        <consulta>FOREIGN KEY (id_caracteristica)
+            REFERENCES catalogo_caracteristicas (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

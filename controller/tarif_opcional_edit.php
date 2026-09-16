@@ -24,6 +24,7 @@ require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_etiqueta.php';
 require_once 'plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
+require_once 'plugins/catalogo_core/Services/CaracteristicaResolver.php';
 
 use FSFramework\model\tarif_familia;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
@@ -32,6 +33,7 @@ use FSFramework\model\tarif_opcional;
 use FSFramework\model\catalogo_articulo_opcional;
 use FSFramework\model\tarif_opcional_precio;
 use FSFramework\model\tarif_tarifa_opcional;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 
 /**
  * Controlador para ver/editar un opcional del tarifario.
@@ -320,28 +322,44 @@ class tarif_opcional_edit extends fbase_controller
     }
 
     /**
+     * D12 visibility-resolver accessor. Overridable seam so the read-only
+     * catalog/tarifa indicators are unit-testable without a live database.
+     *
+     * @return CaracteristicaResolver
+     */
+    protected function opcional_visibility_resolver()
+    {
+        return new CaracteristicaResolver();
+    }
+
+    /**
      * Carga los precios del opcional en todas las tarifas.
      *
-     * Master flags (`activa`/`en_catalogo`/`en_tarifa`) come from the
-     * per-tarifa master via effective(); a missing row inherits the
-     * ext/defaults without persisting (design AD5).
+     * Master `activa` comes from the per-tarifa master via effective(); a
+     * missing row inherits the defaults without persisting (design AD5).
+     * Catalog/tarifa visibility is DERIVED from the parent product (D12 /
+     * OTS-02) and rendered read-only: it is never read from an opcional-owned
+     * flag and never persisted by this panel.
      */
     private function load_precios_tarifas()
     {
         $this->precios_tarifas = [];
         $master = $this->opcional_master_state();
+        $resolver = $this->opcional_visibility_resolver();
         $es_porcentaje = $this->opcional_es_porcentaje();
+        $id_opcional = (int) $this->opcional->id;
 
         // Crear array indexado por codtarifa
         foreach ($this->tarifas as $tarifa) {
             $state = $master->effective($tarifa->codtarifa, $this->opcional->id);
-            $this->precios_tarifas[$tarifa->codtarifa] = [
+            $codtarifa = (string) $tarifa->codtarifa;
+            $this->precios_tarifas[$codtarifa] = [
                 'tarifa' => $tarifa,
                 'precio' => null,
                 'porcentaje' => null,
                 'es_porcentaje' => $es_porcentaje,
-                'en_catalogo' => (bool) $state['en_catalogo'],
-                'en_tarifa' => (bool) $state['en_tarifa'],
+                'en_catalogo' => (bool) $resolver->resolve_opcional_visibility($id_opcional, $codtarifa, 'en_catalogo'),
+                'en_tarifa' => (bool) $resolver->resolve_opcional_visibility($id_opcional, $codtarifa, 'en_tarifa'),
                 'activa' => (bool) $state['activa'],
             ];
         }
@@ -426,21 +444,13 @@ class tarif_opcional_edit extends fbase_controller
         $ok = $this->run_in_transaction(function () use ($precio_model, $master, $opcional, $tarifas, $precios_validados, $es_porcentaje, &$guardados, &$eliminados) {
             foreach ($tarifas as $tarifa) {
                 $activo_key = 'activo_tarifa_' . $tarifa->codtarifa;
-                $catalogo_key = 'catalogo_tarifa_' . $tarifa->codtarifa;
-                $en_tarifa_key = 'en_tarifa_tarifa_' . $tarifa->codtarifa;
 
                 $activo = isset($_POST[$activo_key]) && $_POST[$activo_key];
-                $en_catalogo = isset($_POST[$catalogo_key]) && $_POST[$catalogo_key];
-                $en_tarifa = isset($_POST[$en_tarifa_key]) && $_POST[$en_tarifa_key];
 
-                // The master is the authoritative per-tarifa state (design AD2/AD3).
+                // The master `activa` is the authoritative per-tarifa state
+                // (design AD2/AD3). Catalog/tarifa visibility is derived from
+                // the parent product (D12/OTS-02) and is never written here.
                 if (!$master->set_activa($tarifa->codtarifa, $opcional->id, $activo)) {
-                    return false;
-                }
-                if (!$master->set_en_catalogo($tarifa->codtarifa, $opcional->id, $en_catalogo)) {
-                    return false;
-                }
-                if (!$master->set_en_tarifa($tarifa->codtarifa, $opcional->id, $en_tarifa)) {
                     return false;
                 }
 
@@ -467,7 +477,6 @@ class tarif_opcional_edit extends fbase_controller
                         $precio->precio = $precio_valor;
                         $precio->limpiar_porcentaje();
                     }
-                    $precio->en_catalogo = $en_catalogo;
 
                     if (!$precio->save()) {
                         return false;
@@ -486,18 +495,7 @@ class tarif_opcional_edit extends fbase_controller
                 }
             }
 
-            // Actualizar los campos en_tarifa y en_catalogo basados en la configuración
-            $precios = $opcional->get_precios_tarifas();
-            $opcional->en_tarifa = (count($precios) > 0);
-            $opcional->en_catalogo = false;
-            foreach ($precios as $p) {
-                if ($p->en_catalogo) {
-                    $opcional->en_catalogo = true;
-                    break;
-                }
-            }
-
-            return (bool) $opcional->save();
+            return true;
         });
 
         if (!$ok) {
@@ -531,8 +529,6 @@ class tarif_opcional_edit extends fbase_controller
         }
 
         $activa = isset($_POST['activa']);
-        $en_catalogo = isset($_POST['en_catalogo']);
-        $en_tarifa = isset($_POST['en_tarifa']);
         $es_porcentaje = $this->opcional_es_porcentaje();
 
         // Validate the whole normalized value before writing anything, so an
@@ -559,16 +555,12 @@ class tarif_opcional_edit extends fbase_controller
         $master = $this->opcional_master_state();
         $opcional = $this->opcional;
 
-        // The three master flags and the price row are one transaction: every
+        // The master `activa` and the price row are one transaction: every
         // write result is checked and the whole change rolls back on failure.
-        $ok = $this->run_in_transaction(function () use ($master, $opcional, $codtarifa, $activa, $en_catalogo, $en_tarifa, $precio_valor, $porcentaje_valor, $es_porcentaje) {
+        // Posted `en_catalogo`/`en_tarifa` fields are ignored: visibility is
+        // derived from the parent product (D12/OTS-05) and never persisted here.
+        $ok = $this->run_in_transaction(function () use ($master, $opcional, $codtarifa, $activa, $precio_valor, $porcentaje_valor, $es_porcentaje) {
             if (!$master->set_activa($codtarifa, $opcional->id, $activa)) {
-                return false;
-            }
-            if (!$master->set_en_catalogo($codtarifa, $opcional->id, $en_catalogo)) {
-                return false;
-            }
-            if (!$master->set_en_tarifa($codtarifa, $opcional->id, $en_tarifa)) {
                 return false;
             }
 
@@ -590,7 +582,6 @@ class tarif_opcional_edit extends fbase_controller
                     $precio->precio = (float) $precio_valor;
                     $precio->limpiar_porcentaje();
                 }
-                $precio->en_catalogo = $en_catalogo;
 
                 return (bool) $precio->save();
             }

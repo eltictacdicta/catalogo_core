@@ -300,6 +300,9 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
 
             private $grupoStub;
 
+            /** @var object|null D12 visibility-resolver double (never a real read). */
+            public $visibilityResolverStub = null;
+
             public function __construct($master, $opcional, $request, $price, $csrfValid, $allowDelete, $db, $grupo)
             {
                 $this->masterStub = $master;
@@ -315,6 +318,12 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
             protected function opcional_master_state()
             {
                 return $this->masterStub;
+            }
+
+            protected function opcional_visibility_resolver()
+            {
+                return $this->visibilityResolverStub
+                    ?? new \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver();
             }
 
             protected function opcional_precio_model()
@@ -515,8 +524,49 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         self::assertSame([['T1', 7]], $master->effectiveCalls, 'the master must be queried per (tarifa, opcional)');
         self::assertSame([], $master->setCalls, 'reading the state cache must never persist anything');
         self::assertFalse($subject->opcional_activo_en_tarifa(7), 'master activa=FALSE must win');
-        self::assertTrue($subject->opcional_en_catalogo_tarifa(7));
+    }
+
+    public function test_visibility_cache_is_derived_from_the_parent_product(): void
+    {
+        $subject = $this->buildSubject($this->request('/index.php?page=ventas_opcionales'));
+        $subject->resultados = [(object) ['id' => 7]];
+        $subject->tarifa_seleccionada = (object) ['codtarifa' => 'T1'];
+        $subject->visibilityResolverStub = $this->visibilityResolverStub([
+            'en_tarifa' => [7 => true],
+            'en_catalogo' => [7 => false],
+        ]);
+
+        $this->invoke($subject, 'load_opcionales_visibility_cache');
+
+        self::assertFalse(
+            $subject->opcional_en_catalogo_tarifa(7),
+            'the catalog indicator is derived from the parent product, never from the master row'
+        );
         self::assertTrue($subject->opcional_en_tarifa_flag(7));
+    }
+
+    /**
+     * Derived-visibility resolver double answering the two indicators.
+     *
+     * @param array<string, array<int, bool|null>> $map
+     */
+    private function visibilityResolverStub(array $map): object
+    {
+        return new class($map) {
+            public function __construct(private array $map)
+            {
+            }
+
+            public function resolve_opcionales_visibility(array $id_opcionales, string $codtarifa, string $codigo): array
+            {
+                $result = [];
+                foreach ($id_opcionales as $id) {
+                    $result[(int) $id] = $this->map[$codigo][(int) $id] ?? null;
+                }
+
+                return $result;
+            }
+        };
     }
 
     public function test_price_cache_maps_selected_tarifa_price(): void

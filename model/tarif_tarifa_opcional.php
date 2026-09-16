@@ -22,12 +22,14 @@ namespace FSFramework\model;
  * Master state of an opcional within a tarifa.
  *
  * Keyed by `(codtarifa, id_opcional)`, this table is the authoritative source
- * for `activa`, catalog/export visibility (`en_catalogo`/`en_tarifa`) and the
- * default `orden`, mirroring `tarif_tarifa_familia`.
+ * for `activa` and the default `orden`, mirroring `tarif_tarifa_familia`.
  *
- * Inheritance: a missing row resolves to the `tarif_opcional_ext` flags (or
- * the master defaults) without ever being persisted on read; the first
- * explicit write creates the row.
+ * Catalog/tarifa visibility is NOT owned here: it is derived from the parent
+ * product's effective feature value (`caracteristicas-producto` CAR-12 / D12,
+ * existential union) and rendered read-only.
+ *
+ * Inheritance: a missing row resolves to the master defaults without ever
+ * being persisted on read; the first explicit write creates the row.
  */
 class tarif_tarifa_opcional extends \fs_model
 {
@@ -42,18 +44,6 @@ class tarif_tarifa_opcional extends \fs_model
      * @var int|null
      */
     public $id_opcional;
-
-    /**
-     * Whether the opcional appears in the catalog of this tarifa.
-     * @var bool
-     */
-    public $en_catalogo;
-
-    /**
-     * Whether the opcional is included when exporting this tarifa.
-     * @var bool
-     */
-    public $en_tarifa;
 
     /**
      * Whether the opcional is active in this tarifa. Sole activation source.
@@ -74,15 +64,11 @@ class tarif_tarifa_opcional extends \fs_model
         if ($data) {
             $this->codtarifa = $data['codtarifa'];
             $this->id_opcional = intval($data['id_opcional']);
-            $this->en_catalogo = isset($data['en_catalogo']) ? $this->str2bool($data['en_catalogo']) : true;
-            $this->en_tarifa = isset($data['en_tarifa']) ? $this->str2bool($data['en_tarifa']) : false;
             $this->activa = isset($data['activa']) ? $this->str2bool($data['activa']) : true;
             $this->orden = isset($data['orden']) ? intval($data['orden']) : 0;
         } else {
             $this->codtarifa = null;
             $this->id_opcional = null;
-            $this->en_catalogo = true;
-            $this->en_tarifa = false;
             $this->activa = true;
             $this->orden = 0;
         }
@@ -106,9 +92,10 @@ class tarif_tarifa_opcional extends \fs_model
      * Seed SQL for the default tarifa, mirroring
      * `tarif_tarifa_familia::migrate_existing_familias()`.
      *
-     * One row per `catalogo_opcionales` entry, inheriting the
-     * `tarif_opcional_ext` flags via COALESCE and defaulting `activa=TRUE`,
-     * `orden=0`. The NOT EXISTS guard keeps the seed idempotent.
+     * One row per `catalogo_opcionales` entry, defaulting `activa=TRUE`,
+     * `orden=0`. The NOT EXISTS guard keeps the seed idempotent. Opcional
+     * visibility is no longer seeded here (D12: derived from the parent
+     * product).
      *
      * @return string
      */
@@ -122,10 +109,9 @@ class tarif_tarifa_opcional extends \fs_model
         $codtarifa = $this->var2str($codtarifa);
 
         return "INSERT INTO " . $this->table_name
-            . " (codtarifa, id_opcional, en_catalogo, en_tarifa, activa, orden) "
-            . "SELECT $codtarifa, o.id, COALESCE(e.en_catalogo, TRUE), COALESCE(e.en_tarifa, FALSE), TRUE, 0 "
+            . " (codtarifa, id_opcional, activa, orden) "
+            . "SELECT $codtarifa, o.id, TRUE, 0 "
             . "FROM catalogo_opcionales o "
-            . "LEFT JOIN tarif_opcional_ext e ON o.id = e.id_opcional "
             . "WHERE NOT EXISTS (SELECT 1 FROM " . $this->table_name
             . " WHERE codtarifa = $codtarifa AND id_opcional = o.id);";
     }
@@ -213,12 +199,11 @@ class tarif_tarifa_opcional extends \fs_model
      * Full-row insert/update.
      *
      * Production writes go through the whitelisted single-column
-     * `set_activa()`/`set_en_catalogo()`/`set_en_tarifa()`/`set_orden()`
-     * setters (which use {@see update_single_field()}), so the UPDATE branch
-     * below has no production caller: it is kept only as a defensive fallback
-     * for a direct/legacy full-row save. Do not add new callers — a full-row
-     * update would rewrite unrelated flags from possibly-stale in-memory
-     * values.
+     * `set_activa()`/`set_orden()` setters (which use
+     * {@see update_single_field()}), so the UPDATE branch below has no
+     * production caller: it is kept only as a defensive fallback for a
+     * direct/legacy full-row save. Do not add new callers — a full-row update
+     * would rewrite unrelated state from possibly-stale in-memory values.
      */
     public function save()
     {
@@ -229,21 +214,17 @@ class tarif_tarifa_opcional extends \fs_model
         if ($this->exists()) {
             // Defensive fallback, unreachable through the toggle setters:
             // they update one whitelisted column at a time to avoid clobbering
-            // concurrent flag changes.
+            // concurrent changes.
             $sql = "UPDATE " . $this->table_name . " SET "
-                . "en_catalogo = " . $this->var2str($this->en_catalogo)
-                . ", en_tarifa = " . $this->var2str($this->en_tarifa)
-                . ", activa = " . $this->var2str($this->activa)
+                . "activa = " . $this->var2str($this->activa)
                 . ", orden = " . $this->intval($this->orden)
                 . " WHERE codtarifa = " . $this->var2str($this->codtarifa)
                 . " AND id_opcional = " . $this->intval($this->id_opcional) . ";";
         } else {
             $sql = "INSERT INTO " . $this->table_name
-                . " (codtarifa, id_opcional, en_catalogo, en_tarifa, activa, orden) VALUES ("
+                . " (codtarifa, id_opcional, activa, orden) VALUES ("
                 . $this->var2str($this->codtarifa) . ","
                 . $this->intval($this->id_opcional) . ","
-                . $this->var2str($this->en_catalogo) . ","
-                . $this->var2str($this->en_tarifa) . ","
                 . $this->var2str($this->activa) . ","
                 . $this->intval($this->orden) . ");";
         }
@@ -302,8 +283,8 @@ class tarif_tarifa_opcional extends \fs_model
      * Copies the master state of `$origen` into `$destino`.
      *
      * The destination is cleared first so the copy is authoritative, then all
-     * six master columns are copied with a single INSERT ... SELECT. Mirrors
-     * `tarif_tarifa_familia::copy_from_tarifa()`.
+     * surviving master columns are copied with a single INSERT ... SELECT.
+     * Mirrors `tarif_tarifa_familia::copy_from_tarifa()`.
      *
      * @param string $origen
      * @param string $destino
@@ -333,8 +314,8 @@ class tarif_tarifa_opcional extends \fs_model
         }
 
         $sql = "INSERT INTO " . $this->table_name
-            . " (codtarifa, id_opcional, en_catalogo, en_tarifa, activa, orden) "
-            . "SELECT " . $this->var2str($destino) . ", id_opcional, en_catalogo, en_tarifa, activa, orden "
+            . " (codtarifa, id_opcional, activa, orden) "
+            . "SELECT " . $this->var2str($destino) . ", id_opcional, activa, orden "
             . "FROM " . $this->table_name
             . " WHERE codtarifa = " . $this->var2str($origen) . ";";
 
@@ -352,41 +333,18 @@ class tarif_tarifa_opcional extends \fs_model
     }
 
     /**
-     * Inheritance seam: ext flags for a missing master row.
-     *
-     * Reads `tarif_opcional_ext`; when no ext row exists it falls back to the
-     * master defaults (`en_catalogo = TRUE`, `en_tarifa = FALSE`) that the
-     * install seed uses via COALESCE. Kept protected so lazy inheritance is
-     * unit-testable without a live database.
-     *
-     * @param int $id_opcional
-     * @return array{en_catalogo: bool, en_tarifa: bool}
-     */
-    protected function ext_defaults($id_opcional)
-    {
-        $data = $this->db->select("SELECT en_catalogo, en_tarifa FROM tarif_opcional_ext"
-            . " WHERE id_opcional = " . $this->intval($id_opcional) . ";");
-
-        if ($data) {
-            return [
-                'en_catalogo' => $this->str2bool($data[0]['en_catalogo']),
-                'en_tarifa' => $this->str2bool($data[0]['en_tarifa']),
-            ];
-        }
-
-        return ['en_catalogo' => true, 'en_tarifa' => false];
-    }
-
-    /**
      * Effective state of an opcional in a tarifa.
      *
      * Returns the master row values when it exists (`source = 'master'`), or
      * the inherited defaults (`source = 'inherit'`) when it does not. Reading
      * a missing row never persists; the first explicit write creates it.
      *
+     * Catalog/tarifa visibility is NOT part of this state: it is derived from
+     * the parent product (D12) and exposed by `CaracteristicaResolver`.
+     *
      * @param string $codtarifa
      * @param int $id_opcional
-     * @return array{activa: bool, en_catalogo: bool, en_tarifa: bool, orden: int, source: string}
+     * @return array{activa: bool, orden: int, source: string}
      */
     public function effective($codtarifa, $id_opcional)
     {
@@ -394,19 +352,13 @@ class tarif_tarifa_opcional extends \fs_model
         if ($row) {
             return [
                 'activa' => isset($row['activa']) ? $this->str2bool($row['activa']) : true,
-                'en_catalogo' => isset($row['en_catalogo']) ? $this->str2bool($row['en_catalogo']) : true,
-                'en_tarifa' => isset($row['en_tarifa']) ? $this->str2bool($row['en_tarifa']) : false,
                 'orden' => isset($row['orden']) ? intval($row['orden']) : 0,
                 'source' => 'master',
             ];
         }
 
-        $defaults = $this->ext_defaults($id_opcional);
-
         return [
             'activa' => true,
-            'en_catalogo' => (bool) $defaults['en_catalogo'],
-            'en_tarifa' => (bool) $defaults['en_tarifa'],
             'orden' => 0,
             'source' => 'inherit',
         ];
@@ -425,20 +377,6 @@ class tarif_tarifa_opcional extends \fs_model
         $state = $this->effective($codtarifa, $id_opcional);
 
         return $state['activa'];
-    }
-
-    /**
-     * Effective catalog/export visibility of an opcional in a tarifa.
-     *
-     * @param string $codtarifa
-     * @param int $id_opcional
-     * @return bool
-     */
-    public function resolve_en_catalogo($codtarifa, $id_opcional)
-    {
-        $state = $this->effective($codtarifa, $id_opcional);
-
-        return $state['en_catalogo'];
     }
 
     /**
@@ -467,34 +405,6 @@ class tarif_tarifa_opcional extends \fs_model
     public function set_activa($codtarifa, $id_opcional, $value): bool
     {
         return $this->persist_toggle($codtarifa, $id_opcional, 'activa', (bool) $value);
-    }
-
-    /**
-     * Sets the master `en_catalogo` for a `(tarifa, opcional)`.
-     * The first explicit write creates the master row.
-     *
-     * @param string $codtarifa
-     * @param int $id_opcional
-     * @param bool $value
-     * @return bool
-     */
-    public function set_en_catalogo($codtarifa, $id_opcional, $value): bool
-    {
-        return $this->persist_toggle($codtarifa, $id_opcional, 'en_catalogo', (bool) $value);
-    }
-
-    /**
-     * Sets the master `en_tarifa` for a `(tarifa, opcional)`.
-     * The first explicit write creates the master row.
-     *
-     * @param string $codtarifa
-     * @param int $id_opcional
-     * @param bool $value
-     * @return bool
-     */
-    public function set_en_tarifa($codtarifa, $id_opcional, $value): bool
-    {
-        return $this->persist_toggle($codtarifa, $id_opcional, 'en_tarifa', (bool) $value);
     }
 
     /**
@@ -546,7 +456,7 @@ class tarif_tarifa_opcional extends \fs_model
      */
     private function update_single_field($codtarifa, $id_opcional, string $field, $value): bool
     {
-        $allowed = ['activa', 'en_catalogo', 'en_tarifa', 'orden'];
+        $allowed = ['activa', 'orden'];
         if (!in_array($field, $allowed, true)) {
             return false;
         }
@@ -563,7 +473,7 @@ class tarif_tarifa_opcional extends \fs_model
 
     /**
      * Builds a not-yet-persisted master row from the inheritance defaults
-     * (ext flags, `activa=TRUE`, `orden=0`).
+     * (`activa=TRUE`, `orden=0`).
      *
      * @param string $codtarifa
      * @param int $id_opcional
@@ -571,13 +481,9 @@ class tarif_tarifa_opcional extends \fs_model
      */
     private function inherited_row($codtarifa, $id_opcional)
     {
-        $defaults = $this->ext_defaults($id_opcional);
-
         return new static([
             'codtarifa' => $codtarifa,
             'id_opcional' => $id_opcional,
-            'en_catalogo' => $defaults['en_catalogo'],
-            'en_tarifa' => $defaults['en_tarifa'],
             'activa' => true,
             'orden' => 0,
         ]);

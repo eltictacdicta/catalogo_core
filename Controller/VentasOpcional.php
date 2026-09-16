@@ -13,6 +13,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_op
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/extras/CaracteristicaHookContextTrait.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
@@ -26,6 +27,8 @@ use Symfony\Component\HttpFoundation\Request;
 
 class VentasOpcional extends PageController
 {
+    use \CaracteristicaHookContextTrait;
+
     public ?catalogo_opcional $opcional = null;
     public bool $is_new = true;
     public string $lista_precio_defecto = catalogo_lista_precio::DEFAULT_CODE;

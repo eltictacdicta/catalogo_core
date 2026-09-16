@@ -145,6 +145,9 @@
                             <th class="text-center" width="70">Activo</th>
                             <th class="text-center" width="70">Tarifa</th>
                             <th class="text-center" width="70">Catálogo</th>
+                            {% for def in fsc.listable_caracteristicas() %}
+                            <th class="text-center" width="90">{{ def.nombre }}</th>
+                            {% endfor %}
                             {% endif %}
                             <th class="text-right" width="80">{{ 'stock'|trans }}</th>
                             <th class="text-right" width="120">{{ 'actions'|trans }}</th>
@@ -199,6 +202,9 @@
                                 <span class="glyphicon glyphicon-remove text-muted"></span>
                                 {% endif %}
                             </td>
+                            {% for def in fsc.listable_caracteristicas() %}
+                            <td class="text-center">{{ fsc.caracteristica_cell(articulo.referencia, def.codigo) }}</td>
+                            {% endfor %}
                             {% endif %}
                             <td class="text-right">{{ articulo.stockfis|number_format(2, ',', '.') }}</td>
                             <td class="text-right">
@@ -223,7 +229,7 @@
                         </tr>
                         {% else %}
                         <tr class="warning">
-                            <td colspan="10">{{ 'no-data'|trans }}. {{ 'new-article-hint'|trans }}</td>
+                            <td colspan="{{ 7 + (fsc.tarifa_seleccionada ? 4 + fsc.listable_caracteristicas()|length : 0) }}">{{ 'no-data'|trans }}. {{ 'new-article-hint'|trans }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

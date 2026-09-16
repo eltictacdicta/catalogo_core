@@ -286,7 +286,25 @@
                         <div class="panel-body">
                            <div class="row">
                               <div class="col-sm-6">
-                                 {{ tarif.toggle_button_group({'en_catalogo': fsc.opcional_en_catalogo_tarifa(fsc.tarifa_seleccionada.codtarifa), 'en_tarifa': fsc.opcional_en_tarifa_flag(fsc.tarifa_seleccionada.codtarifa), 'activa': fsc.opcional_activo_en_tarifa(fsc.tarifa_seleccionada.codtarifa)}, {'show_catalogo': true, 'show_en_tarifa': true, 'show_activa': true, 'size': 'sm'}) }}
+                                 {# Only the surviving `activa` control is editable (OTS-02/OTS-05).
+                                    Catalog/tarifa visibility is derived from the parent product
+                                    (D12/OUM-03) and rendered read-only: no input targets
+                                    en_catalogo/en_tarifa. #}
+                                 {{ tarif.toggle_button_group({'activa': fsc.opcional_activo_en_tarifa(fsc.tarifa_seleccionada.codtarifa)}, {'show_catalogo': false, 'show_en_tarifa': false, 'size': 'sm'}) }}
+                                 <span class="text-muted" style="margin-left: 8px;">
+                                    Catálogo:
+                                    {% if fsc.opcional_en_catalogo_tarifa(fsc.tarifa_seleccionada.codtarifa) %}
+                                    <span class="label label-success">Sí</span>
+                                    {% else %}
+                                    <span class="label label-default">No</span>
+                                    {% endif %}
+                                    &nbsp;En tarifa:
+                                    {% if fsc.opcional_en_tarifa_flag(fsc.tarifa_seleccionada.codtarifa) %}
+                                    <span class="label label-info">Sí</span>
+                                    {% else %}
+                                    <span class="label label-default">No</span>
+                                    {% endif %}
+                                 </span>
                               </div>
                                <div class="col-sm-4">
                                   {# The accepted input follows the opcional's price mode (OPG-01). #}

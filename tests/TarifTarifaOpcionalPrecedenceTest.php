@@ -125,56 +125,33 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
      * Builds the master model on a spy DB. The anonymous subclass keeps the
      * spy attached to rows produced through `new static()` (get()/insert path)
      * so the public toggles can be exercised without a live database.
-     *
-     * @param array{en_catalogo: bool, en_tarifa: bool}|null $defaults
      */
-    private function buildModel(TarifaOpcionalPrecedenceSpyDb $db, ?array $defaults = null): object
+    private function buildModel(TarifaOpcionalPrecedenceSpyDb $db): object
     {
-        return new class($db, $db, $defaults) extends \FSFramework\model\tarif_tarifa_opcional {
+        return new class($db, $db) extends \FSFramework\model\tarif_tarifa_opcional {
             public static ?object $spyDb = null;
 
-            public static ?array $spyDefaults = null;
-
-            private ?array $defaults;
-
-            public function __construct($dbOrData = false, ?object $spy = null, ?array $defaults = null)
+            public function __construct($dbOrData = false, ?object $spy = null)
             {
                 $this->table_name = 'tarif_tarifa_opcional';
 
                 if ($spy !== null) {
                     self::$spyDb = $spy;
                 }
-                if ($defaults !== null) {
-                    self::$spyDefaults = $defaults;
-                }
 
                 $this->db = self::$spyDb;
-                $this->defaults = self::$spyDefaults;
 
                 $this->codtarifa = null;
                 $this->id_opcional = null;
-                $this->en_catalogo = true;
-                $this->en_tarifa = false;
                 $this->activa = true;
                 $this->orden = 0;
 
                 if (is_array($dbOrData)) {
                     $this->codtarifa = $dbOrData['codtarifa'] ?? null;
                     $this->id_opcional = isset($dbOrData['id_opcional']) ? (int) $dbOrData['id_opcional'] : null;
-                    $this->en_catalogo = $this->str2bool($dbOrData['en_catalogo'] ?? false);
-                    $this->en_tarifa = $this->str2bool($dbOrData['en_tarifa'] ?? false);
                     $this->activa = $this->str2bool($dbOrData['activa'] ?? false);
                     $this->orden = (int) ($dbOrData['orden'] ?? 0);
                 }
-            }
-
-            protected function ext_defaults($id_opcional)
-            {
-                if ($this->defaults !== null) {
-                    return $this->defaults;
-                }
-
-                return parent::ext_defaults($id_opcional);
             }
         };
     }
@@ -238,31 +215,29 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function masterRow(string $activa, string $enCatalogo = '1', string $enTarifa = '0', int $orden = 0): array
+    private function masterRow(string $activa, int $orden = 0): array
     {
         return [
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => $enCatalogo,
-            'en_tarifa' => $enTarifa,
             'activa' => $activa,
             'orden' => $orden,
         ];
     }
 
     // =====================================================================
-    // Master wins — activation, catalog flag
+    // Master wins — activation
     // =====================================================================
 
     public function test_master_activa_is_authoritative_and_price_rows_never_activate(): void
     {
         $inactiveDb = new TarifaOpcionalPrecedenceSpyDb();
         $inactiveDb->rows = [$this->masterRow('0')];
-        $inactive = $this->buildModel($inactiveDb, ['en_catalogo' => true, 'en_tarifa' => true]);
+        $inactive = $this->buildModel($inactiveDb);
 
         $this->assertFalse(
             $inactive->resolve_activa('T1', 5),
-            'master activa=FALSE must win even when the ext flags say otherwise'
+            'master activa=FALSE must win'
         );
         $this->assertStringNotContainsString(
             'precio',
@@ -272,7 +247,7 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
 
         $activeDb = new TarifaOpcionalPrecedenceSpyDb();
         $activeDb->rows = [$this->masterRow('1')];
-        $active = $this->buildModel($activeDb, ['en_catalogo' => true, 'en_tarifa' => true]);
+        $active = $this->buildModel($activeDb);
 
         $this->assertTrue(
             $active->resolve_activa('T1', 5),
@@ -280,44 +255,49 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
         );
     }
 
-    public function test_master_en_catalogo_wins_over_the_ext_fallback(): void
+    /**
+     * D12 / CAR-15: visibility is no longer resolved from the master or the ext
+     * flags. The opcional-owned visibility API is removed, not aliased.
+     */
+    public function test_visibility_is_not_resolved_from_any_opcional_owned_flag(): void
     {
-        $db = new TarifaOpcionalPrecedenceSpyDb();
-        $db->rows = [$this->masterRow('1', '0')];
-        $model = $this->buildModel($db, ['en_catalogo' => true, 'en_tarifa' => true]);
+        $master = \FSFramework\model\tarif_tarifa_opcional::class;
+        foreach (['resolve_en_catalogo', 'set_en_catalogo', 'set_en_tarifa', 'ext_defaults'] as $removed) {
+            $this->assertFalse(
+                method_exists($master, $removed),
+                $removed . '() must be removed (opcional visibility is derived from the parent product)'
+            );
+        }
 
-        $this->assertFalse(
-            $model->resolve_en_catalogo('T1', 5),
-            'master en_catalogo=FALSE must win over ext en_catalogo=TRUE'
-        );
-
-        $db->rows = [$this->masterRow('1', '1')];
-        $this->assertTrue($model->resolve_en_catalogo('T1', 5));
+        $extSource = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/model/tarif_opcional_ext.php');
+        foreach (['en_catalogo', 'en_tarifa'] as $removed) {
+            $this->assertStringNotContainsString(
+                $removed,
+                $extSource,
+                'tarif_opcional_ext must no longer carry ' . $removed
+            );
+        }
     }
 
     // =====================================================================
     // Missing row lazy-inherits (never persists)
     // =====================================================================
 
-    public function test_missing_row_inherits_ext_flags_without_persisting(): void
+    public function test_missing_row_inherits_defaults_without_persisting(): void
     {
         $db = new TarifaOpcionalPrecedenceSpyDb();
-        $db->selectQueue = [
-            [],
-            [['en_catalogo' => '1', 'en_tarifa' => '1']],
-        ];
+        $db->rows = [];
         $model = $this->buildModel($db);
 
         $state = $model->effective('T1', 5);
 
         $this->assertSame('inherit', $state['source']);
         $this->assertTrue($state['activa'], 'a missing master row inherits activa=TRUE');
-        $this->assertTrue($state['en_catalogo']);
-        $this->assertTrue($state['en_tarifa']);
+        $this->assertSame(0, $state['orden']);
         $this->assertSame([], $db->execStatements, 'lazy inheritance must never write');
     }
 
-    public function test_missing_row_without_ext_row_falls_back_to_master_defaults(): void
+    public function test_missing_row_state_carries_no_visibility_keys(): void
     {
         $db = new TarifaOpcionalPrecedenceSpyDb();
         $db->rows = [];
@@ -327,9 +307,8 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
 
         $this->assertSame('inherit', $state['source']);
         $this->assertTrue($state['activa']);
-        $this->assertTrue($state['en_catalogo']);
-        $this->assertFalse($state['en_tarifa']);
-        $this->assertSame(0, $state['orden']);
+        $this->assertArrayNotHasKey('en_catalogo', $state);
+        $this->assertArrayNotHasKey('en_tarifa', $state);
         $this->assertSame([], $db->execStatements);
     }
 
@@ -340,14 +319,14 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
     public function test_master_orden_is_the_default_and_missing_inherits_zero(): void
     {
         $db = new TarifaOpcionalPrecedenceSpyDb();
-        $db->rows = [$this->masterRow('1', '1', '0', 7)];
+        $db->rows = [$this->masterRow('1', 7)];
         $model = $this->buildModel($db);
 
         $this->assertSame(7, $model->resolve_orden('T1', 5));
 
         $inheritDb = new TarifaOpcionalPrecedenceSpyDb();
         $inheritDb->rows = [];
-        $inherit = $this->buildModel($inheritDb, ['en_catalogo' => true, 'en_tarifa' => false]);
+        $inherit = $this->buildModel($inheritDb);
 
         $this->assertSame(0, $inherit->resolve_orden('T1', 5));
     }
@@ -381,10 +360,6 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
     {
         $db = new TarifaOpcionalPrecedenceSpyDb();
         $db->rows = [];
-        $db->selectQueue = [
-            [],
-            [['en_catalogo' => '1', 'en_tarifa' => '1']],
-        ];
         $model = $this->buildModel($db);
 
         $this->assertTrue(
@@ -395,14 +370,14 @@ final class TarifTarifaOpcionalPrecedenceTest extends TestCase
         $inserts = $this->statementsStartingWith($db->execStatements, 'INSERT');
         $this->assertCount(1, $inserts);
         $this->assertStringContainsString(
-            "('T1',5,1,1,0,0)",
+            "('T1',5,0,0)",
             $this->normalizeSql($inserts[0]),
-            'the created row must inherit ext flags and set activa=FALSE'
+            'the created row must carry the flipped activa and the default orden'
         );
 
         // Simulate the row now persisted: master activa=FALSE must win over
         // the inheritance that previously resolved as active.
-        $db->rows = [$this->masterRow('0', '1', '1')];
+        $db->rows = [$this->masterRow('0')];
         $this->assertFalse(
             $model->resolve_activa('T1', 5),
             'after the explicit toggle the master activa is authoritative'

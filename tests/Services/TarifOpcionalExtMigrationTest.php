@@ -56,8 +56,95 @@ final class TarifOpcionalExtMigrationTest extends TestCase
         $xml = (string) file_get_contents($path);
         $this->assertStringContainsString('<nombre>id_opcional</nombre>', $xml);
         $this->assertStringContainsString('<nombre>ref_sap</nombre>', $xml);
-        $this->assertStringContainsString('<nombre>en_catalogo</nombre>', $xml);
-        $this->assertStringContainsString('<nombre>en_tarifa</nombre>', $xml);
+    }
+
+    /**
+     * D12 / CAR-15 clause 1: the opcional-owned visibility flags leave the
+     * 1:1 `tarif_opcional_ext` table. The ext table keeps only `ref_sap`.
+     */
+    public function testOpcionalFlagsLeaveTarifOpcionalExt(): void
+    {
+        $xml = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/model/table/tarif_opcional_ext.xml');
+
+        foreach (['en_catalogo', 'en_tarifa'] as $removed) {
+            $this->assertStringNotContainsString(
+                '<nombre>' . $removed . '</nombre>',
+                $xml,
+                $removed . ' must be absent from tarif_opcional_ext'
+            );
+        }
+        $this->assertStringContainsString('<nombre>ref_sap</nombre>', $xml, 'ref_sap must remain');
+    }
+
+    public function testOpcionalFlagsLeaveTarifTarifaOpcional(): void
+    {
+        $xml = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/model/table/tarif_tarifa_opcional.xml');
+
+        foreach (['en_catalogo', 'en_tarifa'] as $removed) {
+            $this->assertStringNotContainsString(
+                '<nombre>' . $removed . '</nombre>',
+                $xml,
+                $removed . ' must be absent from tarif_tarifa_opcional'
+            );
+        }
+        $this->assertStringContainsString('<nombre>activa</nombre>', $xml, 'activa must remain');
+        $this->assertStringContainsString('<nombre>orden</nombre>', $xml, 'orden must remain');
+    }
+
+    public function testMigrationServiceStopsCopyingTheRemovedFlags(): void
+    {
+        $source = (string) file_get_contents(FS_FOLDER . '/' . self::SERVICE_RELATIVE);
+        $copy = $this->methodBody($source, 'copyLegacyRows');
+
+        $this->assertNotSame('', $copy, 'copyLegacyRows() body must be found');
+        $this->assertStringNotContainsString(
+            'en_catalogo',
+            $copy,
+            'the copy must not write the removed catalog flag'
+        );
+        $this->assertStringNotContainsString(
+            'en_tarifa',
+            $copy,
+            'the copy must not write the removed tarifa flag'
+        );
+        $this->assertStringContainsString(
+            'INSERT INTO tarif_opcional_ext (id_opcional, ref_sap)',
+            $copy,
+            'the copy must target only ref_sap'
+        );
+        $this->assertStringContainsString(
+            'INSERT IGNORE INTO tarif_opcional_ext (id_opcional, ref_sap)',
+            $copy,
+            'the MySQL path must target only ref_sap'
+        );
+    }
+
+    /**
+     * Extracts a method body so an assertion cannot be satisfied by unrelated
+     * code elsewhere in the file.
+     */
+    private function methodBody(string $src, string $method): string
+    {
+        $pattern = '/function\s+' . preg_quote($method, '/') . '\s*\([^)]*\)[^{]*\{/';
+        if (!preg_match($pattern, $src, $matches, PREG_OFFSET_CAPTURE)) {
+            return '';
+        }
+
+        $start = $matches[0][1] + strlen($matches[0][0]);
+        $depth = 1;
+        $length = strlen($src);
+        for ($i = $start; $i < $length; $i++) {
+            if ($src[$i] === '{') {
+                $depth++;
+            } elseif ($src[$i] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($src, $start, $i - $start);
+                }
+            }
+        }
+
+        return '';
     }
 
     public function testCatalogoOpcionalesXmlDoesNotDefineTarifarioFields(): void

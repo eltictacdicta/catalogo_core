@@ -456,40 +456,22 @@
                   </form>
                </td>
                <td class="text-center">
-                  {# "Tarifa" is the per-tarifa master `en_tarifa` (export inclusion). #}
-                  <form method="post" action="{{ fsc.url() }}&action=toggle_en_tarifa&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
-                        hx-post="{{ fsc.url() }}&action=toggle_en_tarifa&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
-                        hx-target="body" hx-select="body" hx-swap="outerHTML"
-                        class="form-inline cancel_clickable" style="display:inline-block;margin:0;">
-                     {{ csrf_field() }}
-                     <input type="hidden" name="id" value="{{ value.id }}"/>
-                     <input type="hidden" name="codtarifa" value="{{ fsc.b_codtarifa }}"/>
-                     <input type="hidden" name="query" value="{{ current_query }}"/>
-                     <input type="hidden" name="b_codfamilia" value="{{ fsc.b_codfamilia }}"/>
-                     <input type="hidden" name="b_id_grupo" value="{{ fsc.b_id_grupo }}"/>
-                     <input type="hidden" name="b_solo_activos" value="{{ fsc.b_solo_activos ? 'TRUE' : 'FALSE' }}"/>
-                     <input type="hidden" name="offset" value="{{ fsc.offset }}"/>
-                     {{ tarif.toggle_button_group({'en_tarifa': fsc.opcional_en_tarifa_flag(value.id)}, {'show_catalogo': false, 'show_activa': false, 'size': 'xs'}) }}
-                     <button type="submit" class="btn btn-xs btn-info" title="Guardar inclusión en tarifa de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}"><span class="glyphicon glyphicon-floppy-disk"></span></button>
-                  </form>
+                  {# "Tarifa" (export inclusion) is derived from the parent product's
+                     effective en_tarifa feature value (D12/OUM-03): read-only, no toggle. #}
+                  {% if fsc.opcional_en_tarifa_flag(value.id) %}
+                  <span class="label label-info" title="Incluida en el export de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">Sí</span>
+                  {% else %}
+                  <span class="label label-default" title="No incluida en el export de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">No</span>
+                  {% endif %}
                </td>
                <td class="text-center">
-                  {# "Catálogo" is the per-tarifa master `en_catalogo`. #}
-                  <form method="post" action="{{ fsc.url() }}&action=toggle_en_catalogo&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
-                        hx-post="{{ fsc.url() }}&action=toggle_en_catalogo&b_codtarifa={{ fsc.b_codtarifa|url_encode }}"
-                        hx-target="body" hx-select="body" hx-swap="outerHTML"
-                        class="form-inline cancel_clickable" style="display:inline-block;margin:0;">
-                     {{ csrf_field() }}
-                     <input type="hidden" name="id" value="{{ value.id }}"/>
-                     <input type="hidden" name="codtarifa" value="{{ fsc.b_codtarifa }}"/>
-                     <input type="hidden" name="query" value="{{ current_query }}"/>
-                     <input type="hidden" name="b_codfamilia" value="{{ fsc.b_codfamilia }}"/>
-                     <input type="hidden" name="b_id_grupo" value="{{ fsc.b_id_grupo }}"/>
-                     <input type="hidden" name="b_solo_activos" value="{{ fsc.b_solo_activos ? 'TRUE' : 'FALSE' }}"/>
-                     <input type="hidden" name="offset" value="{{ fsc.offset }}"/>
-                     {{ tarif.toggle_button_group({'en_catalogo': fsc.opcional_en_catalogo_tarifa(value.id)}, {'show_en_tarifa': false, 'show_activa': false, 'size': 'xs'}) }}
-                     <button type="submit" class="btn btn-xs btn-success" title="Guardar catálogo de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}"><span class="glyphicon glyphicon-floppy-disk"></span></button>
-                  </form>
+                  {# "Catálogo" is derived from the parent product's effective
+                     en_catalogo feature value (D12/OUM-03): read-only, no toggle. #}
+                  {% if fsc.opcional_en_catalogo_tarifa(value.id) %}
+                  <span class="label label-success" title="Visible en el catálogo de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">Sí</span>
+                  {% else %}
+                  <span class="label label-default" title="Oculto en el catálogo de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">No</span>
+                  {% endif %}
                </td>
                <td class="text-right">
                   <div class="btn-group btn-group-xs">

@@ -913,9 +913,11 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
 
         foreach (['ventas_articulo_tabs_after', 'ventas_articulo_tab_pane_after'] as $marker) {
             $this->assertStringContainsString(
-                "render_hook('" . $marker . "', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n})",
+                "render_hook('" . $marker . "', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n,"
+                . " 'caracteristicas': fsc.caracteristicas_context()})",
                 $view,
                 'Migrated view must keep the frozen marker ' . $marker
+                . ' with its four frozen keys and the added feature context'
             );
         }
     }

@@ -111,27 +111,19 @@ final class TarifTarifaOpcionalTest extends TestCase
     /**
      * Builds the master model on a spy DB. The anonymous subclass accepts
      * either the spy itself or a hydrated row array (as returned by
-     * `get()`/`all_from_tarifa()` via `new static()`), and can stub the
-     * `ext_defaults()` inheritance seam.
-     *
-     * @param array{en_catalogo: bool, en_tarifa: bool}|null $defaults
+     * `get()`/`all_from_tarifa()` via `new static()`).
      */
-    private function buildModel(TarifaOpcionalSpyDb $db, ?array $defaults = null): object
+    private function buildModel(TarifaOpcionalSpyDb $db): object
     {
-        return new class($db, $defaults) extends \FSFramework\model\tarif_tarifa_opcional {
-            private ?array $defaults;
-
-            public function __construct($dbOrData = false, ?array $defaults = null)
+        return new class($db) extends \FSFramework\model\tarif_tarifa_opcional {
+            public function __construct($dbOrData = false)
             {
                 $this->table_name = 'tarif_tarifa_opcional';
-                $this->defaults = $defaults;
 
                 if ($dbOrData instanceof TarifaOpcionalSpyDb) {
                     $this->db = $dbOrData;
                     $this->codtarifa = null;
                     $this->id_opcional = null;
-                    $this->en_catalogo = true;
-                    $this->en_tarifa = false;
                     $this->activa = true;
                     $this->orden = 0;
 
@@ -142,20 +134,9 @@ final class TarifTarifaOpcionalTest extends TestCase
                 if (is_array($dbOrData)) {
                     $this->codtarifa = $dbOrData['codtarifa'] ?? null;
                     $this->id_opcional = isset($dbOrData['id_opcional']) ? (int) $dbOrData['id_opcional'] : null;
-                    $this->en_catalogo = $this->str2bool($dbOrData['en_catalogo'] ?? false);
-                    $this->en_tarifa = $this->str2bool($dbOrData['en_tarifa'] ?? false);
                     $this->activa = $this->str2bool($dbOrData['activa'] ?? false);
                     $this->orden = (int) ($dbOrData['orden'] ?? 0);
                 }
-            }
-
-            protected function ext_defaults($id_opcional)
-            {
-                if ($this->defaults !== null) {
-                    return $this->defaults;
-                }
-
-                return parent::ext_defaults($id_opcional);
             }
         };
     }
@@ -195,12 +176,10 @@ final class TarifTarifaOpcionalTest extends TestCase
         );
     }
 
-    private function masterState(bool $activa, bool $enCatalogo, bool $enTarifa, int $orden): array
+    private function masterState(bool $activa, int $orden): array
     {
         return [
             'activa' => $activa,
-            'en_catalogo' => $enCatalogo,
-            'en_tarifa' => $enTarifa,
             'orden' => $orden,
             'source' => 'master',
         ];
@@ -241,10 +220,21 @@ final class TarifTarifaOpcionalTest extends TestCase
 
         $this->assertNotNullColumn($xml, 'codtarifa', 'character varying(20)');
         $this->assertNotNullColumn($xml, 'id_opcional', 'integer');
-        $this->assertColumnWithDefault($xml, 'en_catalogo', 'boolean', 'TRUE');
-        $this->assertColumnWithDefault($xml, 'en_tarifa', 'boolean', 'FALSE');
         $this->assertColumnWithDefault($xml, 'activa', 'boolean', 'TRUE');
         $this->assertColumnWithDefault($xml, 'orden', 'integer', '0');
+    }
+
+    public function test_master_xml_has_no_opcional_owned_visibility_columns(): void
+    {
+        $xml = (string) file_get_contents(FS_FOLDER . '/' . self::XML_RELATIVE);
+
+        foreach (['en_catalogo', 'en_tarifa'] as $removed) {
+            $this->assertStringNotContainsString(
+                '<nombre>' . $removed . '</nombre>',
+                $xml,
+                $removed . ' must not exist on tarif_tarifa_opcional (D12/CAR-15)'
+            );
+        }
     }
 
     // =====================================================================
@@ -257,8 +247,6 @@ final class TarifTarifaOpcionalTest extends TestCase
         $db->rows = [[
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '0',
             'activa' => '1',
             'orden' => 3,
         ]];
@@ -269,8 +257,7 @@ final class TarifTarifaOpcionalTest extends TestCase
         $this->assertInstanceOf(\FSFramework\model\tarif_tarifa_opcional::class, $row);
         $this->assertSame('T1', $row->codtarifa);
         $this->assertSame(5, $row->id_opcional);
-        $this->assertTrue($row->en_catalogo);
-        $this->assertFalse($row->en_tarifa);
+        $this->assertTrue($row->activa);
         $this->assertSame(3, $row->orden);
         $this->assertStringContainsString("codtarifa = 'T1'", $db->selectStatements[0]);
         $this->assertStringContainsString('id_opcional = 5', $db->selectStatements[0]);
@@ -319,10 +306,10 @@ final class TarifTarifaOpcionalTest extends TestCase
         $this->assertCount(1, $inserts);
         $this->assertStringContainsString('tarif_tarifa_opcional', $inserts[0]);
         $this->assertStringContainsString(
-            '(codtarifa, id_opcional, en_catalogo, en_tarifa, activa, orden)',
+            '(codtarifa, id_opcional, activa, orden)',
             $inserts[0]
         );
-        $this->assertStringContainsString("('T1',5,1,0,1,0)", $inserts[0]);
+        $this->assertStringContainsString("('T1',5,1,0)", $inserts[0]);
     }
 
     public function test_save_updates_when_the_row_exists(): void
@@ -332,7 +319,6 @@ final class TarifTarifaOpcionalTest extends TestCase
         $model = $this->buildModel($db);
         $model->codtarifa = 'T1';
         $model->id_opcional = 5;
-        $model->en_catalogo = false;
         $model->activa = false;
         $model->orden = 4;
 
@@ -340,7 +326,6 @@ final class TarifTarifaOpcionalTest extends TestCase
 
         $updates = $this->statementsStartingWith($db->execStatements, 'UPDATE');
         $this->assertCount(1, $updates);
-        $this->assertStringContainsString('en_catalogo = 0', $updates[0]);
         $this->assertStringContainsString('activa = 0', $updates[0]);
         $this->assertStringContainsString('orden = 4', $updates[0]);
         $this->assertStringContainsString("WHERE codtarifa = 'T1'", $updates[0]);
@@ -370,16 +355,12 @@ final class TarifTarifaOpcionalTest extends TestCase
             [
                 'codtarifa' => 'T1',
                 'id_opcional' => 1,
-                'en_catalogo' => '1',
-                'en_tarifa' => '0',
                 'activa' => '1',
                 'orden' => 2,
             ],
             [
                 'codtarifa' => 'T1',
                 'id_opcional' => 2,
-                'en_catalogo' => '0',
-                'en_tarifa' => '1',
                 'activa' => '0',
                 'orden' => 1,
             ],
@@ -411,13 +392,20 @@ final class TarifTarifaOpcionalTest extends TestCase
     // effective() / resolve_*
     // =====================================================================
 
-    public function test_ext_defaults_is_a_protected_seam(): void
+    /**
+     * D12 / CAR-15: the opcional-owned visibility API is gone, not aliased.
+     */
+    public function test_master_exposes_no_visibility_api(): void
     {
-        $ref = new \ReflectionMethod(\FSFramework\model\tarif_tarifa_opcional::class, 'ext_defaults');
-        $this->assertTrue(
-            $ref->isProtected(),
-            'ext_defaults() must stay a protected seam so inheritance is unit-testable'
-        );
+        foreach (['set_en_catalogo', 'set_en_tarifa', 'resolve_en_catalogo', 'ext_defaults'] as $removed) {
+            $this->assertFalse(
+                method_exists(\FSFramework\model\tarif_tarifa_opcional::class, $removed),
+                $removed . '() must be removed with the opcional-owned flags'
+            );
+        }
+
+        $this->assertTrue(method_exists(\FSFramework\model\tarif_tarifa_opcional::class, 'set_activa'));
+        $this->assertTrue(method_exists(\FSFramework\model\tarif_tarifa_opcional::class, 'set_orden'));
     }
 
     public function test_effective_returns_the_master_row_when_present(): void
@@ -426,8 +414,6 @@ final class TarifTarifaOpcionalTest extends TestCase
         $db->rows = [[
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => '0',
-            'en_tarifa' => '1',
             'activa' => '0',
             'orden' => 7,
         ]];
@@ -435,30 +421,29 @@ final class TarifTarifaOpcionalTest extends TestCase
 
         $state = $model->effective('T1', 5);
 
-        $this->assertSame($this->masterState(false, false, true, 7), $state);
+        $this->assertSame($this->masterState(false, 7), $state);
         $this->assertSame([], $db->execStatements, 'reading the master must not write');
-        $this->assertCount(1, $db->selectStatements, 'a present master row needs no ext look-up');
+        $this->assertCount(1, $db->selectStatements, 'a present master row needs no extra look-up');
     }
 
-    public function test_effective_missing_row_inherits_ext_defaults_without_persisting(): void
+    public function test_effective_missing_row_inherits_defaults_without_persisting(): void
     {
         $db = new TarifaOpcionalSpyDb();
         $db->rows = [];
-        $model = $this->buildModel($db, ['en_catalogo' => true, 'en_tarifa' => true]);
+        $model = $this->buildModel($db);
 
         $state = $model->effective('T1', 5);
 
         $this->assertSame([
             'activa' => true,
-            'en_catalogo' => true,
-            'en_tarifa' => true,
             'orden' => 0,
             'source' => 'inherit',
         ], $state);
         $this->assertSame([], $db->execStatements, 'a missing master row must never be persisted on read');
+        $this->assertCount(1, $db->selectStatements, 'a missing master row needs exactly the master look-up');
     }
 
-    public function test_effective_missing_row_without_ext_row_falls_back_to_defaults(): void
+    public function test_effective_has_no_visibility_keys(): void
     {
         $db = new TarifaOpcionalSpyDb();
         $db->rows = [];
@@ -466,31 +451,8 @@ final class TarifTarifaOpcionalTest extends TestCase
 
         $state = $model->effective('T1', 5);
 
-        $this->assertSame('inherit', $state['source']);
-        $this->assertTrue($state['activa'], 'inherited activation defaults to TRUE');
-        $this->assertTrue($state['en_catalogo'], 'no ext row falls back to en_catalogo = TRUE');
-        $this->assertFalse($state['en_tarifa'], 'no ext row falls back to en_tarifa = FALSE');
-        $this->assertSame(0, $state['orden']);
-        $this->assertCount(2, $db->selectStatements, 'missing master then ext look-up');
-        $this->assertStringContainsString('tarif_opcional_ext', $db->selectStatements[1]);
-        $this->assertStringContainsString('id_opcional = 5', $db->selectStatements[1]);
-    }
-
-    public function test_effective_missing_row_reads_ext_flags_from_the_ext_table(): void
-    {
-        $db = new TarifaOpcionalSpyDb();
-        $db->selectQueue = [
-            [],
-            [['en_catalogo' => '1', 'en_tarifa' => '1']],
-        ];
-        $model = $this->buildModel($db);
-
-        $state = $model->effective('T1', 5);
-
-        $this->assertTrue($state['en_catalogo']);
-        $this->assertTrue($state['en_tarifa']);
-        $this->assertSame('inherit', $state['source']);
-        $this->assertStringContainsString('tarif_opcional_ext', $db->selectStatements[1]);
+        $this->assertArrayNotHasKey('en_catalogo', $state, 'visibility is derived outside the master state');
+        $this->assertArrayNotHasKey('en_tarifa', $state);
     }
 
     public function test_resolve_activa_prefers_the_master_value(): void
@@ -499,36 +461,15 @@ final class TarifTarifaOpcionalTest extends TestCase
         $db->rows = [[
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '0',
             'activa' => '0',
             'orden' => 0,
         ]];
-        $model = $this->buildModel($db, ['en_catalogo' => true, 'en_tarifa' => true]);
+        $model = $this->buildModel($db);
 
         $this->assertFalse($model->resolve_activa('T1', 5));
 
-        $inherit = $this->buildModel(new TarifaOpcionalSpyDb(), ['en_catalogo' => true, 'en_tarifa' => true]);
+        $inherit = $this->buildModel(new TarifaOpcionalSpyDb());
         $this->assertTrue($inherit->resolve_activa('T1', 5));
-    }
-
-    public function test_resolve_en_catalogo_prefers_the_master_value(): void
-    {
-        $db = new TarifaOpcionalSpyDb();
-        $db->rows = [[
-            'codtarifa' => 'T1',
-            'id_opcional' => 5,
-            'en_catalogo' => '0',
-            'en_tarifa' => '0',
-            'activa' => '1',
-            'orden' => 0,
-        ]];
-        $model = $this->buildModel($db, ['en_catalogo' => true, 'en_tarifa' => true]);
-
-        $this->assertFalse(
-            $model->resolve_en_catalogo('T1', 5),
-            'master en_catalogo must win over the ext fallback'
-        );
     }
 
     public function test_resolve_orden_uses_master_else_zero(): void
@@ -537,8 +478,6 @@ final class TarifTarifaOpcionalTest extends TestCase
         $db->rows = [[
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '0',
             'activa' => '1',
             'orden' => 4,
         ]];
@@ -546,7 +485,7 @@ final class TarifTarifaOpcionalTest extends TestCase
 
         $this->assertSame(4, $model->resolve_orden('T1', 5));
 
-        $inherit = $this->buildModel(new TarifaOpcionalSpyDb(), ['en_catalogo' => true, 'en_tarifa' => false]);
+        $inherit = $this->buildModel(new TarifaOpcionalSpyDb());
         $this->assertSame(0, $inherit->resolve_orden('T1', 5));
     }
 }

@@ -109,6 +109,31 @@ final class TarifFamiliasFragmentTest extends TestCase
             }
 
             /**
+             * D12 (WU-4): the visibility toggles read the effective familia
+             * value and write a familia-scope feature value. Both are stubbed
+             * here so the fragment contract stays DB-free.
+             */
+            protected function caracteristica_resolver()
+            {
+                return new class {
+                    public function resolve_bool(string $codigo, string $codtarifa, ?string $referencia = null, ?string $codfamilia = null): ?bool
+                    {
+                        return false;
+                    }
+                };
+            }
+
+            protected function caracteristica_store()
+            {
+                return new class {
+                    public function assign_bool(string $scope, string $codtarifa, array $key, string $codigo, bool $valor): bool
+                    {
+                        return true;
+                    }
+                };
+            }
+
+            /**
              * Override renderPartial to return fixture HTML.
              */
             protected function renderPartial(string $partial, array $params = []): string

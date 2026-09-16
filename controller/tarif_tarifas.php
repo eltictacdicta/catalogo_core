@@ -26,8 +26,15 @@ require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_articulo_opcional.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional_etiqueta.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional.php';
+require_once 'plugins/catalogo_core/model/core/caracteristica_scope_value.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_articulo.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_familia.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_global.php';
 
 use FSFramework\model\tarif_tarifa;
+use FSFramework\model\catalogo_caracteristica_articulo;
+use FSFramework\model\catalogo_caracteristica_familia;
+use FSFramework\model\catalogo_caracteristica_global;
 use FSFramework\model\tarif_tarifa_familia;
 use FSFramework\model\tarif_tarifa_articulo;
 use FSFramework\model\tarif_articulo_precio;
@@ -284,6 +291,41 @@ class tarif_tarifas extends fbase_controller
 
         // 11. Copiar el estado master opcional por tarifa
         $this->copy_tarifa_opcionales($origen, $destino);
+
+        // 12. Copiar los valores de características (articulo, familia, global)
+        //     por tarifa. La moneda del destino se respeta (R-TAR-CUR-008).
+        $this->copy_caracteristicas($origen, $destino);
+    }
+
+    /**
+     * Clona los tres ámbitos de valores de características de una tarifa a
+     * otra (CAR-10). El destino se reemplaza, nunca se fusiona, y la copia es
+     * transaccional dentro de cada tabla de ámbito.
+     *
+     * @param string $origen
+     * @param string $destino
+     */
+    private function copy_caracteristicas($origen, $destino)
+    {
+        foreach (['articulo', 'familia', 'global'] as $scope) {
+            $this->caracteristica_value_model($scope)->copy_from_tarifa($origen, $destino);
+        }
+    }
+
+    /**
+     * Modelo de valores de un ámbito de características. Seam sobreescribible
+     * para que el paso de clonado sea testeable sin base de datos.
+     *
+     * @param string $scope articulo|familia|global
+     * @return \FSFramework\model\caracteristica_scope_value
+     */
+    protected function caracteristica_value_model(string $scope)
+    {
+        return match ($scope) {
+            'articulo' => new catalogo_caracteristica_articulo(),
+            'familia' => new catalogo_caracteristica_familia(),
+            default => new catalogo_caracteristica_global(),
+        };
     }
 
     /**

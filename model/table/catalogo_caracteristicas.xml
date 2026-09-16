@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Table catalogo_caracteristicas: feature definition.
+    `codigo` is the stable key used by plugin registration and import mapping.
+    `origen` stores the registering plugin; a non-empty origen makes the
+    definition non-deletable (CAR-11).
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codigo</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>nombre</nombre>
+        <tipo>character varying(100)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>tipo</nombre>
+        <tipo>character varying(10)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>activo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>importable</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <columna>
+        <nombre>exportable</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <columna>
+        <nombre>listable</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <columna>
+        <nombre>origen</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>NO</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <columna>
+        <nombre>valor_defecto</nombre>
+        <tipo>character varying(255)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_caracteristicas_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>catalogo_caracteristicas_codigo_unique</nombre>
+        <consulta>UNIQUE (codigo)</consulta>
+    </restriccion>
+</tabla>

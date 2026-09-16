@@ -18,10 +18,16 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorBatchReader.php';
+
 /**
  * Builds article Excel exports for catalogo_core.
+ *
+ * `EXPORT_HEADERS` is byte-identical to the pre-change list; `exportable`
+ * feature definitions append additive columns keyed by their `codigo`
+ * (CAR-17). With no exportable definitions the emitted workbook is unchanged.
  */
-final class ArticuloExcelExportService
+class ArticuloExcelExportService
 {
     /** @var string[] */
     public const EXPORT_HEADERS = [
@@ -36,19 +42,33 @@ final class ArticuloExcelExportService
 
     /**
      * @param \FSFramework\model\articulo[] $articulos
+     * @param array<int, array<string, mixed>> $exportable
      */
-    public function buildSpreadsheet(array $articulos, bool $includeExampleRow = false): Spreadsheet
-    {
+    public function buildSpreadsheet(
+        array $articulos,
+        bool $includeExampleRow = false,
+        string $codtarifa = '',
+        array $exportable = []
+    ): Spreadsheet {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Artículos');
 
-        foreach (self::EXPORT_HEADERS as $col => $header) {
+        // The export layer owns the `orden` contract (CAR-16/CAR-17 ordering):
+        // it must not depend on the order the caller hands the definitions in.
+        $exportable = $this->ordered_exportable($exportable);
+
+        $headers = self::EXPORT_HEADERS;
+        foreach ($exportable as $definition) {
+            $headers[] = (string) ($definition['nombre'] ?? '');
+        }
+
+        foreach ($headers as $col => $header) {
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . '1';
             $sheet->setCellValue($cell, $header);
         }
 
-        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count(self::EXPORT_HEADERS));
+        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
         $sheet->getStyle('A1:' . $lastCol . '1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
@@ -56,9 +76,13 @@ final class ArticuloExcelExportService
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
         ]);
 
+        $featureValues = $exportable === []
+            ? []
+            : $this->feature_values($this->referencias($articulos), $codtarifa, $exportable);
+
         $row = 2;
         if ($includeExampleRow && count($articulos) === 0) {
-            $this->writeRow($sheet, $row, [
+            $example = [
                 'referencia' => 'EJEMPLO-001',
                 'descripcion' => 'Artículo de ejemplo',
                 'pvp' => 10.50,
@@ -66,12 +90,16 @@ final class ArticuloExcelExportService
                 'codfabricante' => '',
                 'codimpuesto' => '',
                 'bloqueado' => false,
-            ]);
+            ];
+            $this->writeRow($sheet, $row, $example);
+            $this->writeFeatureCells($sheet, $row, (string) $example['referencia'], $exportable, $featureValues);
             $row++;
         }
 
         foreach ($articulos as $art) {
             $this->writeRow($sheet, $row, $art);
+            $referencia = is_array($art) ? (string) ($art['referencia'] ?? '') : (string) $art->referencia;
+            $this->writeFeatureCells($sheet, $row, $referencia, $exportable, $featureValues);
             $row++;
         }
 
@@ -80,6 +108,105 @@ final class ArticuloExcelExportService
         $sheet->getColumnDimension('C')->setWidth(14);
 
         return $spreadsheet;
+    }
+
+    /**
+     * `exportable` definitions ordered by `orden` then `codigo` (CAR-17).
+     *
+     * PHP's sort is stable since 8.0, so a definition list without `orden`
+     * keeps its given order.
+     *
+     * @param array<int, array<string, mixed>> $exportable
+     * @return array<int, array<string, mixed>>
+     */
+    private function ordered_exportable(array $exportable): array
+    {
+        usort(
+            $exportable,
+            static function (array $left, array $right): int {
+                $byOrden = ((int) ($left['orden'] ?? 0)) <=> ((int) ($right['orden'] ?? 0));
+
+                return $byOrden !== 0
+                    ? $byOrden
+                    : ((string) ($left['codigo'] ?? '') <=> (string) ($right['codigo'] ?? ''));
+            }
+        );
+
+        return $exportable;
+    }
+
+    /**
+     * @param \FSFramework\model\articulo[] $articulos
+     * @return list<string>
+     */
+    private function referencias(array $articulos): array
+    {
+        $refs = [];
+        foreach ($articulos as $art) {
+            $referencia = is_array($art) ? (string) ($art['referencia'] ?? '') : (string) $art->referencia;
+            if ($referencia !== '') {
+                $refs[] = $referencia;
+            }
+        }
+
+        return $refs;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $exportable
+     * @param array<string, array<string, ?string>> $featureValues
+     */
+    private function writeFeatureCells(
+        \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
+        int $row,
+        string $referencia,
+        array $exportable,
+        array $featureValues
+    ): void {
+        $offset = count(self::EXPORT_HEADERS);
+        foreach ($exportable as $index => $definition) {
+            $codigo = (string) ($definition['codigo'] ?? '');
+            $value = $featureValues[$referencia][$codigo] ?? null;
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + $index + 1) . $row;
+            $sheet->setCellValue($cell, $this->render_feature_cell($definition, $value));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $definition
+     */
+    private function render_feature_cell(array $definition, ?string $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if ((string) ($definition['tipo'] ?? '') === 'bool') {
+            return ($value === 't' || $value === '1') ? 'Sí' : 'No';
+        }
+
+        return $value;
+    }
+
+    /**
+     * Resolved feature values keyed by referencia then codigo (CAR-17 seam).
+     *
+     * @param list<string> $refs
+     * @param array<int, array<string, mixed>> $exportable
+     * @return array<string, array<string, ?string>>
+     */
+    protected function feature_values(array $refs, string $codtarifa, array $exportable): array
+    {
+        if ($refs === []) {
+            return [];
+        }
+
+        $codigos = [];
+        foreach ($exportable as $definition) {
+            $codigos[] = (string) ($definition['codigo'] ?? '');
+        }
+
+        return (new CaracteristicaValorBatchReader())->for_referencias($refs, $codtarifa, null, $codigos);
     }
 
     /**

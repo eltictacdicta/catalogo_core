@@ -346,6 +346,96 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
         );
     }
 
+    // =====================================================================
+    // catalogo-render-hooks ADDED — the article tab renders resolver-driven
+    // feature values and persists nothing while rendering.
+    // =====================================================================
+
+    public function test_tab_renders_resolver_driven_visibility(): void
+    {
+        $rows = $this->movedSource(self::ROWS_PARTIAL);
+        $endpoint = $this->movedSource('/plugins/catalogo_core/controller/' . self::ENDPOINT_SLUG . '.php');
+
+        $this->assertStringContainsString(
+            'visibilidad[tarifa.codtarifa].en_tarifa',
+            $rows,
+            'The en_tarifa control must render the resolver-derived visibility'
+        );
+        $this->assertStringContainsString(
+            'visibilidad[tarifa.codtarifa].en_catalogo',
+            $rows,
+            'The en_catalogo control must render the resolver-derived visibility'
+        );
+
+        // The dropped legacy per-tarifa columns are never read by the partial.
+        $this->assertStringNotContainsString(
+            'precio.en_tarifa',
+            $rows,
+            'The rows partial must not read the dropped legacy en_tarifa column'
+        );
+        $this->assertStringNotContainsString(
+            'precio.en_catalogo',
+            $rows,
+            'The rows partial must not read the dropped legacy en_catalogo column'
+        );
+
+        // ... and the fragment builds that map through the resolver.
+        $fragment = $this->methodBody($endpoint, 'render_rows_fragment');
+        $this->assertNotSame('', $fragment, 'render_rows_fragment() body must be found');
+        $this->assertStringContainsString("resolve_bool('en_tarifa'", $fragment);
+        $this->assertStringContainsString("resolve_bool('en_catalogo'", $fragment);
+        $this->assertStringContainsString("'visibilidad' => \$visibilidad", $fragment);
+    }
+
+    public function test_rendering_the_tab_writes_nothing(): void
+    {
+        $endpoint = $this->movedSource('/plugins/catalogo_core/controller/' . self::ENDPOINT_SLUG . '.php');
+
+        foreach (['render_rows_action', 'render_rows_fragment'] as $method) {
+            $body = $this->methodBody($endpoint, $method);
+            $this->assertNotSame('', $body, $method . '() body must be found');
+
+            foreach (['->save(', '->delete(', 'assign_bool(', 'assign_predefined(', 'assign_custom(', '->exec('] as $write) {
+                $this->assertStringNotContainsString(
+                    $write,
+                    $body,
+                    $method . '() must not persist anything while rendering'
+                );
+            }
+        }
+
+        // The render path only reads through the resolver.
+        $this->assertStringContainsString(
+            'resolve_bool(',
+            $this->methodBody($endpoint, 'render_rows_fragment'),
+            'Rendering resolves the effective value, it does not store it'
+        );
+    }
+
+    private function methodBody(string $src, string $method): string
+    {
+        $pattern = '/function\s+' . preg_quote($method, '/') . '\s*\([^)]*\)[^{]*\{/';
+        if (!preg_match($pattern, $src, $matches, PREG_OFFSET_CAPTURE)) {
+            return '';
+        }
+
+        $start = $matches[0][1] + strlen($matches[0][0]);
+        $depth = 1;
+        $length = strlen($src);
+        for ($i = $start; $i < $length; $i++) {
+            if ($src[$i] === '{') {
+                $depth++;
+            } elseif ($src[$i] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($src, $start, $i - $start);
+                }
+            }
+        }
+
+        return '';
+    }
+
     /**
      * Builds a Twig environment that renders the real ventas_articulo host view
      * with the Init-registered @catalogo_core namespace and the two article

@@ -24,6 +24,7 @@ require_once 'plugins/catalogo_core/model/tarif_opcional.php';
 require_once 'plugins/catalogo_core/model/tarif_opcional_precio.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional.php';
+require_once 'plugins/catalogo_core/Services/CaracteristicaResolver.php';
 
 use FSFramework\model\catalogo_opcional_grupo;
 use FSFramework\model\tarif_familia;
@@ -32,6 +33,7 @@ use FSFramework\model\tarif_opcional_precio;
 use FSFramework\model\tarif_tarifa;
 use FSFramework\model\tarif_tarifa_opcional;
 use FSFramework\Plugins\catalogo_core\Init;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoCurrencyFormatter;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -101,6 +103,16 @@ trait VentasOpcionalesListTrait
      */
     private array $opcionales_state_cache = [];
 
+    /**
+     * D12-derived catalog/tarifa visibility per opcional id for the selected
+     * tarifa: `[id => ['en_catalogo' => bool, 'en_tarifa' => bool]]`.
+     *
+     * An opcional owns no visibility flag; it is derived from its parent
+     * product's effective feature value (CAR-12 / OUM-03) and is read-only.
+     * @var array<int, array<string, bool>>
+     */
+    private array $opcionales_visibility_cache = [];
+
     // =====================================================================
     // Seams
     // =====================================================================
@@ -144,6 +156,17 @@ trait VentasOpcionalesListTrait
     protected function opcional_grupo_model()
     {
         return new catalogo_opcional_grupo();
+    }
+
+    /**
+     * D12 visibility-resolver accessor. Overridable seam so the derived
+     * indicator is unit-testable without a live database.
+     *
+     * @return CaracteristicaResolver
+     */
+    protected function opcional_visibility_resolver()
+    {
+        return new CaracteristicaResolver();
     }
 
     // =====================================================================
@@ -322,8 +345,45 @@ trait VentasOpcionalesListTrait
     // =====================================================================
 
     /**
-     * Builds the effective master state (activa/en_catalogo/en_tarifa) for
-     * every listed opcional in the selected tarifa. Reading never persists.
+     * Builds the derived catalog/tarifa visibility for every listed opcional in
+     * the selected tarifa (D12 existential union over the parent products).
+     *
+     * Two batched resolver calls — one per indicator — independent of the page
+     * size, and never a per-row query. Reading persists nothing (CAR-07).
+     */
+    protected function load_opcionales_visibility_cache(): void
+    {
+        $this->opcionales_visibility_cache = [];
+
+        if (!$this->tarifa_seleccionada || empty($this->resultados)) {
+            return;
+        }
+
+        $ids = [];
+        foreach ((array) $this->resultados as $opcional) {
+            $id = (int) ($opcional->id ?? 0);
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+
+        if ($ids === []) {
+            return;
+        }
+
+        $resolver = $this->opcional_visibility_resolver();
+        $codtarifa = (string) $this->tarifa_seleccionada->codtarifa;
+
+        foreach (CaracteristicaResolver::VISIBILITY_CODIGOS as $codigo) {
+            foreach ((array) $resolver->resolve_opcionales_visibility($ids, $codtarifa, $codigo) as $id => $visible) {
+                $this->opcionales_visibility_cache[(int) $id][$codigo] = (bool) $visible;
+            }
+        }
+    }
+
+    /**
+     * Builds the effective master state (activa) for every listed opcional in
+     * the selected tarifa. Reading never persists.
      */
     protected function load_opcionales_state_cache(): void
     {
@@ -431,27 +491,26 @@ trait VentasOpcionalesListTrait
     }
 
     /**
+     * Derived, read-only catalog visibility of a listed opcional for the
+     * selected tarifa (CAR-12 / OUM-03). An opcional owns no visibility flag:
+     * the value comes from the parent product's effective feature value.
+     *
      * @param int $id_opcional
      */
     public function opcional_en_catalogo_tarifa($id_opcional): bool
     {
-        if (isset($this->opcionales_state_cache[$id_opcional])) {
-            return (bool) $this->opcionales_state_cache[$id_opcional]['en_catalogo'];
-        }
-
-        return false;
+        return (bool) ($this->opcionales_visibility_cache[(int) $id_opcional]['en_catalogo'] ?? false);
     }
 
     /**
+     * Derived, read-only export/tarifa visibility of a listed opcional for the
+     * selected tarifa (CAR-12 / OUM-03).
+     *
      * @param int $id_opcional
      */
     public function opcional_en_tarifa_flag($id_opcional): bool
     {
-        if (isset($this->opcionales_state_cache[$id_opcional])) {
-            return (bool) $this->opcionales_state_cache[$id_opcional]['en_tarifa'];
-        }
-
-        return false;
+        return (bool) ($this->opcionales_visibility_cache[(int) $id_opcional]['en_tarifa'] ?? false);
     }
 
     /**
@@ -557,8 +616,12 @@ trait VentasOpcionalesListTrait
     }
 
     /**
-     * Persists one master flag for a (tarifa, opcional) as toggled from the
+     * Persists the activation flag for a (tarifa, opcional) as toggled from the
      * list. POST + a valid CSRF token are mandatory.
+     *
+     * Catalog/tarifa visibility has no toggle: it is derived from the parent
+     * product (OUM-04) and the retired `toggle_en_catalogo`/`toggle_en_tarifa`
+     * actions mutate nothing.
      *
      * @param string $action one of Controller/VentasOpcionales::TOGGLE_ACTIONS
      */
@@ -580,15 +643,16 @@ trait VentasOpcionalesListTrait
             return;
         }
 
-        $master = $this->opcional_master_state();
+        if ($action !== 'toggle_activa') {
+            // A retired visibility toggle is never dispatched (TOGGLE_ACTIONS)
+            // and never persists anything.
+            $this->redirect_to_list($codtarifa);
 
-        if ($action === 'toggle_en_catalogo') {
-            $ok = $master->set_en_catalogo($codtarifa, $id, $this->request->request->has('en_catalogo'));
-        } elseif ($action === 'toggle_en_tarifa') {
-            $ok = $master->set_en_tarifa($codtarifa, $id, $this->request->request->has('en_tarifa'));
-        } else {
-            $ok = $master->set_activa($codtarifa, $id, $this->request->request->has('activa'));
+            return;
         }
+
+        $master = $this->opcional_master_state();
+        $ok = $master->set_activa($codtarifa, $id, $this->request->request->has('activa'));
 
         if ($ok) {
             $this->new_message('Estado del opcional actualizado.');

@@ -19,10 +19,14 @@
 
 require_once 'plugins/catalogo_core/model/tarif_tarifa_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
+require_once 'plugins/catalogo_core/Services/CaracteristicaResolver.php';
+require_once 'plugins/catalogo_core/Services/CaracteristicaValorStore.php';
 
 use FSFramework\model\tarif_tarifa_familia;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore;
 use FSFramework\Plugins\catalogo_core\Services\TarifaFamiliaReorder;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -469,13 +473,51 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         return false;
     }
 
+    /**
+     * Seam: families are always edited for the tarifa selected on this page.
+     */
+    protected function caracteristica_visibility_scope(): string
+    {
+        return CaracteristicaResolver::SCOPE_FAMILIA;
+    }
+
+    /**
+     * Feature-value resolver seam (read side of the familia visibility
+     * toggles). Overridable so the toggle contract is unit-testable DB-free.
+     *
+     * @return CaracteristicaResolver
+     */
+    protected function caracteristica_resolver()
+    {
+        return new CaracteristicaResolver();
+    }
+
+    /**
+     * Feature-value store seam (write side of the familia visibility toggles).
+     * Overridable so the toggle contract is unit-testable DB-free.
+     *
+     * @return CaracteristicaValorStore
+     */
+    protected function caracteristica_store()
+    {
+        return new CaracteristicaValorStore();
+    }
+
     // ------------------------------------------------------------------
     // Kept-intact private toggle methods (return structured arrays)
     // ------------------------------------------------------------------
 
-    private function ajax_toggle_catalogo()
+    /**
+     * Visibility toggles persist as **familia-scope feature values** for the
+     * current tarifa (`caracteristicas-producto` CAR-09 / D3), never on the
+     * `tarif_tarifa_familia` legacy visibility columns. The JSON contract is
+     * unchanged: `{success, en_catalogo|en_tarifa}`.
+     *
+     * @param string $codigo one of `en_catalogo` / `en_tarifa`
+     */
+    private function ajax_toggle_familia_visibility(string $codigo)
     {
-        $codfamilia = isset($_POST['codfamilia']) ? $_POST['codfamilia'] : '';
+        $codfamilia = isset($_POST['codfamilia']) ? (string) $_POST['codfamilia'] : '';
         if (empty($codfamilia)) {
             return ['success' => false, 'error' => 'Código de familia no proporcionado'];
         }
@@ -483,28 +525,34 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         if (!$fam) {
             return ['success' => false, 'error' => 'Familia no encontrada'];
         }
-        $fam->en_catalogo = !$fam->en_catalogo;
-        if ($fam->save()) {
-            return ['success' => true, 'en_catalogo' => $fam->en_catalogo];
+
+        // Read the effective familia value for this tarifa, then flip it.
+        $actual = (bool) $this->caracteristica_resolver()
+            ->resolve_bool($codigo, (string) $this->codtarifa, null, (string) $codfamilia);
+
+        $ok = $this->caracteristica_store()->assign_bool(
+            $this->caracteristica_visibility_scope(),
+            (string) $this->codtarifa,
+            ['codfamilia' => (string) $codfamilia],
+            $codigo,
+            !$actual
+        );
+
+        if ($ok) {
+            return ['success' => true, $codigo => !$actual];
         }
+
         return ['success' => false, 'error' => 'Error al guardar'];
+    }
+
+    private function ajax_toggle_catalogo()
+    {
+        return $this->ajax_toggle_familia_visibility('en_catalogo');
     }
 
     private function ajax_toggle_en_tarifa()
     {
-        $codfamilia = isset($_POST['codfamilia']) ? $_POST['codfamilia'] : '';
-        if (empty($codfamilia)) {
-            return ['success' => false, 'error' => 'Código de familia no proporcionado'];
-        }
-        $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
-        if (!$fam) {
-            return ['success' => false, 'error' => 'Familia no encontrada'];
-        }
-        $fam->en_tarifa = !$fam->en_tarifa;
-        if ($fam->save()) {
-            return ['success' => true, 'en_tarifa' => $fam->en_tarifa];
-        }
-        return ['success' => false, 'error' => 'Error al guardar'];
+        return $this->ajax_toggle_familia_visibility('en_tarifa');
     }
 
     private function ajax_toggle_activa()

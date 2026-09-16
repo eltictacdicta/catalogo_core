@@ -146,28 +146,20 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
      * Builds the master model on a spy DB with a stubbed default-tarifa seam.
      * The stub keeps `seed_default_tarifa()`/`install()` deterministic without
      * touching the real `tarif_tarifa` model or a live database.
-     *
-     * @param array{en_catalogo: bool, en_tarifa: bool}|null $defaults
      */
     private function buildModel(
         TarifaOpcionalLifecycleSpyDb $db,
-        string $defaultCode = '000001',
-        ?array $defaults = null
+        string $defaultCode = '000001'
     ): object {
-        return new class($db, $db, $defaultCode, $defaults) extends \FSFramework\model\tarif_tarifa_opcional {
+        return new class($db, $db, $defaultCode) extends \FSFramework\model\tarif_tarifa_opcional {
             public static ?object $spyDb = null;
 
             public static string $spyDefaultCode = '';
 
-            public static ?array $spyDefaults = null;
-
-            private ?array $defaults;
-
             public function __construct(
                 $dbOrData = false,
                 ?object $spy = null,
-                ?string $defaultCode = null,
-                ?array $defaults = null
+                ?string $defaultCode = null
             ) {
                 $this->table_name = 'tarif_tarifa_opcional';
 
@@ -177,37 +169,20 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
                 if ($defaultCode !== null) {
                     self::$spyDefaultCode = $defaultCode;
                 }
-                if ($defaults !== null) {
-                    self::$spyDefaults = $defaults;
-                }
 
                 $this->db = self::$spyDb;
-                $this->defaults = self::$spyDefaults;
 
                 $this->codtarifa = null;
                 $this->id_opcional = null;
-                $this->en_catalogo = true;
-                $this->en_tarifa = false;
                 $this->activa = true;
                 $this->orden = 0;
 
                 if (is_array($dbOrData)) {
                     $this->codtarifa = $dbOrData['codtarifa'] ?? null;
                     $this->id_opcional = isset($dbOrData['id_opcional']) ? (int) $dbOrData['id_opcional'] : null;
-                    $this->en_catalogo = $this->str2bool($dbOrData['en_catalogo'] ?? false);
-                    $this->en_tarifa = $this->str2bool($dbOrData['en_tarifa'] ?? false);
                     $this->activa = $this->str2bool($dbOrData['activa'] ?? false);
                     $this->orden = (int) ($dbOrData['orden'] ?? 0);
                 }
-            }
-
-            protected function ext_defaults($id_opcional)
-            {
-                if ($this->defaults !== null) {
-                    return $this->defaults;
-                }
-
-                return parent::ext_defaults($id_opcional);
             }
 
             protected function default_tarifa_code()
@@ -248,7 +223,7 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
     // install() seed
     // =====================================================================
 
-    public function test_install_seeds_the_default_tarifa_from_catalogo_opcionales_left_join_ext(): void
+    public function test_install_seeds_the_default_tarifa_from_catalogo_opcionales(): void
     {
         $db = new TarifaOpcionalLifecycleSpyDb();
         $model = $this->buildModel($db, '000001');
@@ -259,19 +234,19 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
 
         $this->assertStringStartsWith('INSERT INTO tarif_tarifa_opcional', $sql);
         $this->assertStringContainsString(
-            '(codtarifa, id_opcional, en_catalogo, en_tarifa, activa, orden)',
+            '(codtarifa, id_opcional, activa, orden)',
             $sql
         );
         $this->assertStringContainsString(
-            "SELECT '000001', o.id, COALESCE(e.en_catalogo, TRUE), COALESCE(e.en_tarifa, FALSE), TRUE, 0",
+            "SELECT '000001', o.id, TRUE, 0",
             $sql,
-            'the seed must inherit the ext flags through COALESCE and default activa/orden'
+            'the seed must default activa/orden (visibility is derived, not seeded)'
         );
         $this->assertStringContainsString('FROM catalogo_opcionales o', $sql);
-        $this->assertStringContainsString(
-            'LEFT JOIN tarif_opcional_ext e ON o.id = e.id_opcional',
+        $this->assertStringNotContainsString(
+            'tarif_opcional_ext',
             $sql,
-            'the seed must join the opcional extension table'
+            'the seed must not read the removed opcional-owned visibility flags'
         );
         $this->assertStringContainsString(
             "WHERE NOT EXISTS (SELECT 1 FROM tarif_tarifa_opcional WHERE codtarifa = '000001' AND id_opcional = o.id)",
@@ -317,13 +292,13 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
         $this->assertCount(1, $inserts, 'the copy is a single INSERT ... SELECT');
         $insertSql = $this->normalizeSql($inserts[0]);
         $this->assertStringContainsString(
-            'INSERT INTO tarif_tarifa_opcional (codtarifa, id_opcional, en_catalogo, en_tarifa, activa, orden)',
+            'INSERT INTO tarif_tarifa_opcional (codtarifa, id_opcional, activa, orden)',
             $insertSql
         );
         $this->assertStringContainsString(
-            "SELECT 'T2', id_opcional, en_catalogo, en_tarifa, activa, orden FROM tarif_tarifa_opcional WHERE codtarifa = 'T1'",
+            "SELECT 'T2', id_opcional, activa, orden FROM tarif_tarifa_opcional WHERE codtarifa = 'T1'",
             $insertSql,
-            'all six master columns must be copied from the source tarifa'
+            'every surviving master column must be copied from the source tarifa'
         );
     }
 
@@ -393,10 +368,6 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
     {
         $db = new TarifaOpcionalLifecycleSpyDb();
         $db->rows = [];
-        $db->selectQueue = [
-            [],
-            [['en_catalogo' => '1', 'en_tarifa' => '1']],
-        ];
         $model = $this->buildModel($db);
 
         $this->assertTrue($model->set_activa('T1', 5, false));
@@ -407,56 +378,28 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
         $this->assertCount(1, $inserts, 'the first toggle must create the master row');
         $this->assertCount(0, $updates);
         $this->assertStringContainsString(
-            "('T1',5,1,1,0,0)",
+            "('T1',5,0,0)",
             $this->normalizeSql($inserts[0]),
-            'inherited ext flags are preserved and only activa flips'
+            'the created row carries the flipped activa and the default orden'
         );
     }
 
-    public function test_set_en_catalogo_updates_the_existing_master_row(): void
+    /**
+     * D12 / CAR-15: the opcional-owned visibility setters are removed, not
+     * aliased.
+     */
+    public function test_removed_visibility_setters_are_not_callable(): void
     {
-        $db = new TarifaOpcionalLifecycleSpyDb();
-        $db->rows = [[
-            'codtarifa' => 'T1',
-            'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '0',
-            'activa' => '1',
-            'orden' => 0,
-        ]];
-        $model = $this->buildModel($db);
+        $model = $this->buildModel(new TarifaOpcionalLifecycleSpyDb());
 
-        $this->assertTrue($model->set_en_catalogo('T1', 5, false));
+        foreach (['set_en_catalogo', 'set_en_tarifa'] as $removed) {
+            $this->assertFalse(
+                method_exists($model, $removed),
+                $removed . '() must be removed with the opcional-owned flags'
+            );
+        }
 
-        $inserts = $this->statementsStartingWith($db->execStatements, 'INSERT');
-        $updates = $this->statementsStartingWith($db->execStatements, 'UPDATE');
-
-        $this->assertCount(0, $inserts, 'an existing master row must not be duplicated');
-        $this->assertCount(1, $updates);
-        $updateSql = $this->normalizeSql($updates[0]);
-        $this->assertStringContainsString('en_catalogo = 0', $updateSql);
-        $this->assertStringContainsString("WHERE codtarifa = 'T1'", $updateSql);
-        $this->assertStringContainsString('AND id_opcional = 5', $updateSql);
-    }
-
-    public function test_set_en_tarifa_updates_the_existing_master_row(): void
-    {
-        $db = new TarifaOpcionalLifecycleSpyDb();
-        $db->rows = [[
-            'codtarifa' => 'T1',
-            'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '0',
-            'activa' => '1',
-            'orden' => 0,
-        ]];
-        $model = $this->buildModel($db);
-
-        $this->assertTrue($model->set_en_tarifa('T1', 5, true));
-
-        $updates = $this->statementsStartingWith($db->execStatements, 'UPDATE');
-        $this->assertCount(1, $updates);
-        $this->assertStringContainsString('en_tarifa = 1', $this->normalizeSql($updates[0]));
+        $this->assertTrue(method_exists($model, 'set_activa'));
     }
 
     public function test_set_activa_updates_only_the_requested_column(): void
@@ -465,8 +408,6 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
         $db->rows = [[
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '1',
             'activa' => '1',
             'orden' => 3,
         ]];
@@ -479,35 +420,27 @@ final class TarifTarifaOpcionalLifecycleTest extends TestCase
         $updateSql = $this->normalizeSql($updates[0]);
         $this->assertStringContainsString('activa = 0', $updateSql);
         $this->assertStringNotContainsString(
-            'en_catalogo =',
+            'orden =',
             $updateSql,
-            'a single-flag toggle must not rewrite unrelated columns with stale values'
+            'a single-column toggle must not rewrite unrelated columns with stale values'
         );
-        $this->assertStringNotContainsString('en_tarifa =', $updateSql);
-        $this->assertStringNotContainsString('orden =', $updateSql);
     }
 
     public function test_set_orden_creates_or_updates_the_master_row(): void
     {
         $createDb = new TarifaOpcionalLifecycleSpyDb();
         $createDb->rows = [];
-        $createDb->selectQueue = [
-            [],
-            [['en_catalogo' => '1', 'en_tarifa' => '0']],
-        ];
         $create = $this->buildModel($createDb);
 
         $this->assertTrue($create->set_orden('T1', 5, 9));
         $inserts = $this->statementsStartingWith($createDb->execStatements, 'INSERT');
         $this->assertCount(1, $inserts);
-        $this->assertStringContainsString("('T1',5,1,0,1,9)", $this->normalizeSql($inserts[0]));
+        $this->assertStringContainsString("('T1',5,1,9)", $this->normalizeSql($inserts[0]));
 
         $updateDb = new TarifaOpcionalLifecycleSpyDb();
         $updateDb->rows = [[
             'codtarifa' => 'T1',
             'id_opcional' => 5,
-            'en_catalogo' => '1',
-            'en_tarifa' => '0',
             'activa' => '1',
             'orden' => 2,
         ]];

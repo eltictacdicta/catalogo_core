@@ -58,6 +58,15 @@ final class TarifTabPreciosTest extends TestCase
     public array $pricesByTarifa = [];
     public array $divisaCalls = [];
 
+    /** @var list<array{0: string, 1: string, 2: array<string, mixed>, 3: string, 4: bool}> */
+    public array $storeAssignments = [];
+
+    /** @var array<string, array<string, bool>> codtarifa => codigo => value */
+    public array $visibilityByTarifa = [];
+
+    /** @var array{0: bool, 1: bool}|null [en_tarifa, en_catalogo] of the last saved price row */
+    public ?array $lastSavedVisibilityFlags = null;
+
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
@@ -111,6 +120,9 @@ final class TarifTabPreciosTest extends TestCase
         $this->lastDeletedCodtarifa = null;
         $this->pricesByTarifa = [];
         $this->divisaCalls = [];
+        $this->storeAssignments = [];
+        $this->visibilityByTarifa = [];
+        $this->lastSavedVisibilityFlags = null;
     }
 
     private function resetCoreLog(): void
@@ -168,6 +180,7 @@ final class TarifTabPreciosTest extends TestCase
                 $this->outer->lastSavedPrecio = $this->precio;
                 $this->outer->lastSavedCodtarifa = $this->codtarifa;
                 $this->outer->lastSavedReferencia = $this->referencia;
+                $this->outer->lastSavedVisibilityFlags = [$this->en_tarifa, $this->en_catalogo];
                 return TRUE;
             }
             public function delete(): bool
@@ -213,6 +226,38 @@ final class TarifTabPreciosTest extends TestCase
             public function precio_model(): tarif_articulo_precio
             {
                 return $this->outer->trackedModel;
+            }
+            /**
+             * ATT-02 (WU-4): visibility persists as articulo-scope feature
+             * values through the store, and is read from the resolver.
+             */
+            protected function caracteristica_store()
+            {
+                return new class($this->outer) {
+                    public function __construct(private $outer)
+                    {
+                    }
+
+                    public function assign_bool(string $scope, string $codtarifa, array $key, string $codigo, bool $valor): bool
+                    {
+                        $this->outer->storeAssignments[] = [$scope, $codtarifa, $key, $codigo, $valor];
+
+                        return true;
+                    }
+                };
+            }
+            protected function caracteristica_resolver()
+            {
+                return new class($this->outer) {
+                    public function __construct(private $outer)
+                    {
+                    }
+
+                    public function resolve_bool(string $codigo, string $codtarifa, ?string $referencia = null, ?string $codfamilia = null): ?bool
+                    {
+                        return (bool) ($this->outer->visibilityByTarifa[(string) $codtarifa][$codigo] ?? false);
+                    }
+                };
             }
             public function call_guardar_precio_tab(): void
             {
@@ -424,10 +469,85 @@ final class TarifTabPreciosTest extends TestCase
         $this->assertNotSame('', $payload['html'], 'Response must carry the re-rendered rows fragment');
     }
 
+    public function test_visibility_controls_write_articulo_scope_feature_values(): void
+    {
+        $this->pricesByTarifa = ['USD1' => 999.0];
+
+        $payload = $this->postGuard([
+            'guardar_precio_tab' => '1',
+            'tipo' => 'articulo',
+            'referencia' => 'REF-1',
+            'codtarifa' => 'USD1',
+            'precio' => '10',
+            'en_catalogo' => '1',
+        ]);
+
+        $this->assertTrue($payload['ok']);
+
+        $byCodigo = [];
+        foreach ($this->storeAssignments as $assignment) {
+            $byCodigo[$assignment[3]] = $assignment;
+        }
+
+        $this->assertArrayHasKey('en_catalogo', $byCodigo, 'the catalog control must write a feature value');
+        $this->assertSame('articulo', $byCodigo['en_catalogo'][0], 'ATT-02: the write is articulo-scope');
+        $this->assertSame('USD1', $byCodigo['en_catalogo'][1]);
+        $this->assertSame(['referencia' => 'REF-1'], $byCodigo['en_catalogo'][2]);
+        $this->assertTrue($byCodigo['en_catalogo'][4], 'the checked control materializes TRUE');
+
+        $this->assertArrayHasKey('en_tarifa', $byCodigo, 'the tarifa control must write a feature value');
+        $this->assertFalse($byCodigo['en_tarifa'][4], 'an unchecked control materializes FALSE');
+    }
+
+    public function test_visibility_write_never_touches_the_legacy_price_columns(): void
+    {
+        $this->pricesByTarifa = ['USD1' => 999.0];
+
+        $this->postGuard([
+            'guardar_precio_tab' => '1',
+            'tipo' => 'articulo',
+            'referencia' => 'REF-1',
+            'codtarifa' => 'USD1',
+            'precio' => '10',
+            'en_catalogo' => '1',
+            'en_tarifa' => '1',
+        ]);
+
+        $this->assertFalse(
+            $this->lastSavedVisibilityFlags[0] ?? true,
+            'the legacy tarif_articulo_precios.en_tarifa column must not be written by the tab'
+        );
+        $this->assertFalse(
+            $this->lastSavedVisibilityFlags[1] ?? true,
+            'the legacy tarif_articulo_precios.en_catalogo column must not be written by the tab'
+        );
+    }
+
+    public function test_blank_price_deletes_the_row_and_keeps_the_feature_values(): void
+    {
+        $this->pricesByTarifa = ['USD1' => 999.0];
+
+        $payload = $this->postGuard([
+            'guardar_precio_tab' => '1',
+            'tipo' => 'articulo',
+            'referencia' => 'REF-1',
+            'codtarifa' => 'USD1',
+            'precio' => '',
+            'en_catalogo' => '1',
+        ]);
+
+        $this->assertTrue($payload['ok']);
+        $this->assertSame(1, $this->deleteCount, 'a blank price must delete the per-tarifa price row');
+        $this->assertSame(0, $this->saveCount, 'no price row may be written for a blank price');
+
+        $codigos = array_map(static fn (array $a): string => $a[3], $this->storeAssignments);
+        $this->assertContains('en_catalogo', $codigos, 'the feature value must still be materialized');
+        $this->assertContains('en_tarifa', $codigos);
+    }
+
     // =====================================================================
     // CSRF failure path — token missing/invalid → no save, error response
     // =====================================================================
-
     public function test_csrf_failure_rejects_before_model_access(): void
     {
         $this->controller->setCsrfValid(false);

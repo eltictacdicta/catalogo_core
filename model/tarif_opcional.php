@@ -4,7 +4,11 @@
  * Copyright (C) 2025 FSFramework Team
  *
  * Extiende catalogo_opcional del plugin catalogo_core con URLs, precios por tarifa
- * y campos de extensión (ref_sap, en_catalogo, en_tarifa) en tarif_opcional_ext.
+ * y el campo de extensión ref_sap en tarif_opcional_ext.
+ *
+ * Catalog/tarifa visibility is no longer an opcional-owned flag
+ * (`caracteristicas-producto` CAR-12 / D12): it is derived from the parent
+ * product through `CaracteristicaResolver`.
  */
 namespace FSFramework\model;
 
@@ -18,12 +22,6 @@ class tarif_opcional extends catalogo_opcional
 
     /** @var string|null Referencia SAP / SKU del opcional (solo tarifario). */
     public $ref_sap;
-
-    /** @var bool Visible en catálogo exportado (solo tarifario). */
-    public $en_catalogo = false;
-
-    /** @var bool Incluido en tarifa exportada (solo tarifario). */
-    public $en_tarifa = false;
 
     /**
      * Process-wide cache of columnExists() probes, keyed by "table|column".
@@ -47,16 +45,8 @@ class tarif_opcional extends catalogo_opcional
             if ($this->ref_sap === '') {
                 $this->ref_sap = null;
             }
-            if (array_key_exists('en_catalogo', $data)) {
-                $this->en_catalogo = $this->str2bool($data['en_catalogo']);
-            }
-            if (array_key_exists('en_tarifa', $data)) {
-                $this->en_tarifa = $this->str2bool($data['en_tarifa']);
-            }
         } else {
             $this->ref_sap = null;
-            $this->en_catalogo = false;
-            $this->en_tarifa = false;
         }
 
         if ($data && $this->id) {
@@ -116,8 +106,6 @@ class tarif_opcional extends catalogo_opcional
         );
         if ($data) {
             $this->ref_sap = $data[0]['ref_sap'] ?? null;
-            $this->en_catalogo = $this->str2bool($data[0]['en_catalogo'] ?? false);
-            $this->en_tarifa = $this->str2bool($data[0]['en_tarifa'] ?? false);
 
             return;
         }
@@ -139,7 +127,7 @@ class tarif_opcional extends catalogo_opcional
         // result for every subsequently hydrated row.
         if (!array_key_exists($sourceTable, self::$legacy_columns_cache)) {
             $columns = ['id'];
-            foreach (['ref_sap', 'codigo2', 'en_catalogo', 'en_tarifa'] as $candidate) {
+            foreach (['ref_sap', 'codigo2'] as $candidate) {
                 if ($this->columnExists($sourceTable, $candidate)) {
                     $columns[] = $candidate;
                 }
@@ -166,12 +154,6 @@ class tarif_opcional extends catalogo_opcional
         if ($this->ref_sap === '') {
             $this->ref_sap = null;
         }
-        if (array_key_exists('en_catalogo', $row)) {
-            $this->en_catalogo = $this->str2bool($row['en_catalogo']);
-        }
-        if (array_key_exists('en_tarifa', $row)) {
-            $this->en_tarifa = $this->str2bool($row['en_tarifa']);
-        }
     }
 
     protected function ext_exists(): bool
@@ -195,8 +177,6 @@ class tarif_opcional extends catalogo_opcional
         $ext = new tarif_opcional_ext();
         $ext->id_opcional = (int) $this->id;
         $ext->ref_sap = $this->ref_sap;
-        $ext->en_catalogo = $this->en_catalogo;
-        $ext->en_tarifa = $this->en_tarifa;
 
         return $ext->save();
     }
@@ -215,7 +195,7 @@ class tarif_opcional extends catalogo_opcional
 
     public function get($id)
     {
-        $sql = 'SELECT o.*, e.ref_sap, e.en_catalogo, e.en_tarifa FROM ' . $this->table_name . ' o '
+        $sql = 'SELECT o.*, e.ref_sap FROM ' . $this->table_name . ' o '
             . 'LEFT JOIN ' . $this->ext_table . ' e ON o.id = e.id_opcional '
             . 'WHERE o.id = ' . $this->intval($id) . ';';
         $data = $this->db->select($sql);
@@ -303,7 +283,7 @@ class tarif_opcional extends catalogo_opcional
 
             // SELECT DISTINCT + an ORDER BY expression requires the expression
             // to be in the select list (MySQL error 3065 otherwise).
-            $sql = 'SELECT DISTINCT o.*, e.ref_sap, e.en_catalogo, e.en_tarifa';
+            $sql = 'SELECT DISTINCT o.*, e.ref_sap';
             if ($order_expr !== null) {
                 $sql .= ', ' . $order_expr . ' AS orden_tarifa';
             }
@@ -394,7 +374,7 @@ class tarif_opcional extends catalogo_opcional
     public function all($offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $list = [];
-        $sql = 'SELECT o.*, e.ref_sap, e.en_catalogo, e.en_tarifa FROM ' . $this->table_name . ' o '
+        $sql = 'SELECT o.*, e.ref_sap FROM ' . $this->table_name . ' o '
             . 'LEFT JOIN ' . $this->ext_table . ' e ON o.id = e.id_opcional '
             . 'ORDER BY o.nombre ASC';
         $data = $this->db->select_limit($sql, $limit, $offset);

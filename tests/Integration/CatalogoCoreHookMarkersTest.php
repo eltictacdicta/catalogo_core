@@ -163,13 +163,31 @@ final class CatalogoCoreHookMarkersTest extends TestCase
         foreach ([self::OPCIONAL_VIEW, self::ARTICULO_VIEW] as $view) {
             foreach ($this->markerLines($view) as $name => $line) {
                 $this->assertMatchesRegularExpression(
-                    '/\{\{- render_hook\(\'' . preg_quote($name, '/') . '\', \{\'fsc\': fsc, \'user\': user, \'empresa\': empresa, \'i18n\': i18n\}\) -\}\}/',
+                    '/\{\{- render_hook\(\'' . preg_quote($name, '/') . '\', '
+                    . '\{\'fsc\': fsc, \'user\': user, \'empresa\': empresa, \'i18n\': i18n, '
+                    . '\'caracteristicas\': fsc\.caracteristicas_context\(\)\}\) -\}\}/',
                     $line,
-                    "Marker {$name} must use Twig whitespace control and the frozen context"
+                    "Marker {$name} must use Twig whitespace control, the frozen four keys and the added feature context"
                 );
                 $this->assertStringNotContainsString('|raw', $line, "Marker {$name} must not need |raw (render_hook is is_safe:['html'])");
             }
         }
+    }
+
+    public function test_feature_context_reaches_the_hook_template(): void
+    {
+        $twig = $this->buildHostEnvironment([
+            '@test/features.html.twig' => 'FEAT[{{ caracteristicas.en_catalogo }}|{{ caracteristicas.en_tarifa }}]',
+        ]);
+        ViewHookRegistry::register('ventas_articulo_tabs_after', '@test/features.html.twig');
+
+        $html = $twig->render(self::ARTICULO_VIEW, $this->hostContext($this->hostFsc(false, 'REF-777')));
+
+        $this->assertStringContainsString(
+            'FEAT[1|0]',
+            $html,
+            'The article hook must receive the caracteristicas map resolved for the host entity and tarifa'
+        );
     }
 
     public function test_naming_pattern_is_derivable_and_has_no_bare_tarifa_token(): void
@@ -484,6 +502,17 @@ final class HookMarkerHostFsc
     public function url(): string
     {
         return 'index.php?page=ventas_opcional';
+    }
+
+    /**
+     * Feature context stand-in for the marker expression: a resolvable,
+     * never-persisting map keyed by definition codigo.
+     *
+     * @return array<string, ?string>
+     */
+    public function caracteristicas_context(?string $referencia = null, ?string $codfamilia = null, ?string $codtarifa = null): array
+    {
+        return ['en_catalogo' => '1', 'en_tarifa' => '0'];
     }
 }
 

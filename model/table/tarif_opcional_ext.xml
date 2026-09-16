@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     Extensión 1:1 de catalogo_opcionales para campos propios del tarifario.
-    ref_sap, en_catalogo y en_tarifa no pertenecen al catálogo base (tpvmod).
+    ref_sap no pertenece al catálogo base (tpvmod).
+    en_catalogo/en_tarifa were removed by caracteristicas-producto CAR-15
+    clause 1: opcional visibility is derived from the parent product (D12).
 -->
 <tabla>
     <columna>
@@ -13,18 +15,6 @@
         <nombre>ref_sap</nombre>
         <tipo>character varying(50)</tipo>
         <nulo>YES</nulo>
-    </columna>
-    <columna>
-        <nombre>en_catalogo</nombre>
-        <tipo>boolean</tipo>
-        <nulo>YES</nulo>
-        <defecto>false</defecto>
-    </columna>
-    <columna>
-        <nombre>en_tarifa</nombre>
-        <tipo>boolean</tipo>
-        <nulo>YES</nulo>
-        <defecto>false</defecto>
     </columna>
     <restriccion>
         <nombre>tarif_opcional_ext_pkey</nombre>

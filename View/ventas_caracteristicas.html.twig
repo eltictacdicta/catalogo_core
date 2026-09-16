@@ -1,0 +1,253 @@
+{# This file is part of catalogo_core. Copyright (C) 2026 FSFramework Team. #}
+{% extends 'master/Base.html.twig' %}
+
+{% block body %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-7">
+            <div class="box box-primary">
+                <div class="box-header with-border">
+                    <h3 class="box-title">{{ 'caracteristicas'|trans }}</h3>
+                </div>
+                <div class="box-body table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>{{ 'code'|trans }}</th>
+                                <th>{{ 'name'|trans }}</th>
+                                <th class="text-center">{{ 'type'|trans }}</th>
+                                <th class="text-center">Activa</th>
+                                <th class="text-center">Importable</th>
+                                <th class="text-center">Exportable</th>
+                                <th class="text-center">Listable</th>
+                                <th class="text-right">{{ 'order'|trans }}</th>
+                                <th class="text-right">{{ 'actions'|trans }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for def in fsc.definiciones %}
+                            <tr>
+                                <td><a href="{{ fsc.url() }}&codigo={{ def.codigo }}">{{ def.codigo }}</a></td>
+                                <td>{{ def.nombre }}</td>
+                                <td class="text-center">{{ def.tipo }}</td>
+                                <td class="text-center">
+                                    <form method="post" action="{{ fsc.url() }}" class="form-inline">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="action" value="toggle_flag"/>
+                                        <input type="hidden" name="codigo" value="{{ def.codigo }}"/>
+                                        <input type="hidden" name="field" value="activo"/>
+                                        <button type="submit" class="btn btn-xs {{ def.activo ? 'btn-success' : 'btn-default' }}">
+                                            {{ def.activo ? 'Sí' : 'No' }}
+                                        </button>
+                                    </form>
+                                </td>
+                                <td class="text-center">
+                                    <form method="post" action="{{ fsc.url() }}" class="form-inline">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="action" value="toggle_flag"/>
+                                        <input type="hidden" name="codigo" value="{{ def.codigo }}"/>
+                                        <input type="hidden" name="field" value="importable"/>
+                                        <button type="submit" class="btn btn-xs {{ def.importable ? 'btn-success' : 'btn-default' }}">
+                                            {{ def.importable ? 'Sí' : 'No' }}
+                                        </button>
+                                    </form>
+                                </td>
+                                <td class="text-center">
+                                    <form method="post" action="{{ fsc.url() }}" class="form-inline">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="action" value="toggle_flag"/>
+                                        <input type="hidden" name="codigo" value="{{ def.codigo }}"/>
+                                        <input type="hidden" name="field" value="exportable"/>
+                                        <button type="submit" class="btn btn-xs {{ def.exportable ? 'btn-success' : 'btn-default' }}">
+                                            {{ def.exportable ? 'Sí' : 'No' }}
+                                        </button>
+                                    </form>
+                                </td>
+                                <td class="text-center">
+                                    <form method="post" action="{{ fsc.url() }}" class="form-inline">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="action" value="toggle_flag"/>
+                                        <input type="hidden" name="codigo" value="{{ def.codigo }}"/>
+                                        <input type="hidden" name="field" value="listable"/>
+                                        <button type="submit" class="btn btn-xs {{ def.listable ? 'btn-success' : 'btn-default' }}">
+                                            {{ def.listable ? 'Sí' : 'No' }}
+                                        </button>
+                                    </form>
+                                </td>
+                                <td class="text-right">{{ def.orden }}</td>
+                                <td class="text-right">
+                                    {% if fsc.allow_delete and def.is_deletable() %}
+                                    <form method="post" action="{{ fsc.url() }}" class="form-inline">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="action" value="delete_definition"/>
+                                        <input type="hidden" name="codigo" value="{{ def.codigo }}"/>
+                                        <button type="submit" class="btn btn-xs btn-danger">
+                                            <span class="glyphicon glyphicon-trash"></span>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-5">
+            <div class="box box-default">
+                <div class="box-header with-border">
+                    <h3 class="box-title">{{ 'new'|trans }}</h3>
+                </div>
+                <form method="post" action="{{ fsc.url() }}">
+                    {{ csrf_field() }}
+                    <input type="hidden" name="action" value="save_definition"/>
+                    <div class="box-body">
+                        <div class="form-group">
+                            <label>{{ 'code'|trans }}</label>
+                            <input type="text" name="codigo" class="form-control" maxlength="50" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'name'|trans }}</label>
+                            <input type="text" name="nombre" class="form-control" maxlength="100" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'type'|trans }}</label>
+                            <select name="tipo" class="form-control">
+                                <option value="string">string</option>
+                                <option value="bool">bool</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'order'|trans }}</label>
+                            <input type="number" name="orden" class="form-control" value="0"/>
+                        </div>
+                    </div>
+                    <div class="box-footer">
+                        <button type="submit" class="btn btn-primary">{{ 'save'|trans }}</button>
+                    </div>
+                </form>
+            </div>
+
+            {% if fsc.selected_codigo %}
+            <div class="box box-default">
+                <div class="box-header with-border">
+                    <h3 class="box-title">{{ 'values'|trans }} — {{ fsc.selected_codigo }}</h3>
+                </div>
+                <div class="box-body table-responsive">
+                    <table class="table table-condensed">
+                        <tbody>
+                            {% for valor in fsc.valores %}
+                            <tr>
+                                <td>{{ valor.valor }}</td>
+                                <td class="text-right">{{ valor.orden }}</td>
+                                <td class="text-right">
+                                    {% if fsc.allow_delete %}
+                                    <form method="post" action="{{ fsc.url() }}" class="form-inline">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="action" value="delete_catalogo_valor"/>
+                                        <input type="hidden" name="id" value="{{ valor.id }}"/>
+                                        <button type="submit" class="btn btn-xs btn-danger">
+                                            <span class="glyphicon glyphicon-trash"></span>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <form method="post" action="{{ fsc.url() }}">
+                    {{ csrf_field() }}
+                    <input type="hidden" name="action" value="save_catalogo_valor"/>
+                    <input type="hidden" name="codigo" value="{{ fsc.selected_codigo }}"/>
+                    <div class="box-body">
+                        <div class="form-group">
+                            <label>{{ 'value'|trans }}</label>
+                            <input type="text" name="valor" class="form-control" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'order'|trans }}</label>
+                            <input type="number" name="orden" class="form-control" value="0"/>
+                        </div>
+                    </div>
+                    <div class="box-footer">
+                        <button type="submit" class="btn btn-primary">{{ 'save'|trans }}</button>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="box box-default">
+                <div class="box-header with-border">
+                    <h3 class="box-title">{{ 'assign-value'|trans }}</h3>
+                </div>
+                <form method="post" action="{{ fsc.url() }}">
+                    {{ csrf_field() }}
+                    <input type="hidden" name="action" value="assign_value"/>
+                    <div class="box-body">
+                        <div class="form-group">
+                            <label>{{ 'scope'|trans }}</label>
+                            <select name="scope" class="form-control">
+                                <option value="global">{{ 'all-products'|trans }}</option>
+                                <option value="familia">{{ 'family'|trans }}</option>
+                                <option value="articulo">{{ 'product'|trans }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'code'|trans }}</label>
+                            <input type="text" name="codigo" class="form-control" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'tarifa'|trans }}</label>
+                            <input type="text" name="codtarifa" class="form-control" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'reference'|trans }}</label>
+                            <input type="text" name="key[referencia]" class="form-control"/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'family'|trans }}</label>
+                            <input type="text" name="key[codfamilia]" class="form-control"/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'predefined-value'|trans }}</label>
+                            <input type="number" name="id_valor" class="form-control"/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'value'|trans }}</label>
+                            <input type="text" name="valor" class="form-control"/>
+                        </div>
+                    </div>
+                    <div class="box-footer">
+                        <button type="submit" class="btn btn-primary">{{ 'save'|trans }}</button>
+                    </div>
+                </form>
+                <form method="post" action="{{ fsc.url() }}">
+                    {{ csrf_field() }}
+                    <input type="hidden" name="action" value="clear_value"/>
+                    <div class="box-body">
+                        <div class="form-group">
+                            <label>{{ 'code'|trans }}</label>
+                            <input type="text" name="codigo" class="form-control" required/>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'tarifa'|trans }}</label>
+                            <input type="text" name="codtarifa" class="form-control" required/>
+                        </div>
+                    </div>
+                    <div class="box-footer">
+                        <button type="submit" class="btn btn-danger">{{ 'delete'|trans }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

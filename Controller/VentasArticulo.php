@@ -38,6 +38,9 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_familia.php'
 require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_articulo_etiqueta.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_imagen.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/extras/CaracteristicaHookContextTrait.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorStore.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
@@ -57,11 +60,15 @@ use FSFramework\model\tarif_tarifa_articulo_etiqueta;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa_familia;
 use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore;
 use FSFramework\Translation\FSTranslator;
 use Symfony\Component\HttpFoundation\Request;
 
 class VentasArticulo extends PageController
 {
+    use \CaracteristicaHookContextTrait;
+
     public ?\articulo $articulo = null;
     public array $familias = [];
     public array $fabricantes = [];
@@ -284,6 +291,30 @@ class VentasArticulo extends PageController
     }
 
     /**
+     * Referencia of the article loaded by the detail page (hook context).
+     */
+    protected function caracteristicas_host_referencia(): string
+    {
+        return (string) ($this->articulo?->referencia ?? '');
+    }
+
+    /**
+     * codfamilia of the article loaded by the detail page (hook context).
+     */
+    protected function caracteristicas_host_familia(): string
+    {
+        return (string) ($this->articulo?->codfamilia ?? '');
+    }
+
+    /**
+     * Tarifa selected by the detail page (hook context).
+     */
+    protected function caracteristicas_tarifa_seleccionada(): string
+    {
+        return (string) $this->codtarifa;
+    }
+
+    /**
      * Neutral permission gate (AD-W2-2): admins short-circuit, otherwise the
      * plugin-agnostic ArticlePermissionFilterEvent resolves the verdict
      * (default-allow with zero listeners; tarifario's listener enforces RBAC
@@ -420,6 +451,12 @@ class VentasArticulo extends PageController
     /**
      * Sincroniza el artículo con la tarifa activa (ported 1:1 from
      * tarif_articulo_edit::sync_tarifa_articulo_actual).
+     *
+     * ART-01/ART-02: the per-tarifa visibility is persisted as articulo-scope
+     * feature values through the feature store, never on the legacy
+     * `tarif_tarifa_articulo` visibility columns. The visibility step is
+     * skipped when the request carries no visibility control at all, so a plain
+     * article save never clears an existing feature value.
      */
     protected function syncTarifaArticulo(\articulo $art): bool
     {
@@ -431,6 +468,8 @@ class VentasArticulo extends PageController
             return false;
         }
 
+        $this->persist_articulo_visibility((string) $art->referencia, (string) $this->codtarifa);
+
         $model = $this->tarifa_articulo_model();
         $row = $model->get($this->codtarifa, $art->referencia);
 
@@ -440,6 +479,54 @@ class VentasArticulo extends PageController
         }
 
         return false !== $model->add_articulo_to_tarifa($this->codtarifa, $art->referencia, $art->codfamilia);
+    }
+
+    /**
+     * Feature-value store seam (ART-01/ART-02 write path). Overridable so the
+     * per-tarifa visibility persistence is unit-testable without a live
+     * database.
+     *
+     * @return CaracteristicaValorStore
+     */
+    protected function caracteristica_store()
+    {
+        return new CaracteristicaValorStore();
+    }
+
+    /**
+     * Persists the posted `en_tarifa`/`en_catalogo` as articulo-scope feature
+     * values for the tarifa.
+     *
+     * Best-effort by design: the definitions are registered by the tarifario
+     * plugin (`caracteristicas-producto` WU-6), so a catalogo_core-only install
+     * has nothing to write and the article save must still succeed. The legacy
+     * visibility columns are never touched.
+     */
+    protected function persist_articulo_visibility(string $referencia, string $codtarifa): void
+    {
+        if ($referencia === '' || $codtarifa === '') {
+            return;
+        }
+
+        $request = $this->request;
+        if ($request === null) {
+            return;
+        }
+
+        if (!$request->request->has('en_tarifa') && !$request->request->has('en_catalogo')) {
+            return;
+        }
+
+        $store = $this->caracteristica_store();
+        foreach (CaracteristicaResolver::VISIBILITY_CODIGOS as $codigo) {
+            $store->assign_bool(
+                CaracteristicaResolver::SCOPE_ARTICULO,
+                $codtarifa,
+                ['referencia' => $referencia],
+                $codigo,
+                $request->request->has($codigo)
+            );
+        }
     }
 
     /**

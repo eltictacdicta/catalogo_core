@@ -39,8 +39,11 @@ class VentasOpcionales extends PageController
 
     /**
      * Per-row state toggles dispatched by `privateCore()`.
+     *
+     * Catalog/tarifa visibility is derived from the parent product (OUM-03/04)
+     * and has no toggle; only activation is mutable here.
      */
-    public const TOGGLE_ACTIONS = ['toggle_activa', 'toggle_en_catalogo', 'toggle_en_tarifa'];
+    public const TOGGLE_ACTIONS = ['toggle_activa'];
 
     public bool $allow_delete = false;
 
@@ -93,6 +96,7 @@ class VentasOpcionales extends PageController
         }
 
         $this->load_opcionales_state_cache();
+        $this->load_opcionales_visibility_cache();
         $this->load_precios_cache();
     }
 

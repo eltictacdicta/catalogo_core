@@ -19,10 +19,14 @@
 
 require_once 'plugins/catalogo_core/extras/TarifarioOpcionalStateTrait.php';
 require_once 'plugins/catalogo_core/model/tarif_articulo_precio.php';
+require_once 'plugins/catalogo_core/Services/CaracteristicaResolver.php';
+require_once 'plugins/catalogo_core/Services/CaracteristicaValorStore.php';
 
 use FSFramework\Core\Html;
 use FSFramework\Event\FSEventDispatcher;
 use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore;
 use FSFramework\model\tarif_articulo_precio;
 
 /**
@@ -79,6 +83,27 @@ class tarif_tab_precios extends fbase_controller
     }
 
     /**
+     * D12 feature-value seams (ATT-02/ATT-04). The tab's visibility controls
+     * persist articulo-scope feature values through the store and read the
+     * effective value through the resolver — never the legacy per-tarifa
+     * visibility columns.
+     *
+     * @return CaracteristicaResolver
+     */
+    protected function caracteristica_resolver()
+    {
+        return new CaracteristicaResolver();
+    }
+
+    /**
+     * @return CaracteristicaValorStore
+     */
+    protected function caracteristica_store()
+    {
+        return new CaracteristicaValorStore();
+    }
+
+    /**
      * GET action=rows — vuelca el fragmento de filas por tarifa.
      */
     protected function render_rows_action()
@@ -91,13 +116,21 @@ class tarif_tab_precios extends fbase_controller
     }
 
     /**
-     * Renderiza el fragmento de filas con la divisa de cada tarifa (S27).
+     * Renderiza el fragmento de filas con la divisa de cada tarifa (S27) y la
+     * visibilidad derivada del producto (ATT-02, design D12).
      */
     protected function render_rows_fragment(): string
     {
         $precios = [];
+        $visibilidad = [];
+        $resolver = $this->caracteristica_resolver();
+
         foreach ($this->tarifas as $tarifa) {
             $precios[$tarifa->codtarifa] = $this->precio_model()->get($this->rows_ref, $tarifa->codtarifa);
+            $visibilidad[$tarifa->codtarifa] = [
+                'en_tarifa' => (bool) $resolver->resolve_bool('en_tarifa', (string) $tarifa->codtarifa, $this->rows_ref, null),
+                'en_catalogo' => (bool) $resolver->resolve_bool('en_catalogo', (string) $tarifa->codtarifa, $this->rows_ref, null),
+            ];
         }
 
         return Html::render('@catalogo_core/Hooks/partials/articulo_precios_rows.html.twig', [
@@ -105,6 +138,7 @@ class tarif_tab_precios extends fbase_controller
             'referencia' => $this->rows_ref,
             'tarifas' => $this->tarifas,
             'precios' => $precios,
+            'visibilidad' => $visibilidad,
         ]);
     }
 
@@ -158,8 +192,6 @@ class tarif_tab_precios extends fbase_controller
             }
             $p->precio = floatval(str_replace(',', '.', $precio_str));
             $p->activo = isset($_POST['activo']);
-            $p->en_tarifa = isset($_POST['en_tarifa']);
-            $p->en_catalogo = isset($_POST['en_catalogo']);
             if (!$p->save()) {
                 $this->respond_tab_json(false, 'No se pudo guardar el precio.');
                 return;
@@ -167,7 +199,39 @@ class tarif_tab_precios extends fbase_controller
             $message = 'Precio guardado correctamente.';
         }
 
+        // ATT-02: the tab's visibility controls persist articulo-scope feature
+        // values (never the legacy per-tarifa visibility columns). A blanked
+        // price deletes the price row and leaves the feature values intact.
+        $this->persist_articulo_visibility($referencia, $codtarifa);
+
         $this->respond_tab_json(true, $message, $this->render_rows_fragment());
+    }
+
+    /**
+     * Materializes the posted `en_tarifa`/`en_catalogo` controls as
+     * articulo-scope feature values for the row's tarifa.
+     *
+     * Best-effort by design: the `en_tarifa`/`en_catalogo` definitions are
+     * registered by the tarifario plugin (`caracteristicas-producto` WU-6), so a
+     * catalogo_core-only install has no definition to write and the price edit
+     * must still succeed. The legacy per-tarifa columns are never touched.
+     */
+    protected function persist_articulo_visibility(string $referencia, string $codtarifa): void
+    {
+        if ($referencia === '' || $codtarifa === '') {
+            return;
+        }
+
+        $store = $this->caracteristica_store();
+        foreach (['en_tarifa', 'en_catalogo'] as $codigo) {
+            $store->assign_bool(
+                CaracteristicaResolver::SCOPE_ARTICULO,
+                $codtarifa,
+                ['referencia' => $referencia],
+                $codigo,
+                isset($_POST[$codigo])
+            );
+        }
     }
 
     /**

@@ -8,14 +8,16 @@
 namespace FSFramework\model;
 
 /**
- * Modelo para tarif_opcional_ext (ref_sap, en_catalogo, en_tarifa).
+ * Modelo para tarif_opcional_ext (ref_sap).
+ *
+ * Opcional-level catalog/tarifa visibility was removed by D12 of
+ * `caracteristicas-producto` (CAR-12/CAR-15 clause 1): an opcional owns no
+ * visibility flag, it is derived from the parent product.
  */
 class tarif_opcional_ext extends \fs_model
 {
     public $id_opcional;
     public $ref_sap;
-    public $en_catalogo;
-    public $en_tarifa;
 
     public function __construct($data = false)
     {
@@ -24,13 +26,9 @@ class tarif_opcional_ext extends \fs_model
         if ($data) {
             $this->id_opcional = intval($data['id_opcional']);
             $this->ref_sap = $data['ref_sap'] ?? null;
-            $this->en_catalogo = isset($data['en_catalogo']) ? $this->str2bool($data['en_catalogo']) : false;
-            $this->en_tarifa = isset($data['en_tarifa']) ? $this->str2bool($data['en_tarifa']) : false;
         } else {
             $this->id_opcional = null;
             $this->ref_sap = null;
-            $this->en_catalogo = false;
-            $this->en_tarifa = false;
         }
     }
 
@@ -80,16 +78,12 @@ class tarif_opcional_ext extends \fs_model
         if ($this->exists()) {
             $sql = 'UPDATE ' . $this->table_name . ' SET '
                 . 'ref_sap = ' . $this->var2str($this->ref_sap)
-                . ', en_catalogo = ' . $this->var2str($this->en_catalogo)
-                . ', en_tarifa = ' . $this->var2str($this->en_tarifa)
                 . ' WHERE id_opcional = ' . $this->intval($this->id_opcional) . ';';
         } else {
             $sql = 'INSERT INTO ' . $this->table_name
-                . ' (id_opcional, ref_sap, en_catalogo, en_tarifa) VALUES ('
+                . ' (id_opcional, ref_sap) VALUES ('
                 . $this->intval($this->id_opcional) . ','
-                . $this->var2str($this->ref_sap) . ','
-                . $this->var2str($this->en_catalogo) . ','
-                . $this->var2str($this->en_tarifa) . ');';
+                . $this->var2str($this->ref_sap) . ');';
         }
 
         return (bool) $this->db->exec($sql);

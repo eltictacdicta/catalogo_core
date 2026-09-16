@@ -22,9 +22,13 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php'
 require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloTarifaPrecioBatchReader.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorBatchReader.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaConfig.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoCurrencyFormatter.php';
 
 use FSFramework\Plugins\catalogo_core\Services\ArticuloTarifaPrecioBatchReader;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaConfig;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorBatchReader;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoCurrencyFormatter;
 
 /**
@@ -40,6 +44,9 @@ use FSFramework\Plugins\catalogo_core\Services\CatalogoCurrencyFormatter;
  */
 trait VentasArticulosListTrait
 {
+    /** The two visibility features resolved through the read-through flag (CAR-14). */
+    private const VISIBILITY_CODIGOS = ['en_catalogo', 'en_tarifa'];
+
     /** Effective familia filter (canonical `codfamilia` wins over `b_codfamilia`). */
     public $b_codfamilia = '';
 
@@ -65,6 +72,14 @@ trait VentasArticulosListTrait
      * @var array<string, array{precio: float, activo: bool, en_tarifa: bool, en_catalogo: bool}>
      */
     private array $articulo_tarifa_columns = [];
+
+    /**
+     * Resolver-driven visibility per referencia while the read-through flag is
+     * on (CAR-14); empty on the legacy branch.
+     *
+     * @var array<string, array<string, ?string>>
+     */
+    private array $articulo_visibility_features = [];
 
     // =====================================================================
     // Seams
@@ -237,8 +252,19 @@ trait VentasArticulosListTrait
     // =====================================================================
 
     /**
+     * Read-through seam (CAR-14). Overridable so unit tests pin both branches
+     * without defining the config constant.
+     */
+    protected function caracteristica_read_through(): bool
+    {
+        return CaracteristicaConfig::read_through();
+    }
+
+    /**
      * Loads the per-tarifa price/state map for the listed references with one
-     * batched query (never N+1).
+     * batched query (never N+1). When the read-through flag is on, the two
+     * visibility features are batched alongside it so the `Tarifa`/`Catálogo`
+     * cells follow the resolver (CAR-14).
      *
      * @param array<int, string> $referencias
      */
@@ -246,6 +272,15 @@ trait VentasArticulosListTrait
     {
         $this->articulo_tarifa_columns = $this->articulo_precio_batch_reader()
             ->for_referencias($referencias, (string) $this->b_codtarifa);
+
+        if (!$this->caracteristica_read_through()) {
+            $this->articulo_visibility_features = [];
+
+            return;
+        }
+
+        $this->articulo_visibility_features = $this->caracteristica_batch_reader()
+            ->for_referencias($referencias, (string) $this->b_codtarifa, null, self::VISIBILITY_CODIGOS);
     }
 
     /**
@@ -273,12 +308,28 @@ trait VentasArticulosListTrait
 
     public function articulo_en_tarifa_flag($referencia): bool
     {
-        return (bool) $this->articulo_tarifa_row((string) $referencia)['en_tarifa'];
+        return $this->articulo_visibility_bool((string) $referencia, 'en_tarifa');
     }
 
     public function articulo_en_catalogo($referencia): bool
     {
-        return (bool) $this->articulo_tarifa_row((string) $referencia)['en_catalogo'];
+        return $this->articulo_visibility_bool((string) $referencia, 'en_catalogo');
+    }
+
+    /**
+     * Visibility resolution: the resolver values while the flag is on, the
+     * legacy per-tarifa columns otherwise (ALC-02/CAR-14). A missing resolver
+     * value resolves to FALSE — the feature default.
+     */
+    private function articulo_visibility_bool(string $referencia, string $codigo): bool
+    {
+        if ($this->caracteristica_read_through()) {
+            $value = $this->articulo_visibility_features[$referencia][$codigo] ?? null;
+
+            return $value === 't' || $value === '1';
+        }
+
+        return (bool) $this->articulo_tarifa_row($referencia)[$codigo];
     }
 
     /**
@@ -304,6 +355,94 @@ trait VentasArticulosListTrait
     public function simbolo_divisa_tarifa(string $coddivisa): string
     {
         return CatalogoCurrencyFormatter::symbol($coddivisa);
+    }
+
+    // =====================================================================
+    // listable feature columns (CAR-16)
+    // =====================================================================
+
+    /**
+     * @var array<int, array<string, mixed>>
+     */
+    private array $caracteristica_columns = [];
+
+    /**
+     * @var array<string, array<string, ?string>>
+     */
+    private array $caracteristica_values = [];
+
+    /**
+     * Batch-reader seam for the listable feature columns.
+     */
+    protected function caracteristica_batch_reader(): CaracteristicaValorBatchReader
+    {
+        return new CaracteristicaValorBatchReader();
+    }
+
+    /**
+     * Loads the listable feature columns and values for the page with one
+     * batched read (never N+1). No tarifa selected ⇒ no feature columns.
+     *
+     * @param array<int, string> $referencias
+     */
+    public function load_caracteristica_columns(array $referencias): void
+    {
+        if (!$this->tarifa_seleccionada) {
+            $this->caracteristica_columns = [];
+            $this->caracteristica_values = [];
+
+            return;
+        }
+
+        $reader = $this->caracteristica_batch_reader();
+        $this->caracteristica_columns = $reader->columns();
+        $this->caracteristica_values = $reader->for_referencias(
+            $referencias,
+            (string) $this->b_codtarifa
+        );
+    }
+
+    /**
+     * Ordered `listable` definitions; empty when no tarifa is selected.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listable_caracteristicas(): array
+    {
+        if (!$this->tarifa_seleccionada) {
+            return [];
+        }
+
+        return $this->caracteristica_columns;
+    }
+
+    /**
+     * Renders one feature cell: bool ⇒ Sí/No, string ⇒ its escaped value,
+     * "no value" ⇒ the neutral placeholder `-`.
+     */
+    public function caracteristica_cell(string $referencia, string $codigo): string
+    {
+        $value = $this->caracteristica_values[$referencia][$codigo] ?? null;
+        if ($value === null) {
+            return '-';
+        }
+
+        if ($this->caracteristica_type($codigo) === 'bool') {
+            return ($value === 't' || $value === '1') ? 'Sí' : 'No';
+        }
+
+        return (string) $value;
+    }
+
+    private function caracteristica_type(string $codigo): string
+    {
+        foreach ($this->caracteristica_columns as $column) {
+            if ((string) ($column['codigo'] ?? '') === $codigo) {
+                return (string) ($column['tipo'] ?? 'string');
+            }
+        }
+
+        return 'string';
     }
 
     // =====================================================================

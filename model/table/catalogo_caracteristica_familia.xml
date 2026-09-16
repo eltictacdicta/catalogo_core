@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Table catalogo_caracteristica_familia: family/subfamily scope of a feature
+    value, keyed by (codtarifa, codfamilia, id_caracteristica). Descendant
+    propagation resolves lazily through the madre walk (CAR-09).
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_caracteristica</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_valor</nombre>
+        <tipo>integer</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>valor</nombre>
+        <tipo>character varying(255)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>custom</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_caracteristica_familia_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, codfamilia, id_caracteristica)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_familia_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_familia_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_familia_caracteristica</nombre>
+        <consulta>FOREIGN KEY (id_caracteristica)
+            REFERENCES catalogo_caracteristicas (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_familia_valor</nombre>
+        <consulta>FOREIGN KEY (id_valor)
+            REFERENCES catalogo_caracteristica_valores (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

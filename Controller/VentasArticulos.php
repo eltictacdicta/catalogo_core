@@ -122,6 +122,7 @@ class VentasArticulos extends PageController
         }
 
         $this->load_articulo_tarifa_columns($this->resultado_referencias());
+        $this->load_caracteristica_columns($this->resultado_referencias());
         $this->loadFilterOptions();
     }
 

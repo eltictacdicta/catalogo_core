@@ -54,7 +54,7 @@
                     <li role="presentation">
                         <a href="#opcionales" aria-controls="opcionales" role="tab" data-toggle="tab" x-on:click.prevent="activar('opcionales')">{{ 'optionals'|trans }}</a>
                     </li>
-                    {{- render_hook('ventas_articulo_tabs_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}
+                    {{- render_hook('ventas_articulo_tabs_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n, 'caracteristicas': fsc.caracteristicas_context()}) -}}
                 </ul>
 
                 <div class="tab-content" style="margin-top: 15px;">
@@ -310,7 +310,7 @@
 
                     {% include 'partials/articulos/tab_multiidioma.html.twig' %}
                     {% include 'partials/articulos/tab_opcionales.html.twig' %}
-                    {{- render_hook('ventas_articulo_tab_pane_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}
+                    {{- render_hook('ventas_articulo_tab_pane_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n, 'caracteristicas': fsc.caracteristicas_context()}) -}}
                 </div>
 
                 <div class="panel-footer text-right" style="margin-top: 15px;">

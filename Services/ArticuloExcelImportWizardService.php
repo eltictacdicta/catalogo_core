@@ -15,10 +15,18 @@ namespace FSFramework\Plugins\catalogo_core\Services;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorStore.php';
+
 /**
  * Transport-only Excel import wizard for catalogo_core articles.
+ *
+ * `FIELD_CATALOG` stays byte-identical; `importable` feature definitions are
+ * exposed additively through the instance `fieldCatalog()` / `fieldOptions()`
+ * surfaces and the `suggestMapping()` extra fields (CAR-17). Feature
+ * persistence goes through the value store and never alters the base row.
  */
-final class ArticuloExcelImportWizardService
+class ArticuloExcelImportWizardService
 {
     public const IGNORE_SENTINEL = '__ignorar__';
 
@@ -83,22 +91,107 @@ final class ArticuloExcelImportWizardService
         ],
     ];
 
+    /** @var object|null Memoized store shared by every row of one import run. */
+    private $valor_store_instance;
+
+    /**
+     * @param array<int, array<string, mixed>>|null $importable importable feature definitions;
+     *        null loads them lazily on first use.
+     */
+    public function __construct(private ?array $importable = null)
+    {
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function importable(): array
+    {
+        if ($this->importable === null) {
+            $this->importable = $this->load_importable_definitions();
+        }
+
+        return $this->importable;
+    }
+
+    /**
+     * The base field catalog plus one entry per importable feature definition.
+     *
+     * A definition whose `codigo` collides with a base field key is skipped: the
+     * base entry stays authoritative, so no feature can shadow the base
+     * matching/persistence (CAR-17).
+     *
+     * @param array<int, array<string, mixed>> $importable
+     * @return array<string, array<string, mixed>>
+     */
+    public function fieldCatalog(array $importable = []): array
+    {
+        $catalog = self::FIELD_CATALOG;
+        foreach ($importable as $definition) {
+            if (self::feature_collides_with_base($definition)) {
+                continue;
+            }
+            $codigo = (string) $definition['codigo'];
+            $nombre = (string) ($definition['nombre'] ?? $codigo);
+            $catalog[$codigo] = [
+                'label' => $nombre,
+                'column' => $codigo,
+                'type' => (string) ($definition['tipo'] ?? 'string'),
+                'aliases' => [mb_strtolower($nombre), $codigo],
+                'feature' => true,
+            ];
+        }
+
+        return $catalog;
+    }
+
+    /**
+     * True when a definition must be skipped because its `codigo` is already a
+     * base field key (or is empty). The base field catalog is authoritative on
+     * every wizard surface: `fieldCatalog()`, `fieldOptions()`,
+     * `extra_field_aliases()` and `persist_feature_values()` (CAR-17).
+     *
+     * @param array<string, mixed> $definition
+     */
+    private static function feature_collides_with_base(array $definition): bool
+    {
+        $codigo = (string) ($definition['codigo'] ?? '');
+
+        return $codigo === '' || array_key_exists($codigo, self::FIELD_CATALOG);
+    }
+
     /**
      * @param string[] $headers
+     * @param array<string, array<string, mixed>> $extraFields feature fields keyed by codigo
      * @return array<int,string>
      */
-    public static function suggestMapping(array $headers): array
+    public static function suggestMapping(array $headers, array $extraFields = []): array
     {
         $result = [];
         foreach ($headers as $colIdx => $header) {
             $normalized = mb_strtolower(trim((string) $header));
             $matched = self::IGNORE_SENTINEL;
+
             foreach (self::FIELD_CATALOG as $fieldName => $info) {
                 if (in_array($normalized, $info['aliases'], true)) {
                     $matched = $fieldName;
                     break;
                 }
             }
+
+            if ($matched === self::IGNORE_SENTINEL) {
+                foreach ($extraFields as $fieldName => $info) {
+                    $aliases = array_map(
+                        static fn ($alias): string => mb_strtolower(trim((string) $alias)),
+                        (array) ($info['aliases'] ?? [])
+                    );
+                    if (in_array($normalized, $aliases, true)) {
+                        $matched = (string) $fieldName;
+                        break;
+                    }
+                }
+            }
+
             $result[$colIdx] = $matched;
         }
 
@@ -108,7 +201,7 @@ final class ArticuloExcelImportWizardService
     /**
      * @return array<int,array{value:string,label:string}>
      */
-    public function fieldOptions(): array
+    public function fieldOptions(array $importable = []): array
     {
         $options = [
             ['value' => self::IGNORE_SENTINEL, 'label' => 'Ignorar esta columna'],
@@ -116,8 +209,115 @@ final class ArticuloExcelImportWizardService
         foreach (self::FIELD_CATALOG as $fieldName => $info) {
             $options[] = ['value' => $fieldName, 'label' => $info['label']];
         }
+        foreach ($importable as $definition) {
+            if (self::feature_collides_with_base($definition)) {
+                continue;
+            }
+            $options[] = [
+                'value' => (string) $definition['codigo'],
+                'label' => (string) ($definition['nombre'] ?? $definition['codigo']),
+            ];
+        }
 
         return $options;
+    }
+
+    /**
+     * Persists the mapped feature columns for a row (CAR-17). An unmapped or
+     * empty feature column is a no-op; a rejected value reports an explicit
+     * motivo without dropping the base persistence.
+     *
+     * @param array<string,string> $mappedRow
+     * @return list<string> errors (empty when nothing was rejected)
+     */
+    public function persist_feature_values(array $mappedRow, string $referencia, string $codtarifa): array
+    {
+        if ($this->importable() === [] || $referencia === '' || $codtarifa === '') {
+            return [];
+        }
+
+        $errors = [];
+        $store = $this->valor_store();
+        $importable = [];
+        foreach ($this->importable() as $definition) {
+            if (self::feature_collides_with_base($definition)) {
+                continue;
+            }
+            $importable[(string) $definition['codigo']] = $definition;
+        }
+
+        foreach ($importable as $codigo => $definition) {
+            if ($codigo === '' || !array_key_exists($codigo, $mappedRow)) {
+                continue;
+            }
+
+            $raw = trim((string) $mappedRow[$codigo]);
+            if ($raw === '') {
+                continue;
+            }
+
+            if ((string) ($definition['tipo'] ?? '') === 'bool') {
+                $ok = $store->assign_with_dual_write('articulo', $codtarifa, ['referencia' => $referencia], $codigo, $this->parse_bool($raw));
+            } else {
+                $ok = $store->assign_custom('articulo', $codtarifa, ['referencia' => $referencia], $codigo, $raw);
+            }
+
+            if (!$ok) {
+                $errors[] = 'No se pudo guardar la característica ' . $codigo . ' de ' . $referencia . '.';
+            }
+        }
+
+        return $errors;
+    }
+
+    private function parse_bool(string $raw): bool
+    {
+        $normalized = mb_strtolower($raw);
+
+        return in_array($normalized, ['1', 'sí', 'si', 'true', 'x', 'yes'], true);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function load_importable_definitions(): array
+    {
+        if (!class_exists(CaracteristicaResolver::class)) {
+            return [];
+        }
+
+        try {
+            return (new CaracteristicaResolver())->importable_definitions();
+        } catch (\Throwable $e) {
+            // Cold DB / missing schema: feature columns are optional, degrade to the base catalog.
+            return [];
+        }
+    }
+
+    /**
+     * Memoized value-store accessor: one store instance serves every row of a
+     * single import run, so the per-row feature writes reuse the same store
+     * instead of rebuilding it (CAR-17).
+     *
+     * @return object
+     */
+    protected function valor_store()
+    {
+        if ($this->valor_store_instance === null) {
+            $this->valor_store_instance = $this->create_valor_store();
+        }
+
+        return $this->valor_store_instance;
+    }
+
+    /**
+     * Store factory seam (unit tests inject a DB-free stub).
+     *
+     * @return object
+     */
+    protected function create_valor_store()
+    {
+        return new CaracteristicaValorStore();
     }
 
     /**
@@ -156,9 +356,27 @@ final class ArticuloExcelImportWizardService
         return [
             'headers' => $headers,
             'rows' => $rows,
-            'suggested_mapping' => self::suggestMapping($headers),
-            'field_options' => $this->fieldOptions(),
+            'suggested_mapping' => self::suggestMapping($headers, $this->extra_field_aliases()),
+            'field_options' => $this->fieldOptions($this->importable()),
         ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function extra_field_aliases(): array
+    {
+        $extra = [];
+        foreach ($this->importable() as $definition) {
+            if (self::feature_collides_with_base($definition)) {
+                continue;
+            }
+            $codigo = (string) $definition['codigo'];
+            $nombre = (string) ($definition['nombre'] ?? $codigo);
+            $extra[$codigo] = ['aliases' => [mb_strtolower($nombre), $codigo]];
+        }
+
+        return $extra;
     }
 
     /**

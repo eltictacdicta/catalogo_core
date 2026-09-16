@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Table catalogo_caracteristica_global: "all products" scope of a feature
+    value, keyed by (codtarifa, id_caracteristica). One row per tarifa and
+    definition; never fans out per product (CAR-09).
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_caracteristica</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_valor</nombre>
+        <tipo>integer</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>valor</nombre>
+        <tipo>character varying(255)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>custom</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_caracteristica_global_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, id_caracteristica)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_global_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_global_caracteristica</nombre>
+        <consulta>FOREIGN KEY (id_caracteristica)
+            REFERENCES catalogo_caracteristicas (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_caracteristica_global_valor</nombre>
+        <consulta>FOREIGN KEY (id_valor)
+            REFERENCES catalogo_caracteristica_valores (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

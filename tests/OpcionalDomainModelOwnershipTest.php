@@ -185,11 +185,19 @@ final class OpcionalDomainModelOwnershipTest extends TestCase
     public function test_tarifario_ext_columns_are_not_promoted_into_catalogo_opcionales(): void
     {
         $extXml = $this->source('plugins/catalogo_core/model/table/tarif_opcional_ext.xml');
-        foreach (['ref_sap', 'en_catalogo', 'en_tarifa'] as $column) {
-            $this->assertStringContainsString(
-                '<nombre>' . $column . '</nombre>',
+        $this->assertStringContainsString(
+            '<nombre>ref_sap</nombre>',
+            $extXml,
+            'tarif_opcional_ext must own ref_sap'
+        );
+
+        // D12 / CAR-15 clause 1: the opcional-owned visibility flags were
+        // removed from the 1:1 ext table (derived from the parent product).
+        foreach (['en_catalogo', 'en_tarifa'] as $removed) {
+            $this->assertStringNotContainsString(
+                '<nombre>' . $removed . '</nombre>',
                 $extXml,
-                'tarif_opcional_ext must own ' . $column
+                'tarif_opcional_ext must no longer own ' . $removed
             );
         }
 

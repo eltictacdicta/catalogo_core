@@ -8,8 +8,13 @@ declare(strict_types=1);
 namespace FSFramework\Plugins\catalogo_core\Services;
 
 /**
- * Migra ref_sap, en_catalogo y en_tarifa desde columnas legacy de opcionales
- * hacia tarif_opcional_ext. Retrocompatible con catalogo_opcionales y tarif_opcionales.
+ * Migra ref_sap desde columnas legacy de opcionales hacia tarif_opcional_ext.
+ * Retrocompatible con catalogo_opcionales y tarif_opcionales.
+ *
+ * The `en_catalogo`/`en_tarifa` flags are NOT copied anymore: opcional
+ * visibility was removed from `tarif_opcional_ext` by D12 of
+ * `caracteristicas-producto` (CAR-12/CAR-15 clause 1) and is derived from the
+ * parent product.
  */
 final class TarifOpcionalExtMigration
 {
@@ -77,7 +82,7 @@ final class TarifOpcionalExtMigration
 
     private static function hasLegacyExtensionColumns(\fs_db2 $db, string $table): bool
     {
-        foreach (['ref_sap', 'codigo2', 'en_catalogo', 'en_tarifa'] as $column) {
+        foreach (['ref_sap', 'codigo2'] as $column) {
             if (self::columnExists($db, $table, $column)) {
                 return true;
             }
@@ -89,17 +94,11 @@ final class TarifOpcionalExtMigration
     private static function copyLegacyRows(\fs_db2 $db, string $sourceTable): void
     {
         $refExpr = self::buildRefExpression($db, $sourceTable);
-        $enCatalogoExpr = self::columnExists($db, $sourceTable, 'en_catalogo')
-            ? 'COALESCE(o.en_catalogo, FALSE)'
-            : 'FALSE';
-        $enTarifaExpr = self::columnExists($db, $sourceTable, 'en_tarifa')
-            ? 'COALESCE(o.en_tarifa, FALSE)'
-            : 'FALSE';
 
         if (self::isPostgres($db)) {
             $db->exec(
-                'INSERT INTO tarif_opcional_ext (id_opcional, ref_sap, en_catalogo, en_tarifa) '
-                . 'SELECT o.id, ' . $refExpr . ', ' . $enCatalogoExpr . ', ' . $enTarifaExpr . ' '
+                'INSERT INTO tarif_opcional_ext (id_opcional, ref_sap) '
+                . 'SELECT o.id, ' . $refExpr . ' '
                 . 'FROM ' . $sourceTable . ' o '
                 . 'WHERE NOT EXISTS ('
                 . 'SELECT 1 FROM tarif_opcional_ext e WHERE e.id_opcional = o.id'
@@ -111,8 +110,8 @@ final class TarifOpcionalExtMigration
         }
 
         $db->exec(
-            'INSERT IGNORE INTO tarif_opcional_ext (id_opcional, ref_sap, en_catalogo, en_tarifa) '
-            . 'SELECT o.id, ' . $refExpr . ', ' . $enCatalogoExpr . ', ' . $enTarifaExpr . ' '
+            'INSERT IGNORE INTO tarif_opcional_ext (id_opcional, ref_sap) '
+            . 'SELECT o.id, ' . $refExpr . ' '
             . 'FROM ' . $sourceTable . ' o '
             . 'LEFT JOIN tarif_opcional_ext e ON e.id_opcional = o.id '
             . 'WHERE e.id_opcional IS NULL;'
