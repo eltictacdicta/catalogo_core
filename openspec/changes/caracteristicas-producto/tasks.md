@@ -5,7 +5,7 @@
 - **SDD owner**: `plugins/catalogo_core/openspec/` (`ownership: plugin-local`, `strict_tdd: true`)
 - **Secondary plugin**: `plugins/tarifario`
 - **Artifact store**: `openspec`. Core `openspec/` is reference only — NEVER create an entry there.
-- **Authoritative inputs**: `proposal.md`, `design.md` (pinned names §1, test plan §14, WU decomposition §15), `specs/**` (48 requirements / 153 scenarios — 151 before WU-8 added the DEV-17 and DEV-18 scenarios to `tarifario/catalogo-integration`), `preproposal.md` (D1–D12).
+- **Authoritative inputs**: `proposal.md`, `design.md` (pinned names §1, test plan §14, WU decomposition §15), `specs/**` (48 requirements / 154 scenarios — native heading count re-derived in the verify phase; WU-8 added the DEV-17/DEV-18 scenarios to `tarifario/catalogo-integration` and the CodeRabbit round-1 fix added the `CAR-17` collision scenario), `preproposal.md` (D1–D12).
 - **Supersedes**: `plugins/tarifario/openspec/changes/mover-tarifa-catalogo-opcionales-a-tarifario/` (never applied).
 - **TDD rule**: every production task below is preceded by its paired RED test named from design §14.1. No test-after-the-fact.
 
