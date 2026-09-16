@@ -47,6 +47,7 @@ final class TarifTarifasMutationSecurityTest extends TestCase
         $_POST = [];
         $_GET = [];
         $_REQUEST = [];
+        $this->resetCoreLog();
     }
 
     protected function tearDown(): void
@@ -60,6 +61,31 @@ final class TarifTarifasMutationSecurityTest extends TestCase
     // =====================================================================
     // Helpers
     // =====================================================================
+
+    /**
+     * Clear the fs_core_log state that every instance shares.
+     *
+     * fs_core_log accumulates its entries in a static array, so without
+     * this a test that ran earlier in the same process leaks its errors
+     * into get_errors() here. The static controller_name is reset as well:
+     * fs_controller::new_error_msg() only writes to the 'errors' channel
+     * when class_name matches controller_name(), and the constructor only
+     * assigns that name when it is empty. Nulling it lets the fresh
+     * instance claim it. fs_model::$core_log gets a new instance too.
+     */
+    private function resetCoreLog(): void
+    {
+        (new \fs_core_log())->clear();
+
+        $ref = new \ReflectionClass(\fs_core_log::class);
+        $nameProp = $ref->getProperty('controller_name');
+        $nameProp->setAccessible(true);
+        $nameProp->setValue(null, null);
+
+        $prop = (new \ReflectionClass(\fs_model::class))->getProperty('core_log');
+        $prop->setAccessible(true);
+        $prop->setValue(null, new \fs_core_log());
+    }
 
     private function controllerSource(): string
     {

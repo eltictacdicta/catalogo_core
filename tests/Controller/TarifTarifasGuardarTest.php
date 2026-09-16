@@ -73,18 +73,35 @@ final class TarifTarifasGuardarTest extends TestCase
     }
 
     /**
-     * Reset both the static fs_model::$core_log and the fs_app instance
-     * core_log that the controller will write to. Without this, errors
-     * from a previous test could leak into the next one.
+     * Reset the shared fs_core_log state before each test.
+     *
+     * fs_core_log keeps its entries in a static $data_log array shared by
+     * every instance, so constructing a fresh instance is NOT a reset:
+     * get_errors() still reads that same static array. Clearing it stops
+     * errors raised by an earlier test from being visible here.
+     *
+     * The static controller_name needs resetting too. fs_core_log's
+     * constructor only assigns it when empty, so a previous test's
+     * controller name would shadow ours. fs_controller::new_error_msg()
+     * writes to the 'errors' channel only when class_name matches
+     * controller_name(); otherwise the error is saved to another channel
+     * and get_errors() stays empty. Setting it to null lets the fresh
+     * instance below claim it.
+     *
+     * fs_model::$core_log is reassigned unconditionally for the same reason.
      */
     private function resetCoreLog(): void
     {
-        $ref = new \ReflectionClass(\fs_model::class);
-        $prop = $ref->getProperty('core_log');
+        (new \fs_core_log())->clear();
+
+        $ref = new \ReflectionClass(\fs_core_log::class);
+        $nameProp = $ref->getProperty('controller_name');
+        $nameProp->setAccessible(true);
+        $nameProp->setValue(null, null);
+
+        $prop = (new \ReflectionClass(\fs_model::class))->getProperty('core_log');
         $prop->setAccessible(true);
-        if ($prop->getValue() === null) {
-            $prop->setValue(null, new \fs_core_log());
-        }
+        $prop->setValue(null, new \fs_core_log());
     }
 
     /**
