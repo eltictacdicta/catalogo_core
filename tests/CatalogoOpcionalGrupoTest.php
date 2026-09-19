@@ -76,7 +76,7 @@ final class CatalogoOpcionalGrupoTest extends TestCase
     public function testTpvmodOpcionalesForArticuloReturnsGroupedPayloadWhenEmpty(): void
     {
         $this->assertSame(
-            ['grupos' => [], 'sueltos' => []],
+            ['grupos' => [], 'sueltos' => [], 'codfamilia' => ''],
             tpvmod_opcionales_for_articulo('', 100.0)
         );
     }
