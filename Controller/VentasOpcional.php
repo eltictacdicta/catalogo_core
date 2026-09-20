@@ -367,11 +367,6 @@ class VentasOpcional extends PageController
             return;
         }
 
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no puedes eliminar opcionales.');
-            return;
-        }
-
         $id = $request->request->getInt('delete');
         if ($id !== (int) $this->opcional->id) {
             $this->new_error_msg('Opcional no encontrado.');

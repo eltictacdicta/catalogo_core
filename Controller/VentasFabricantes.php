@@ -125,11 +125,6 @@ class VentasFabricantes extends PageController
             return;
         }
 
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no puedes eliminar fabricantes. Otro usuario podría necesitarlo.');
-            return;
-        }
-
         $cod = (string) $request->request->get('delete', '');
         $fab = $this->fabricante->get($cod);
 

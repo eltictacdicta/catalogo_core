@@ -554,11 +554,6 @@ class VentasArticulos extends PageController
             return;
         }
 
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no se pueden eliminar artículos.');
-            return;
-        }
-
         $referencia = (string) $request->request->get('delete', '');
         if ($referencia === '') {
             $this->new_error_msg('Artículo no encontrado.');

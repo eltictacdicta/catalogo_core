@@ -853,7 +853,7 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->assertStringContainsString('eliminar_articulo', $src, 'Delete must ride a POST mutation field');
         $this->assertStringContainsString('validateFormToken()', $delete, 'Delete must be CSRF validated');
         $this->assertStringContainsString('allow_delete', $delete, 'Delete must keep the allow_delete guard');
-        $this->assertStringContainsString('FS_DEMO', $delete, 'Delete must keep the demo-mode guard');
+        $this->assertStringNotContainsString('FS_DEMO', $delete, 'FS_DEMO was removed — no demo guard must remain');
 
         $this->assertStringNotContainsString(
             "query->has('delete')",

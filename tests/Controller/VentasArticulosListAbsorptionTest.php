@@ -725,7 +725,7 @@ final class VentasArticulosListAbsorptionTest extends TestCase
 
         $this->assertStringContainsString('validateFormToken()', $delete, 'the list delete must be CSRF validated');
         $this->assertStringContainsString('allow_delete', $delete, 'the list delete must keep the allow_delete guard');
-        $this->assertStringContainsString('FS_DEMO', $delete, 'the list delete must keep the demo-mode guard');
+        $this->assertStringNotContainsString('FS_DEMO', $delete, 'FS_DEMO was removed — no demo guard must remain');
         $this->assertStringContainsString("request->request->get('delete'", $delete, 'the list delete reads the POST delete field');
         $this->assertStringNotContainsString(
             "query->has('delete')",

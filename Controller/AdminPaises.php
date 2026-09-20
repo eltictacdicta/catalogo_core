@@ -121,11 +121,6 @@ class AdminPaises extends PageController
             return;
         }
 
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no puedes eliminar países. Otro usuario podría necesitarlo.');
-            return;
-        }
-
         $codpais = (string) $request->request->get('delete', '');
         $pais = $this->pais->get($codpais);
 

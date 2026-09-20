@@ -141,11 +141,6 @@ class VentasFamilia extends PageController
             return;
         }
 
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no puedes eliminar familias. Otro usuario podría necesitarlas.');
-            return;
-        }
-
         $cod = (string) $request->request->get('delete', '');
         $fam = $this->familia->get($cod);
 

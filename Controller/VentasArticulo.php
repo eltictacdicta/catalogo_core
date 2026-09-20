@@ -1237,11 +1237,6 @@ class VentasArticulo extends PageController
             return;
         }
 
-        if (defined('FS_DEMO') && FS_DEMO) {
-            $this->new_error_msg('En el modo demo no puedes eliminar artículos. Otro usuario podría necesitarlos.');
-            return;
-        }
-
         $ref = (string) $request->request->get('sreferencia', '');
         if (!$this->puedeEditarArticulo($ref, $this->codtarifa)) {
             $this->new_error_msg('No tienes permiso para eliminar este artículo.');
