@@ -79,12 +79,95 @@ class catalogo_idioma extends \fs_model
 
     public function get_default()
     {
-        $data = $this->db->select('SELECT * FROM ' . $this->table_name . ' WHERE por_defecto = TRUE LIMIT 1;');
+        $data = $this->db->select('SELECT * FROM ' . $this->table_name . ' WHERE por_defecto = TRUE AND activo = TRUE LIMIT 1;');
         if ($data) {
             return new static($data[0]);
         }
 
         return false;
+    }
+
+    /**
+     * Resolves the effective default language code, total and deterministic
+     * (GDI-02 / D-02): the configured active default wins, otherwise the lowest
+     * active `codidioma`, and `DEFAULT_CODE` is the terminal fallback (documented
+     * as unreachable while the invariants hold — the last language is undeletable
+     * and the default cannot be inactive, so an active language always exists).
+     */
+    public function get_effective_default_code(): string
+    {
+        $default = $this->get_default();
+        if ($default) {
+            return (string) $default->codidioma;
+        }
+
+        $activos = $this->db->select(
+            'SELECT codidioma FROM ' . $this->table_name . ' WHERE activo = TRUE ORDER BY codidioma ASC LIMIT 1;'
+        );
+        if ($activos) {
+            return (string) $activos[0]['codidioma'];
+        }
+
+        return self::DEFAULT_CODE;
+    }
+
+    /**
+     * Makes the given language the only default (D-02). A flag flip: it issues
+     * no `articulo_descripciones` statement.
+     */
+    public function set_default(string $codidioma): bool
+    {
+        $target = $this->get($codidioma);
+        if (!$target || !$target->activo) {
+            $this->new_error_msg('El idioma indicado no existe o está inactivo.');
+            return false;
+        }
+
+        $this->db->begin_transaction();
+
+        $ok = $this->db->exec('UPDATE ' . $this->table_name . ' SET por_defecto = FALSE WHERE por_defecto = TRUE;')
+            && $this->db->exec(
+                'UPDATE ' . $this->table_name . ' SET por_defecto = TRUE, activo = TRUE WHERE codidioma = '
+                . $this->var2str($codidioma) . ';'
+            );
+
+        if (!$ok) {
+            $this->db->rollback();
+            return false;
+        }
+
+        $this->normalize_default();
+        $this->db->commit();
+
+        return true;
+    }
+
+    /**
+     * Restores the "exactly one active default" invariant after a mutation.
+     *
+     * Split into two PHP statements because a single UPDATE ... WHERE (SELECT ...
+     * FROM the same table) raises MySQL error 1093.
+     */
+    private function normalize_default(): void
+    {
+        $this->db->exec(
+            'UPDATE ' . $this->table_name . ' SET por_defecto = FALSE WHERE por_defecto = TRUE AND activo = FALSE;'
+        );
+
+        $count = $this->db->select('SELECT COUNT(*) as total FROM ' . $this->table_name . ' WHERE por_defecto = TRUE;');
+        if ($count && intval($count[0]['total']) > 0) {
+            return;
+        }
+
+        $candidates = $this->db->select(
+            'SELECT codidioma FROM ' . $this->table_name . ' WHERE activo = TRUE ORDER BY codidioma ASC LIMIT 1;'
+        );
+        if ($candidates) {
+            $this->db->exec(
+                'UPDATE ' . $this->table_name . ' SET por_defecto = TRUE WHERE codidioma = '
+                . $this->var2str($candidates[0]['codidioma']) . ';'
+            );
+        }
     }
 
     public function exists()
@@ -120,8 +203,19 @@ class catalogo_idioma extends \fs_model
             return false;
         }
 
+        if ($this->exists()) {
+            $current = $this->get($this->codidioma);
+            if ($current && $current->por_defecto && !$this->activo) {
+                $this->new_error_msg('No se puede desactivar el idioma por defecto.');
+                return false;
+            }
+        }
+
+        $this->db->begin_transaction();
+
         if ($this->por_defecto) {
             $this->db->exec('UPDATE ' . $this->table_name . ' SET por_defecto = FALSE WHERE codidioma != ' . $this->var2str($this->codidioma) . ';');
+            $this->activo = true;
         }
 
         if ($this->exists()) {
@@ -138,17 +232,47 @@ class catalogo_idioma extends \fs_model
                 . $this->var2str($this->por_defecto) . ');';
         }
 
-        return $this->db->exec($sql);
+        if (!$this->db->exec($sql)) {
+            $this->db->rollback();
+            return false;
+        }
+
+        $this->normalize_default();
+        $this->db->commit();
+
+        return true;
     }
 
     public function delete()
     {
+        $count = $this->db->select('SELECT COUNT(*) as total FROM ' . $this->table_name . ';');
+        if ($count && intval($count[0]['total']) <= 1) {
+            $this->new_error_msg('No se puede eliminar el último idioma.');
+            return false;
+        }
+
         if ($this->por_defecto) {
             $this->new_error_msg('No se puede eliminar el idioma por defecto.');
             return false;
         }
 
-        return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE codidioma = ' . $this->var2str($this->codidioma) . ';');
+        $this->db->begin_transaction();
+
+        $ok = $this->db->exec(
+            'DELETE FROM articulo_descripciones WHERE codidioma = ' . $this->var2str($this->codidioma) . ';'
+        ) && $this->db->exec(
+            'DELETE FROM ' . $this->table_name . ' WHERE codidioma = ' . $this->var2str($this->codidioma) . ';'
+        );
+
+        if (!$ok) {
+            $this->db->rollback();
+            return false;
+        }
+
+        $this->normalize_default();
+        $this->db->commit();
+
+        return true;
     }
 
     public function all()

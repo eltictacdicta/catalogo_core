@@ -80,6 +80,21 @@ final class CatalogMigrationFakeDb extends \fs_db2
             return in_array($m[2], $this->columns[$m[1]] ?? [], true) ? [['Field' => $m[2]]] : [];
         }
 
+        // Pending pre-check for the orphan description purge (D-01).
+        if (preg_match(
+            '/FROM\s+articulo_descripciones\s+d\s+LEFT JOIN\s+catalogo_idiomas\s+i\s+ON\s+i\.codidioma\s*=\s*d\.codidioma/si',
+            $sql
+        )) {
+            $known = array_map('strval', array_column($this->tables['catalogo_idiomas'] ?? [], 'codidioma'));
+            foreach ($this->tables['articulo_descripciones'] ?? [] as $row) {
+                if (!in_array((string) ($row['codidioma'] ?? ''), $known, true)) {
+                    return [['1' => 1]];
+                }
+            }
+
+            return [];
+        }
+
         // Pending pre-check for the both-exist copy: legacy LEFT JOIN target on id.
         if (preg_match(
             '/FROM\s+([a-zA-Z0-9_]+)\s+l\s+LEFT JOIN\s+([a-zA-Z0-9_]+)\s+t\s+ON\s+t\.id\s*=\s*l\.id/si',
@@ -158,6 +173,19 @@ final class CatalogMigrationFakeDb extends \fs_db2
                 $this->tables[$m[2]] = $this->tables[$m[1]];
                 unset($this->tables[$m[1]]);
             }
+
+            return true;
+        }
+
+        if (preg_match(
+            '/^DELETE d FROM articulo_descripciones d LEFT JOIN catalogo_idiomas i ON i\.codidioma = d\.codidioma WHERE i\.codidioma IS NULL;?$/i',
+            $sql
+        )) {
+            $known = array_map('strval', array_column($this->tables['catalogo_idiomas'] ?? [], 'codidioma'));
+            $this->tables['articulo_descripciones'] = array_values(array_filter(
+                $this->tables['articulo_descripciones'] ?? [],
+                static fn (array $row): bool => in_array((string) ($row['codidioma'] ?? ''), $known, true)
+            ));
 
             return true;
         }
@@ -413,5 +441,39 @@ final class CatalogLegacyTableMigrationTest extends TestCase
 
         $sqls = $this->executedContaining($db, 'catalogo_listas_precio');
         $this->assertNotEmpty($sqls, 'the migration must ensure the referenced price lists exist');
+    }
+
+    public function test_orphan_descriptions_are_purged_once(): void
+    {
+        $tables = $this->baseTables();
+        $tables['articulo_descripciones'] = [
+            ['id' => 1, 'referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola', 'descripcion_corta' => null],
+            ['id' => 2, 'referencia' => 'ART1', 'codidioma' => 'zz', 'descripcion' => 'Orphan', 'descripcion_corta' => null],
+        ];
+        $tables['catalogo_idiomas'] = [
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => 1, 'por_defecto' => 1],
+        ];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame(
+            ['es'],
+            array_column($db->tables['articulo_descripciones'], 'codidioma'),
+            'rows whose codidioma has no registry row must be removed'
+        );
+        $this->assertNotEmpty(
+            $this->executedContaining($db, 'DELETE d FROM articulo_descripciones'),
+            'the purge must emit one delete when orphans are pending'
+        );
+
+        $db->executed = [];
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame(
+            [],
+            $this->executedContaining($db, 'DELETE d FROM articulo_descripciones'),
+            'the purge must be idempotent: a second run is a no-op'
+        );
     }
 }

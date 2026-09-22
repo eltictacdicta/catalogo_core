@@ -59,6 +59,43 @@ final class CatalogLegacyTableMigration
         self::syncArticuloOpcionalGrupoTable($db);
         self::migrateGroupedOptionalAssignments($db);
         self::syncObligatorioColumns($db);
+        self::purgeOrphanDescriptions($db);
+    }
+
+    /**
+     * Removes description rows whose `codidioma` has no registry row.
+     *
+     * Defensive, idempotent and flag-free (D-01): a cheap LEFT JOIN pre-check
+     * keeps steady state at a single `LIMIT 1` read, mirroring
+     * hasPendingRows()/copyPendingPrices(). Deleting a language is already
+     * handled application-side in catalogo_idioma::delete(); this only cleans up
+     * rows orphaned by a removal that predates that guard.
+     */
+    private static function purgeOrphanDescriptions(\fs_db2 $db): void
+    {
+        if (!self::tableExists($db, 'articulo_descripciones') || !self::tableExists($db, 'catalogo_idiomas')) {
+            return;
+        }
+
+        $pending = $db->select(
+            'SELECT 1 FROM articulo_descripciones d LEFT JOIN catalogo_idiomas i '
+            . 'ON i.codidioma = d.codidioma WHERE i.codidioma IS NULL LIMIT 1;'
+        );
+        if (!$pending) {
+            return;
+        }
+
+        if (self::isPostgres($db)) {
+            $db->exec(
+                'DELETE FROM articulo_descripciones d WHERE NOT EXISTS '
+                . '(SELECT 1 FROM catalogo_idiomas i WHERE i.codidioma = d.codidioma);'
+            );
+        } else {
+            $db->exec(
+                'DELETE d FROM articulo_descripciones d LEFT JOIN catalogo_idiomas i '
+                . 'ON i.codidioma = d.codidioma WHERE i.codidioma IS NULL;'
+            );
+        }
     }
 
     private static function syncObligatorioColumns(\fs_db2 $db): void
