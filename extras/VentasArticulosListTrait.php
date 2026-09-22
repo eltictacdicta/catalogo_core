@@ -66,6 +66,14 @@ trait VentasArticulosListTrait
     public array $idiomas = [];
 
     /**
+     * Every registry row (active or not) for the `#idiomas` management table
+     * (GDI-01/D-06). The active subset above keeps serving the Excel actions.
+     *
+     * @var array<int, object>
+     */
+    public array $idiomas_todos = [];
+
+    /**
      * Per-row tarifa price/state map for the current page, loaded with one
      * batched query (ALC-02/AD-W3-4).
      *
@@ -111,6 +119,16 @@ trait VentasArticulosListTrait
     protected function articulo_precio_model()
     {
         return new \FSFramework\model\tarif_articulo_precio();
+    }
+
+    /**
+     * Language registry model seam (unit tests inject a DB-free stub).
+     *
+     * @return \FSFramework\model\catalogo_idioma
+     */
+    protected function idioma_model()
+    {
+        return new \FSFramework\model\catalogo_idioma();
     }
 
     // =====================================================================
@@ -238,13 +256,15 @@ trait VentasArticulosListTrait
     }
 
     /**
-     * Loads the active idiomas for the moved import/export actions.
+     * Loads the idiomas: the active subset for the moved import/export actions
+     * and the full registry for the `#idiomas` management table (GDI-01/D-06).
      */
     protected function load_list_idiomas(): void
     {
-        $idioma = new \FSFramework\model\catalogo_idioma();
+        $idioma = $this->idioma_model();
         $idioma->ensure_defaults();
         $this->idiomas = (array) $idioma->all_activos();
+        $this->idiomas_todos = (array) $idioma->all();
     }
 
     // =====================================================================

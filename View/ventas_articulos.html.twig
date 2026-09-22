@@ -260,6 +260,129 @@
                 </ul>
             </nav>
             {% endif %}
+
+            {# Language management (GDI-01/GDI-04, D-06). Every mutation is a POST
+               carrying idioma_action plus csrf_field(); the per-action server
+               gate is administrator-only and rejects anything else. #}
+            <div id="idiomas" class="panel panel-default" style="margin-top: 20px;">
+                <div class="panel-heading">
+                    <i class="fa fa-language" aria-hidden="true"></i>
+                    {{ 'language-management'|trans }}
+                </div>
+                <div class="panel-body">
+                    {% if fsc.idiomas_todos is empty %}
+                    <p class="text-muted">{{ 'language-empty-registry'|trans }}</p>
+                    {% else %}
+                    <div class="table-responsive">
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr>
+                                    <th class="text-left" width="80">{{ 'language-code'|trans }}</th>
+                                    <th class="text-left">{{ 'language-name'|trans }}</th>
+                                    <th class="text-center" width="110">{{ 'language-active'|trans }}</th>
+                                    <th class="text-center" width="130">{{ 'default-language'|trans }}</th>
+                                    <th class="text-right" width="90">{{ 'actions'|trans }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for idioma in fsc.idiomas_todos %}
+                                <tr>
+                                    <td><code>{{ idioma.codidioma }}</code></td>
+                                    <td>
+                                        <form method="post" action="{{ fsc.url() }}#idiomas" class="form-inline" style="margin:0;">
+                                            {{ csrf_field() }}
+                                            <input type="hidden" name="idioma_action" value="save"/>
+                                            <input type="hidden" name="codidioma" value="{{ idioma.codidioma }}"/>
+                                            <input type="text" name="nombre" class="form-control input-sm" maxlength="50"
+                                                   value="{{ idioma.nombre }}" required="required"/>
+                                            <button type="submit" class="btn btn-xs btn-primary" title="{{ 'language-save'|trans }}">
+                                                <span class="glyphicon glyphicon-floppy-disk"></span>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if idioma.activo %}
+                                        <span class="label label-success">{{ 'language-active'|trans }}</span>
+                                        {% else %}
+                                        <span class="label label-default">&mdash;</span>
+                                        {% endif %}
+                                        <form method="post" action="{{ fsc.url() }}#idiomas" style="display:inline-block;margin:0;">
+                                            {{ csrf_field() }}
+                                            <input type="hidden" name="idioma_action" value="toggle_active"/>
+                                            <input type="hidden" name="codidioma" value="{{ idioma.codidioma }}"/>
+                                            {% if idioma.por_defecto %}
+                                            <button type="button" class="btn btn-xs btn-default" disabled="disabled"
+                                                    title="{{ 'language-cannot-deactivate-default'|trans }}">
+                                                <span class="glyphicon glyphicon-ban-circle"></span>
+                                            </button>
+                                            {% else %}
+                                            <button type="submit" class="btn btn-xs btn-default" title="{{ 'language-active'|trans }}">
+                                                <span class="glyphicon glyphicon-off"></span>
+                                            </button>
+                                            {% endif %}
+                                        </form>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if idioma.por_defecto %}
+                                        <span class="label label-primary">{{ 'default-language'|trans }}</span>
+                                        {% else %}
+                                        <form method="post" action="{{ fsc.url() }}#idiomas" style="display:inline-block;margin:0;">
+                                            {{ csrf_field() }}
+                                            <input type="hidden" name="idioma_action" value="set_default"/>
+                                            <input type="hidden" name="codidioma" value="{{ idioma.codidioma }}"/>
+                                            <button type="submit" class="btn btn-xs btn-default" title="{{ 'language-set-default'|trans }}"
+                                                    {% if not idioma.activo %}disabled="disabled"{% endif %}>
+                                                <span class="glyphicon glyphicon-star-empty"></span>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-right">
+                                        <form method="post" action="{{ fsc.url() }}#idiomas" style="display:inline-block;margin:0;">
+                                            {{ csrf_field() }}
+                                            <input type="hidden" name="idioma_action" value="delete"/>
+                                            <input type="hidden" name="codidioma" value="{{ idioma.codidioma }}"/>
+                                            {% if idioma.por_defecto %}
+                                            <button type="button" class="btn btn-xs btn-danger" disabled="disabled"
+                                                    title="{{ 'language-cannot-delete-default'|trans }}">
+                                                <span class="glyphicon glyphicon-trash"></span>
+                                            </button>
+                                            {% elseif fsc.idiomas_todos|length <= 1 %}
+                                            <button type="button" class="btn btn-xs btn-danger" disabled="disabled"
+                                                    title="{{ 'language-cannot-delete-last'|trans }}">
+                                                <span class="glyphicon glyphicon-trash"></span>
+                                            </button>
+                                            {% else %}
+                                            <button type="submit" class="btn btn-xs btn-danger" title="{{ 'language-delete'|trans }}">
+                                                <span class="glyphicon glyphicon-trash"></span>
+                                            </button>
+                                            {% endif %}
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+
+                    <form method="post" action="{{ fsc.url() }}#idiomas" class="form-inline" style="margin-top: 10px;">
+                        {{ csrf_field() }}
+                        <input type="hidden" name="idioma_action" value="save"/>
+                        <div class="form-group">
+                            <input type="text" name="codidioma" class="form-control input-sm" placeholder="{{ 'language-code'|trans }}"
+                                   maxlength="5" minlength="2" required="required"/>
+                        </div>
+                        <div class="form-group">
+                            <input type="text" name="nombre" class="form-control input-sm" placeholder="{{ 'language-name'|trans }}"
+                                   maxlength="50" required="required"/>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-success">
+                            <span class="glyphicon glyphicon-plus"></span> {{ 'language-add'|trans }}
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 </div>

@@ -36,6 +36,7 @@ use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloListActionRegistry;
+use FSFramework\Translation\FSTranslator;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -47,6 +48,13 @@ class VentasArticulos extends PageController
     public ?\articulo $articulo = null;
     public array $familias = [];
     public array $fabricantes = [];
+    /**
+     * Every language in `catalogo_idiomas`, active or not, for the `#idiomas`
+     * management table (GDI-01/D-06).
+     *
+     * @var array<int, \FSFramework\model\catalogo_idioma>
+     */
+    public array $idiomas_todos = [];
     public bool $allow_delete = false;
     public bool $can_import_export = false;
     public string $permissionDenialReason = '';
@@ -85,6 +93,12 @@ class VentasArticulos extends PageController
         $this->articulo = new \articulo();
         $this->load_list_idiomas();
         $this->init_list_filters();
+
+        // Language mutations ride a POST-only field, after the registry has
+        // been loaded (GDI-01/GDI-04, D-06).
+        if ($this->shouldDispatchIdioma($this->request)) {
+            $this->gestionarIdioma($this->request);
+        }
 
         if ($this->processExcelAction()) {
             return;
@@ -572,6 +586,142 @@ class VentasArticulos extends PageController
         }
 
         $this->new_error_msg('¡Error al eliminar el artículo!');
+    }
+
+    // =====================================================================
+    // Language management (GDI-01, GDI-04; D-06)
+    // =====================================================================
+
+    /**
+     * Language mutations are POST-only: the trigger field is read from the POST
+     * body, so a `?idioma_action=` in the query string never dispatches anything
+     * (GDI-04).
+     */
+    private function shouldDispatchIdioma(Request $request): bool
+    {
+        return $request->isMethod('POST') && $request->request->has('idioma_action');
+    }
+
+    /**
+     * Administrator-only, POST-only, CSRF-validated language mutations (GDI-04,
+     * D-06). The page carries no page-level admin attribute: the guard is
+     * per-action and the list stays accessible to authorized non-admins.
+     */
+    private function gestionarIdioma(Request $request): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg(FSTranslator::trans('language-csrf-invalid'));
+            return;
+        }
+
+        if (empty($this->user->admin)) {
+            $this->new_error_msg(FSTranslator::trans('language-admin-only'));
+            return;
+        }
+
+        $codidioma = strtolower(trim((string) $request->request->get('codidioma', '')));
+        if ($codidioma === '') {
+            return;
+        }
+
+        $idioma = $this->idioma_model();
+
+        switch ((string) $request->request->get('idioma_action', '')) {
+            case 'save':
+                $this->guardarIdioma($idioma, $codidioma, (string) $request->request->get('nombre', ''));
+                return;
+
+            case 'toggle_active':
+                $this->alternarIdioma($idioma, $codidioma);
+                return;
+
+            case 'set_default':
+                if ($idioma->set_default($codidioma)) {
+                    $this->new_message(FSTranslator::trans('language-default-changed'));
+                }
+                return;
+
+            case 'delete':
+                $this->borrarIdioma($idioma, $codidioma);
+                return;
+        }
+    }
+
+    /**
+     * Creates or renames a language through the registry. The persisted flags of
+     * an existing row are preserved; a new row starts active and non-default.
+     */
+    private function guardarIdioma(
+        \FSFramework\model\catalogo_idioma $idioma,
+        string $codidioma,
+        string $nombre
+    ): void {
+        $current = $this->idiomaEnMemoria($codidioma);
+
+        $idioma->codidioma = $codidioma;
+        $idioma->nombre = $nombre;
+        $idioma->activo = $current ? (bool) $current->activo : true;
+        $idioma->por_defecto = $current ? (bool) $current->por_defecto : false;
+
+        if ($idioma->save()) {
+            $this->new_message(FSTranslator::trans($current ? 'language-updated' : 'language-created'));
+        }
+    }
+
+    /**
+     * Flips the active flag through the registry, which owns the "the default
+     * cannot be deactivated" invariant (slice 1, GDI-02).
+     */
+    private function alternarIdioma(\FSFramework\model\catalogo_idioma $idioma, string $codidioma): void
+    {
+        $current = $this->idiomaEnMemoria($codidioma);
+        if ($current === null) {
+            return;
+        }
+
+        $idioma->codidioma = $codidioma;
+        $idioma->nombre = (string) $current->nombre;
+        $idioma->activo = !(bool) $current->activo;
+        $idioma->por_defecto = (bool) $current->por_defecto;
+
+        if ($idioma->save()) {
+            $this->new_message(FSTranslator::trans('language-updated'));
+        }
+    }
+
+    /**
+     * Deletes a language through the registry, which owns the "default and last
+     * language cannot be deleted" guards and the description cleanup
+     * (slice 1, GDI-03).
+     */
+    private function borrarIdioma(\FSFramework\model\catalogo_idioma $idioma, string $codidioma): void
+    {
+        $current = $this->idiomaEnMemoria($codidioma);
+        if ($current === null) {
+            return;
+        }
+
+        $idioma->codidioma = $codidioma;
+        $idioma->por_defecto = (bool) $current->por_defecto;
+
+        if ($idioma->delete()) {
+            $this->new_message(FSTranslator::trans('language-deleted'));
+        }
+    }
+
+    /**
+     * The loaded registry row for a code, or null. The panel renders from
+     * `idiomas_todos`, so the mutation target is already in memory.
+     */
+    private function idiomaEnMemoria(string $codidioma): ?\FSFramework\model\catalogo_idioma
+    {
+        foreach ($this->idiomas_todos as $idioma) {
+            if ((string) ($idioma->codidioma ?? '') === $codidioma) {
+                return $idioma;
+            }
+        }
+
+        return null;
     }
 
     private function loadExtensions(): void
