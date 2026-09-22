@@ -1369,6 +1369,28 @@ class articulo extends \fs_model
     private $descripciones_catalogo;
 
     /**
+     * DB seam: the language registry used to resolve the configured default.
+     * Overridable so the language API is unit-testable without a live database.
+     *
+     * @return catalogo_idioma
+     */
+    protected function language_registry()
+    {
+        return new catalogo_idioma();
+    }
+
+    /**
+     * DB seam: the multi-language description model. Overridable so the read
+     * chain and the write path are unit-testable without a live database.
+     *
+     * @return articulo_descripcion
+     */
+    protected function description_model()
+    {
+        return new articulo_descripcion();
+    }
+
+    /**
      * Devuelve las descripciones del artículo en todos los idiomas.
      * @return array<int, articulo_descripcion>
      */
@@ -1377,8 +1399,7 @@ class articulo extends \fs_model
         if (is_null($this->descripciones_catalogo)) {
             $this->descripciones_catalogo = [];
             if (!is_null($this->referencia)) {
-                $desc = new articulo_descripcion();
-                $this->descripciones_catalogo = $desc->all_from_articulo($this->referencia);
+                $this->descripciones_catalogo = $this->description_model()->all_from_articulo($this->referencia);
             }
         }
 
@@ -1386,25 +1407,33 @@ class articulo extends \fs_model
     }
 
     /**
-     * Devuelve la descripción en un idioma específico con fallback al idioma por defecto
-     * y, en última instancia, a articulos.descripcion.
+     * Devuelve la descripción en un idioma específico.
+     *
+     * Read chain (GDI-05 / D-09): requested language -> configured default ->
+     * `articulos.descripcion` -> ''. A null/empty code resolves the configured
+     * default (`get_effective_default_code()`, resolved once into a local
+     * variable). Every leg is a pure read: no row is created, updated or
+     * materialised (R2).
      */
-    public function get_descripcion_idioma($codidioma = 'es')
+    public function get_descripcion_idioma($codidioma = null)
     {
         if (is_null($this->referencia)) {
             return $this->descripcion;
         }
 
-        $desc = new articulo_descripcion();
+        $defaultCode = (string) $this->language_registry()->get_effective_default_code();
+        if (is_null($codidioma) || $codidioma === '') {
+            $codidioma = $defaultCode;
+        }
+
+        $desc = $this->description_model();
         $d = $desc->get_by_articulo_idioma($this->referencia, $codidioma);
         if ($d) {
             return $d->descripcion;
         }
 
-        $idioma = new catalogo_idioma();
-        $default = $idioma->get_default();
-        if ($default && $default->codidioma != $codidioma) {
-            $d = $desc->get_by_articulo_idioma($this->referencia, $default->codidioma);
+        if ($defaultCode !== (string) $codidioma) {
+            $d = $desc->get_by_articulo_idioma($this->referencia, $defaultCode);
             if ($d) {
                 return $d->descripcion;
             }
@@ -1416,7 +1445,7 @@ class articulo extends \fs_model
     /**
      * Devuelve la descripción corta en un idioma específico.
      */
-    public function descripcion_idioma($codidioma = 'es', $len = 120)
+    public function descripcion_idioma($codidioma = null, $len = 120)
     {
         $desc = $this->get_descripcion_idioma($codidioma);
         if (mb_strlen($desc, 'UTF8') > $len) {
@@ -1427,36 +1456,57 @@ class articulo extends \fs_model
     }
 
     /**
+     * Devuelve la descripción corta (columna `descripcion_corta`) de un idioma.
+     *
+     * LOCAL DECISION (D-08, R2): unlike `get_descripcion_idioma()`, this accessor
+     * is same-language only and does NOT inherit the fallback chain. Showing
+     * another language's short text as the selected language's would materialise
+     * a fallback at display time and mislead the editor. The language is resolved
+     * through the configured default when no code is given.
+     */
+    public function get_descripcion_corta_idioma($codidioma = null)
+    {
+        if (is_null($this->referencia)) {
+            return '';
+        }
+
+        if (is_null($codidioma) || $codidioma === '') {
+            $codidioma = (string) $this->language_registry()->get_effective_default_code();
+        }
+
+        foreach ($this->get_descripciones() as $d) {
+            if ((string) $d->codidioma === (string) $codidioma) {
+                return (string) ($d->descripcion_corta ?? '');
+            }
+        }
+
+        return '';
+    }
+
+    /**
      * Guarda o actualiza una descripción multiidioma.
+     *
+     * The mirror into `articulos.descripcion` is deliberately gone (D1/GDI-06):
+     * the base column is a frozen legacy shim and must never be written from a
+     * language slot. Clearing and cache ownership live in
+     * `articulo_descripcion::save()`.
      */
     public function set_descripcion_idioma($codidioma, $descripcion, $descripcion_corta = null)
     {
-        $desc = new articulo_descripcion();
-        $d = $desc->get_by_articulo_idioma($this->referencia, $codidioma);
+        $d = $this->description_model()->get_by_articulo_idioma($this->referencia, $codidioma);
 
-        if ($d) {
-            $d->descripcion = $descripcion;
-            $d->descripcion_corta = $descripcion_corta;
-        } else {
-            $d = new articulo_descripcion();
+        if (!$d) {
+            $d = $this->description_model();
             $d->referencia = $this->referencia;
             $d->codidioma = $codidioma;
-            $d->descripcion = $descripcion;
-            $d->descripcion_corta = $descripcion_corta;
         }
+
+        $d->descripcion = $descripcion;
+        $d->descripcion_corta = $descripcion_corta;
 
         $this->descripciones_catalogo = null;
 
-        if ($d->save()) {
-            $default = (new catalogo_idioma())->get_default();
-            $defaultCode = $default ? $default->codidioma : catalogo_idioma::DEFAULT_CODE;
-            if ($codidioma === $defaultCode) {
-                $this->descripcion = $descripcion;
-            }
-            return true;
-        }
-
-        return false;
+        return (bool) $d->save();
     }
 
     /**
