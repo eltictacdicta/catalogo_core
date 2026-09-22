@@ -108,18 +108,41 @@ class articulo_descripcion extends \fs_model
             return false;
         }
 
-        if (mb_strlen($this->descripcion) < 1) {
-            $this->new_error_msg('La descripción no puede estar vacía.');
-            return false;
-        }
-
+        // An empty `descripcion` is accepted: absence for a language is a valid
+        // state and the clearing path below turns it into a row removal
+        // (GDI-07 / D-11, D-12).
         return true;
+    }
+
+    /**
+     * An empty description AND an empty short description mean "absent".
+     *
+     * A row whose `descripcion` is empty but whose `descripcion_corta` is set is
+     * preserved: keeping it is a LOCAL DECISION with no external evidence
+     * (PrestaShop updates the `_lang` row in place and Odoo drops the language
+     * key). The maintainer owns this choice.
+     */
+    private function isEmptyPair(): bool
+    {
+        return mb_strlen((string) $this->descripcion) < 1
+            && mb_strlen((string) $this->descripcion_corta) < 1;
     }
 
     public function save()
     {
         if (!$this->test()) {
             return false;
+        }
+
+        // Clearing semantics (GDI-07 / D-11, D-12): the empty-pair decision lives
+        // here so no caller can bypass it. An empty pair removes the row instead
+        // of storing an empty description; when no row exists it is a no-op.
+        if ($this->isEmptyPair()) {
+            if (!$this->exists()) {
+                return true;
+            }
+
+            return $this->delete();
         }
 
         if ($this->exists()) {
