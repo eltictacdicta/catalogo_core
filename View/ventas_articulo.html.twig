@@ -2,6 +2,13 @@
 {% import 'Macro/Htmx.html.twig' as htmx %}
 {% import 'Macro/Alpine.html.twig' as alpine %}
 
+{#- htmx 4 boot (AD-8): inherited CSRF headers on every request. allowScriptTags:false
+    scrubs the scripts of an incoming fragment before a swap, because the tarifa
+    selector below swaps this page's own <body> on change. Kept at the very top,
+    mirroring tarif_opcional_edit, so the document-level bootstrap is installed
+    before most of the body is parsed. -#}
+{{ htmx.boot({'allowScriptTags': false}) }}
+
 <div class="container-fluid" x-data="articuloDetalle"
      x-on:tarifarioMessage.window="notify($event.detail.ok, $event.detail.message)">
     <div class="row">
@@ -31,6 +38,41 @@
     </div>
 
     {% if fsc.articulo.referencia %}
+    {% if fsc.tarifas|length > 0 %}
+    {#- Tarifa selector (AD-1): validated by resolveCodtarifa() and rendered only
+        when an active tarifa exists (ART-09/ART-11). Clones the ratified
+        tarif_opcional_edit pattern: htmx swaps the whole body and pushes the URL,
+        so the selected tarifa scopes every section of the unified pane. -#}
+    <div class="row">
+        <div class="col-sm-5">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="control-label" for="codtarifa"><span class="glyphicon glyphicon-tags"></span>&nbsp;Tarifa:</label>
+                <select name="codtarifa" id="codtarifa" class="form-control"
+                        hx-get="{{ fsc.url() }}"
+                        hx-trigger="change"
+                        hx-target="body"
+                        hx-select="body"
+                        hx-swap="outerHTML"
+                        hx-push-url="true"
+                        hx-boost="true">
+                    {% for tarifa in fsc.tarifas %}
+                    <option value="{{ tarifa.codtarifa }}"{% if tarifa.codtarifa == fsc.tarifa_seleccionada.codtarifa %} selected{% endif %}>{{ tarifa.nombre }}{% if tarifa.por_defecto %} ★{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="col-sm-7 text-right">
+            <span class="label label-info" style="font-size: 14px;">
+                <span class="glyphicon glyphicon-tags"></span>&nbsp;
+                Tarifa activa:
+                <strong>{{ fsc.tarifa_seleccionada.nombre }}</strong>
+                {% if fsc.tarifa_seleccionada.por_defecto %}
+                <span class="glyphicon glyphicon-star"></span>
+                {% endif %}
+            </span>
+        </div>
+    </div>
+    {% endif %}
     <div class="row">
         <div class="col-sm-12">
             <form class="form" role="form" action="{{ fsc.url() }}" method="post">
@@ -43,24 +85,31 @@
                         <a href="#datos" aria-controls="datos" role="tab" data-toggle="tab" x-on:click.prevent="activar('datos')">{{ 'data'|trans }}</a>
                     </li>
                     <li role="presentation">
-                        <a href="#precios" aria-controls="precios" role="tab" data-toggle="tab" x-on:click.prevent="activar('precios')">{{ 'prices'|trans }}</a>
-                    </li>
-                    <li role="presentation">
-                        <a href="#stock" aria-controls="stock" role="tab" data-toggle="tab" x-on:click.prevent="activar('stock')">{{ 'stock'|trans }}</a>
-                    </li>
-                    <li role="presentation">
-                        <a href="#multiidioma" aria-controls="multiidioma" role="tab" data-toggle="tab" x-on:click.prevent="activar('multiidioma')">{{ 'languages'|trans }}</a>
-                    </li>
-                    <li role="presentation">
                         <a href="#opcionales" aria-controls="opcionales" role="tab" data-toggle="tab" x-on:click.prevent="activar('opcionales')">{{ 'optionals'|trans }}</a>
                     </li>
                     {{- render_hook('ventas_articulo_tabs_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n, 'caracteristicas': fsc.caracteristicas_context()}) -}}
                 </ul>
 
                 <div class="tab-content" style="margin-top: 15px;">
-                    {# Tab: Datos #}
+                    {# One unified pane (ART-05): the article-scoped sections live here
+                       and #precios/#stock survive only as in-pane anchors, never as
+                       separate tabs. #}
                     <div role="tabpanel" class="tab-pane active" id="datos">
-                        <div class="panel panel-default">
+                        {# In-pane section index. It carries the #multiidioma anchor and
+                           the #precios/#stock section targets without turning them into
+                           tabs. #}
+                        <div class="articulo-secciones-nav" style="margin-bottom: 10px;">
+                            <div class="btn-group btn-group-xs">
+                                <a class="btn btn-default" href="#datos-ficha">{{ 'data'|trans }}</a>
+                                <a class="btn btn-default" href="#precios-tarifa">{{ 'prices'|trans }}</a>
+                                <a class="btn btn-default" href="#stock-articulo">{{ 'stock'|trans }}</a>
+                                <a class="btn btn-default" href="#multiidioma">{{ 'languages'|trans }}</a>
+                                <a class="btn btn-default" href="#imagenes">{{ 'images'|trans }}</a>
+                            </div>
+                        </div>
+
+                        {# Section: Datos #}
+                        <div class="panel panel-default" id="datos-ficha">
                             <div class="panel-heading">
                                 <h3 class="panel-title">{{ 'reference'|trans }}: {{ fsc.articulo.referencia }}</h3>
                             </div>
@@ -190,8 +239,110 @@
                             </div>
                         </div>
 
-                        {# Imágenes del artículo (absorbido de tarif_articulo_edit, AD-W2-7) #}
-                        <div class="panel panel-default" x-data="articuloImagenes">
+                        {# Section: Precios. With an active tarifa the price/state box is
+                           served by the unchanged WU-1 endpoint; the base price stays
+                           editable only in the no-tarifa branch (ART-01/AD-5/ART-11). #}
+                        <div class="panel panel-default" id="precios-tarifa">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'prices'|trans }}</h3>
+                            </div>
+                            {% if fsc.tarifas|length > 0 %}
+                            <div class="panel-body">
+                                <p class="text-muted">Edita el precio y la visibilidad del artículo en la tarifa seleccionada. Cambia de tarifa en el selector superior para editar otra.</p>
+                                <div id="tab_tarifario_precios" data-tipo="articulo"
+                                     x-data="articuloTabPrecios" x-cloak>
+                                    <div class="callout tarifario-tab-msg" x-show="message" x-cloak
+                                         :class="messageClass" x-text="message"></div>
+                                    <div id="tab_tarifario_precios_rows"
+                                         hx-get="index.php?page=tarif_tab_precios&action=rows&tipo=articulo&ref={{ fsc.articulo.referencia|url_encode }}&codtarifa={{ fsc.codtarifa|url_encode }}"
+                                         hx-trigger="load"
+                                         hx-swap="outerHTML">
+                                        <p class="text-muted">Cargando los precios por tarifa…</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {#- Per-tarifa save wiring (AD-6): included from the host view,
+                                inside the tarifa branch only, so the Alpine component and
+                                the htmx:after:request rows swap are registered exactly when
+                                the per-tarifa box exists. -#}
+                            {% include '@catalogo_core/Hooks/partials/tab_save_script.html.twig' %}
+                            {% else %}
+                            <div class="panel-body" x-data="articuloPrecios">
+                                <input type="hidden" id="iva" value="{{ fsc.articulo.get_iva() }}" x-ref="iva"/>
+                                <div class="row">
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            {{ 'cost-price'|trans }}:
+                                            <input class="form-control" type="text" id="coste" value="{{ fsc.articulo.preciocoste()|number_format(2, ',', '.') }}" readonly="readonly" x-ref="coste"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            {{ 'sale-price'|trans }} ({{ 'without-tax'|trans }}):
+                                            <input class="form-control" type="text" id="pvp" name="spvp" value="{{ fsc.articulo.pvp|number_format(2, ',', '.') }}" x-model="pvp" x-on:input="recalcularPvp()" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            {{ 'sale-price'|trans }} ({{ 'with-tax'|trans }}):
+                                            <input class="form-control" type="text" id="pvpi" x-model="pvpi" x-on:input="recalcularPvpi()" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            {{ 'margin'|trans }} (%):
+                                            <input class="form-control" type="text" id="margen" x-model="margen" x-on:input="recalcularMargen()" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        {# Section: Stock #}
+                        <div class="panel panel-default" id="stock-articulo">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'stock'|trans }}</h3>
+                            </div>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-4">
+                                        <div class="form-group">
+                                            {{ 'physical-stock'|trans }}:
+                                            <input class="form-control" type="text" name="sstockfis" value="{{ fsc.articulo.stockfis|number_format(2, ',', '.') }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <div class="form-group">
+                                            {{ 'minimum-stock'|trans }}:
+                                            <input class="form-control" type="text" name="sstockmin" value="{{ fsc.articulo.stockmin|number_format(2, ',', '.') }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <div class="form-group">
+                                            {{ 'maximum-stock'|trans }}:
+                                            <input class="form-control" type="text" name="sstockmax" value="{{ fsc.articulo.stockmax|number_format(2, ',', '.') }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-sm-6">
+                                        <div class="checkbox">
+                                            <label>
+                                                <input type="checkbox" name="snostock" value="TRUE" {% if fsc.articulo.nostock %}checked{% endif %}/>
+                                                {{ 'no-stock-control'|trans }}
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {# Section: Idiomas (visible in-pane panel, no longer a tab) #}
+                        {% include 'partials/articulos/tab_multiidioma.html.twig' %}
+
+                        {# Section: Imágenes del artículo (absorbido de tarif_articulo_edit, AD-W2-7) #}
+                        <div class="panel panel-default" id="imagenes" x-data="articuloImagenes">
                             <div class="panel-heading">
                                 <h3 class="panel-title">{{ 'images'|trans }}</h3>
                             </div>
@@ -229,86 +380,6 @@
                         </div>
                     </div>
 
-                    {# Tab: Precios #}
-                    <div role="tabpanel" class="tab-pane" id="precios">
-                        <div class="panel panel-default" x-data="articuloPrecios">
-                            <div class="panel-heading">
-                                <h3 class="panel-title">{{ 'prices'|trans }}</h3>
-                            </div>
-                            <div class="panel-body">
-                                <input type="hidden" id="iva" value="{{ fsc.articulo.get_iva() }}" x-ref="iva"/>
-                                <div class="row">
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'cost-price'|trans }}:
-                                            <input class="form-control" type="text" id="coste" value="{{ fsc.articulo.preciocoste()|number_format(2, ',', '.') }}" readonly="readonly" x-ref="coste"/>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'sale-price'|trans }} ({{ 'without-tax'|trans }}):
-                                            <input class="form-control" type="text" id="pvp" name="spvp" value="{{ fsc.articulo.pvp|number_format(2, ',', '.') }}" x-model="pvp" x-on:input="recalcularPvp()" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'sale-price'|trans }} ({{ 'with-tax'|trans }}):
-                                            <input class="form-control" type="text" id="pvpi" x-model="pvpi" x-on:input="recalcularPvpi()" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'margin'|trans }} (%):
-                                            <input class="form-control" type="text" id="margen" x-model="margen" x-on:input="recalcularMargen()" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {# Tab: Stock #}
-                    <div role="tabpanel" class="tab-pane" id="stock">
-                        <div class="panel panel-default">
-                            <div class="panel-heading">
-                                <h3 class="panel-title">{{ 'stock'|trans }}</h3>
-                            </div>
-                            <div class="panel-body">
-                                <div class="row">
-                                    <div class="col-sm-4">
-                                        <div class="form-group">
-                                            {{ 'physical-stock'|trans }}:
-                                            <input class="form-control" type="text" name="sstockfis" value="{{ fsc.articulo.stockfis|number_format(2, ',', '.') }}" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <div class="form-group">
-                                            {{ 'minimum-stock'|trans }}:
-                                            <input class="form-control" type="text" name="sstockmin" value="{{ fsc.articulo.stockmin|number_format(2, ',', '.') }}" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <div class="form-group">
-                                            {{ 'maximum-stock'|trans }}:
-                                            <input class="form-control" type="text" name="sstockmax" value="{{ fsc.articulo.stockmax|number_format(2, ',', '.') }}" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-sm-6">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="snostock" value="TRUE" {% if fsc.articulo.nostock %}checked{% endif %}/>
-                                                {{ 'no-stock-control'|trans }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {% include 'partials/articulos/tab_multiidioma.html.twig' %}
                     {% include 'partials/articulos/tab_opcionales.html.twig' %}
                     {{- render_hook('ventas_articulo_tab_pane_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n, 'caracteristicas': fsc.caracteristicas_context()}) -}}
                 </div>
@@ -376,9 +447,15 @@ document.addEventListener('alpine:init', function () {
                 var pane = document.getElementById(id);
                 if (pane) { pane.classList.add('active'); }
             },
+            // Only real tabs reactivate from the hash. The unified pane nests
+            // section anchors (#multiidioma, #imagenes, ...) that are not tabs;
+            // activating one would hide the whole #datos pane.
             activarDesdeHash: function () {
                 var hash = window.location.hash.substring(1);
-                if (hash !== '') { this.activar(hash); }
+                if (hash === '') { return; }
+                var list = document.getElementById('tab_articulo');
+                if (!list || !list.querySelector('a[href="#' + hash + '"]')) { return; }
+                this.activar(hash);
             }
         };
     });
@@ -440,10 +517,23 @@ document.addEventListener('alpine:init', function () {
         };
     });
 });
+
+// htmx 4 re-executes swapped scripts: the marker keeps this listener installed
+// exactly once, and the whole-body tarifa swap re-initializes the incoming
+// Alpine tree (AD-8). The host owns this; the injected pane no longer binds it.
+(function () {
+    if (window.__ventasArticuloSwapBound === true) { return; }
+    window.__ventasArticuloSwapBound = true;
+
+    document.addEventListener('htmx:after:swap', function (evt) {
+        if (!window.Alpine || typeof window.Alpine.initTree !== 'function') { return; }
+        var ctx = evt && evt.detail ? evt.detail.ctx : null;
+        window.Alpine.initTree(ctx && ctx.target ? ctx.target : document.body);
+    });
+})();
 </script>
 {% endif %}
 
-{{ htmx.boot({'allowScriptTags': false}) }}
 {{ alpine.boot() }}
 
 {{ include('footer.html.twig') }}

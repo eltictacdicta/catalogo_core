@@ -57,6 +57,15 @@ class tarif_tab_precios extends fbase_controller
     /** Referencia del artículo servido en la acción rows. */
     protected string $rows_ref = '';
 
+    /**
+     * Optional per-tarifa read scope for the rows fragment (AD-3). Empty means
+     * the legacy all-tarifas output; a non-empty code narrows the fragment to
+     * that single active tariff. Set from the `codtarifa` request parameter on
+     * the rows action and from the saved row's tariff on a price save. Read
+     * only — the endpoint's write behavior is unchanged.
+     */
+    protected string $rows_scope = '';
+
     public function __construct()
     {
         parent::__construct(__CLASS__, 'Precios Tarifas (tab)', 'tarifario', FALSE, FALSE);
@@ -110,6 +119,9 @@ class tarif_tab_precios extends fbase_controller
     {
         $this->template = FALSE;
         $this->rows_ref = isset($_REQUEST['ref']) ? $this->no_html(trim($_REQUEST['ref'])) : '';
+        $this->rows_scope = isset($_REQUEST['codtarifa'])
+            ? $this->no_html(trim((string) $_REQUEST['codtarifa']))
+            : '';
 
         header('Content-Type: text/html; charset=UTF-8');
         echo $this->render_rows_fragment();
@@ -125,7 +137,17 @@ class tarif_tab_precios extends fbase_controller
         $visibilidad = [];
         $resolver = $this->caracteristica_resolver();
 
-        foreach ($this->tarifas as $tarifa) {
+        // AD-3: additive read scope. With no scope the whole active set is
+        // rendered, exactly as before (legacy output stays byte-for-byte).
+        $tarifas = $this->tarifas;
+        if ($this->rows_scope !== '') {
+            $tarifas = array_values(array_filter(
+                $tarifas,
+                fn ($tarifa): bool => (string) $tarifa->codtarifa === $this->rows_scope
+            ));
+        }
+
+        foreach ($tarifas as $tarifa) {
             $precios[$tarifa->codtarifa] = $this->precio_model()->get($this->rows_ref, $tarifa->codtarifa);
             $visibilidad[$tarifa->codtarifa] = [
                 'en_tarifa' => (bool) $resolver->resolve_bool('en_tarifa', (string) $tarifa->codtarifa, $this->rows_ref, null),
@@ -136,7 +158,7 @@ class tarif_tab_precios extends fbase_controller
         return Html::render('@catalogo_core/Hooks/partials/articulo_precios_rows.html.twig', [
             'fsc' => $this,
             'referencia' => $this->rows_ref,
-            'tarifas' => $this->tarifas,
+            'tarifas' => $tarifas,
             'precios' => $precios,
             'visibilidad' => $visibilidad,
         ]);
@@ -170,6 +192,9 @@ class tarif_tab_precios extends fbase_controller
         // sin esto la respuesta pinta filas en blanco y un segundo guardado
         // sobre la fila en blanco borra el precio recién guardado.
         $this->rows_ref = $referencia;
+        // AD-3: la respuesta se acota a la tarifa de la fila guardada, de modo
+        // que solo se re-renderiza esa fila.
+        $this->rows_scope = $codtarifa;
         if ($referencia === '' || !$this->puede_editar_articulo($referencia, $codtarifa)) {
             $this->respond_tab_json(false, 'No tienes permiso para editar los precios de este artículo en la tarifa seleccionada.');
             return;

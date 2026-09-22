@@ -390,6 +390,60 @@ final class TarifTabPreciosTest extends TestCase
         return (string) ob_get_clean();
     }
 
+    /**
+     * Parses a rendered fragment into a DOM document so the product-scoped block
+     * contract can be asserted structurally (tag absence, ancestor containment)
+     * instead of by brittle string matching.
+     */
+    private function fragmentDocument(string $html): \DOMDocument
+    {
+        $dom = new \DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $dom->loadHTML(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>'
+            . $html
+            . '</body></html>'
+        );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        return $dom;
+    }
+
+    /**
+     * Resolves `hx-include="closest <selector>"` the way htmx does: the nearest
+     * ancestor (or the node itself) matching the selector.
+     */
+    private function closestMatchingAncestor(\DOMNode $node, string $selector): ?\DOMElement
+    {
+        for ($current = $node; $current instanceof \DOMElement; $current = $current->parentNode) {
+            if ($this->matchesSimpleSelector($current, $selector)) {
+                return $current;
+            }
+        }
+
+        return null;
+    }
+
+    private function matchesSimpleSelector(\DOMElement $element, string $selector): bool
+    {
+        if ($selector === '') {
+            return false;
+        }
+
+        if ($selector[0] === '#') {
+            return $element->getAttribute('id') === substr($selector, 1);
+        }
+
+        if ($selector[0] === '.') {
+            $classes = preg_split('/\s+/', trim($element->getAttribute('class'))) ?: [];
+
+            return in_array(substr($selector, 1), $classes, true);
+        }
+
+        return strtolower($element->tagName) === strtolower($selector);
+    }
+
     // =====================================================================
     // Deny path — S21 (persistence side): save() unreachable, clear error
     // =====================================================================
@@ -599,7 +653,9 @@ final class TarifTabPreciosTest extends TestCase
     }
 
     // =====================================================================
-    // Currency-aware rows — S27: each row uses its own tariff coddivisa
+    // Currency-aware rows — S27: each row uses its own tariff coddivisa.
+    // AD-3 narrows the read to the requested tarifa, so the scoped request
+    // renders exactly one row while keeping its own coddivisa.
     // =====================================================================
 
     public function test_rows_fragment_renders_row_tariff_coddivisa(): void
@@ -610,15 +666,45 @@ final class TarifTabPreciosTest extends TestCase
         ]);
         $this->pricesByTarifa = ['EUR1' => 9.99, 'USD1' => 12.5];
 
+        $html = $this->getRows(['ref' => 'REF-1', 'codtarifa' => 'USD1']);
+
+        $this->assertNotSame('', $html, 'Rows action must echo the rendered fragment');
+        $this->assertStringContainsString('data-codtarifa="USD1"', $html, 'The scoped row must be rendered');
+        $this->assertStringNotContainsString(
+            'data-codtarifa="EUR1"',
+            $html,
+            'The scoped read must not render the other active tariff'
+        );
+        $this->assertContains('USD', $this->divisaCalls, 'USD row must render via simbolo_divisa(USD)');
+        $this->assertNotContains('EUR', $this->divisaCalls, 'The hidden tariff must not be rendered at all');
+        $this->assertStringContainsString('$', $html, 'The scoped USD row must show the dollar symbol');
+        $this->assertStringContainsString('12.5', $html, 'Saved USD price must appear in the rows');
+        $this->assertStringNotContainsString('9.99', $html, 'The sibling tariff price must not leak');
+    }
+
+    /**
+     * AD-3: the read scope is additive — a scope-less request keeps the legacy
+     * all-tarifas output byte-for-byte, so no existing consumer changes.
+     */
+    public function test_rows_fragment_without_scope_keeps_every_active_tarifa(): void
+    {
+        $this->setTarifas([
+            ['codtarifa' => 'EUR1', 'nombre' => 'Euro', 'coddivisa' => 'EUR'],
+            ['codtarifa' => 'USD1', 'nombre' => 'Dólar', 'coddivisa' => 'USD'],
+        ]);
+        $this->pricesByTarifa = ['EUR1' => 9.99, 'USD1' => 12.5];
+
         $html = $this->getRows(['ref' => 'REF-1']);
 
         $this->assertNotSame('', $html, 'Rows action must echo the rendered fragment');
+        $this->assertStringContainsString('data-codtarifa="EUR1"', $html);
+        $this->assertStringContainsString('data-codtarifa="USD1"', $html);
         $this->assertContains('EUR', $this->divisaCalls, 'EUR row must render via simbolo_divisa(EUR)');
         $this->assertContains('USD', $this->divisaCalls, 'USD row must render via simbolo_divisa(USD)');
-        $this->assertStringContainsString('$', $html, 'USD tariff row must show the dollar symbol');
         $this->assertStringContainsString('€', $html, 'EUR tariff row must show the euro symbol');
-        $this->assertStringContainsString('12.5', $html, 'Saved USD price must appear in the rows');
+        $this->assertStringContainsString('$', $html, 'USD tariff row must show the dollar symbol');
         $this->assertStringContainsString('9.99', $html, 'Saved EUR price must appear in the rows');
+        $this->assertStringContainsString('12.5', $html, 'Saved USD price must appear in the rows');
     }
 
     // =====================================================================
@@ -681,8 +767,136 @@ final class TarifTabPreciosTest extends TestCase
             $payload['html'],
             'F2: the delete response fragment must echo the real referencia'
         );
+        // AD-3: the save response is scoped to the saved row's tarifa, so the
+        // sibling tariff row is not re-rendered.
+        $this->assertStringContainsString('data-codtarifa="USD1"', $payload['html']);
+        $this->assertStringNotContainsString(
+            'data-codtarifa="EUR1"',
+            $payload['html'],
+            'The save response must be scoped to the saved row tarifa'
+        );
         $this->assertStringNotContainsString('19.99', $payload['html'], 'F2: the deleted price must be gone');
-        $this->assertStringContainsString('9.99', $payload['html'], 'F2: the other row must stay intact');
+        $this->assertStringNotContainsString(
+            '9.99',
+            $payload['html'],
+            'F2: the sibling tariff row is not re-rendered by the scoped response'
+        );
+    }
+
+    // =====================================================================
+    // Owner UI adjustment — the fragment is the product's price block for the
+    // selected tarifa, not a tariffs editor table.
+    // =====================================================================
+
+    /**
+     * The scoped fragment must read as the price of THIS product in the
+     * selected tarifa: no table, no table head, no "Tarifa" column and no
+     * plural title. The frozen root id/attributes, the block root tariff
+     * marker and the four named controls survive so the existing save wiring
+     * keeps serializing the same payload.
+     */
+    public function test_rows_fragment_renders_a_product_scoped_price_block_without_a_table(): void
+    {
+        $this->setTarifas([
+            ['codtarifa' => 'USD1', 'nombre' => 'Dólar', 'coddivisa' => 'USD'],
+        ]);
+        $this->pricesByTarifa = ['USD1' => 12.5];
+
+        $html = $this->getRows(['ref' => 'REF-1', 'codtarifa' => 'USD1']);
+
+        $this->assertStringNotContainsString('<table', $html, 'The rows fragment must not render a table');
+        $this->assertStringNotContainsString('<thead', $html, 'The rows fragment must not render a table head');
+        $this->assertStringNotContainsString('<th ', $html, 'The rows fragment must not render a Tarifa column');
+        $this->assertStringNotContainsString('Precios por tarifa', $html, 'The plural title must be gone');
+
+        $dom = $this->fragmentDocument($html);
+        $this->assertSame(0, $dom->getElementsByTagName('table')->length, 'No table element may survive');
+        $this->assertSame(0, $dom->getElementsByTagName('thead')->length, 'No thead element may survive');
+        $this->assertSame(0, $dom->getElementsByTagName('th')->length, 'No th element may survive');
+
+        $xpath = new \DOMXPath($dom);
+        $roots = $xpath->query('//*[@id="tab_tarifario_precios_rows"]');
+        $this->assertSame(1, $roots->length, 'The fragment must keep the frozen rows root id');
+        $root = $roots->item(0);
+        $this->assertSame('articulo', $root->getAttribute('data-tipo'));
+        $this->assertSame('REF-1', $root->getAttribute('data-referencia'));
+
+        $blocks = $xpath->query('.//div[contains(@class, "tarifario-tab-precio-bloque")]', $root);
+        $this->assertSame(1, $blocks->length, 'The scoped fragment must render exactly one tariff block');
+        $this->assertSame(
+            'USD1',
+            $blocks->item(0)->getAttribute('data-codtarifa'),
+            'The block root must mark the rendered tariff'
+        );
+
+        foreach (['precio', 'activo', 'en_tarifa', 'en_catalogo'] as $name) {
+            $this->assertSame(
+                1,
+                $xpath->query('.//input[@name="' . $name . '"]', $root)->length,
+                'The block must expose the ' . $name . ' control'
+            );
+        }
+
+        $addons = $xpath->query('.//span[contains(@class, "input-group-addon")]', $root);
+        $this->assertSame(1, $addons->length, 'The price input must keep its currency addon');
+        $this->assertSame('$', trim($addons->item(0)->textContent), 'The addon must render the tariff currency');
+    }
+
+    /**
+     * The save button must serialize the block that holds its own hidden row
+     * inputs. With the table gone there is no row to include, so the wiring
+     * must resolve through the block ancestor instead of `closest tr`.
+     */
+    public function test_rows_fragment_save_button_includes_the_block_that_holds_the_hidden_inputs(): void
+    {
+        $this->setTarifas([
+            ['codtarifa' => 'USD1', 'nombre' => 'Dólar', 'coddivisa' => 'USD'],
+        ]);
+        $this->pricesByTarifa = ['USD1' => 12.5];
+
+        $html = $this->getRows(['ref' => 'REF-1', 'codtarifa' => 'USD1']);
+
+        $this->assertStringNotContainsString(
+            'closest tr',
+            $html,
+            'The save wiring must not depend on the removed table row'
+        );
+
+        $dom = $this->fragmentDocument($html);
+        $xpath = new \DOMXPath($dom);
+        $buttons = $xpath->query('//button[contains(@class, "tarifario-tab-guardar")]');
+        $this->assertSame(1, $buttons->length, 'The scoped block must render exactly one save button');
+        $button = $buttons->item(0);
+
+        $this->assertSame('index.php?page=tarif_tab_precios', $button->getAttribute('hx-post'));
+        $this->assertSame('none', $button->getAttribute('hx-swap'));
+
+        $include = $button->getAttribute('hx-include');
+        $this->assertMatchesRegularExpression(
+            '/^closest\s+([.#][A-Za-z0-9_\-]+)$/',
+            $include,
+            'hx-include must resolve through a block selector, not a table row'
+        );
+
+        preg_match('/^closest\s+(.+)$/', $include, $matches);
+        $selector = trim($matches[1]);
+        $this->assertNotSame('tr', $selector, 'The removed table row must not be the include target');
+
+        $block = $this->closestMatchingAncestor($button, $selector);
+        $this->assertNotNull($block, 'The hx-include selector must match an ancestor of the save button');
+
+        foreach (['guardar_precio_tab', 'codtarifa', 'referencia'] as $name) {
+            $this->assertSame(
+                1,
+                $xpath->query('.//input[@name="' . $name . '"]', $block)->length,
+                'The hx-include block must still carry the hidden ' . $name . ' input'
+            );
+        }
+        $this->assertSame(
+            'USD1',
+            $xpath->query('.//input[@name="codtarifa"]', $block)->item(0)->getAttribute('value'),
+            'The included block must carry the rendered tariff code'
+        );
     }
 
     // =====================================================================

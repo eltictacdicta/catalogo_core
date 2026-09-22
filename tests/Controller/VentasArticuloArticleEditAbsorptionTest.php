@@ -907,8 +907,42 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     {
         $view = $this->source(self::VIEW);
 
-        foreach (['#datos', '#precios', '#stock', '#multiidioma', '#opcionales'] as $tab) {
-            $this->assertStringContainsString($tab, $view, 'Migrated view must keep the ' . $tab . ' tab');
+        // ART-05: ONE unified #datos pane hosts the article-scoped sections and
+        // #opcionales stays the only secondary tab.
+        $this->assertSame(
+            1,
+            substr_count($view, 'id="datos"'),
+            'The migrated view must render exactly one #datos pane'
+        );
+        $this->assertStringContainsString('href="#datos"', $view, 'The unified pane must be the active tab');
+        $this->assertStringContainsString(
+            'href="#opcionales"',
+            $view,
+            'The #opcionales tab must survive as the only secondary tab'
+        );
+        $this->assertSame(
+            2,
+            substr_count($view, 'role="presentation"'),
+            'Only #datos and #opcionales may remain as tabs (ART-05)'
+        );
+        foreach (['href="#precios"', 'href="#stock"'] as $retiredTab) {
+            $this->assertStringNotContainsString(
+                $retiredTab,
+                $view,
+                $retiredTab . ' must not remain a separate tab (ART-05)'
+            );
+        }
+        foreach (['href="#precios-tarifa"', 'href="#stock-articulo"'] as $inPaneAnchor) {
+            $this->assertStringContainsString(
+                $inPaneAnchor,
+                $view,
+                $inPaneAnchor . ' must survive as an in-pane section anchor'
+            );
+        }
+
+        // Locked literals for ART-08 (VentasArticuloControllerTest stays green).
+        foreach (['#multiidioma', '#opcionales', 'tab_multiidioma.html.twig', 'tab_opcionales.html.twig', 'fsc.articulo.pvp'] as $locked) {
+            $this->assertStringContainsString($locked, $view, 'Migrated view must keep the locked literal ' . $locked);
         }
 
         foreach (['ventas_articulo_tabs_after', 'ventas_articulo_tab_pane_after'] as $marker) {

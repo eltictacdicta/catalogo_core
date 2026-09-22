@@ -1,70 +1,80 @@
-{#- Server-rendered per-tarifa price rows for the injected Tarifas tab on
+{#- Product-scoped price block for the article's selected tarifa on
     ventas_articulo (WU-1). Served by catalogo_core's tarif_tab_precios on
     fbase_controller, so fsc HAS the currency helper; every price call passes
-    the row tariff's own coddivisa (S27). Migrated to htmx 4 (AD-6): each row's
-    save button hx-posts the row inputs (hx-include) to the endpoint; the
-    inherited X-CSRF-TOKEN header (htmx.boot) authenticates it. Bare no-argument
-    currency helper calls are forbidden in View/Hooks/ (S28). The hidden
-    guardar_precio_tab/codtarifa/referencia inputs drive the endpoint action. -#}
+    the block tariff's own coddivisa (S27). The block reads as the price of THIS
+    product in the selected tarifa, not as a tariffs editor: no table, no
+    "Tarifa" column, no plural title. htmx 4 (AD-6): the block's save button
+    hx-posts its own inputs (hx-include resolves the nearest block ancestor) to
+    the endpoint; the inherited X-CSRF-TOKEN header (htmx.boot) authenticates
+    it. Bare no-argument currency helper calls are forbidden in View/Hooks/
+    (S28). The hidden guardar_precio_tab/codtarifa/referencia inputs drive the
+    endpoint action. -#}
 <div class="box" id="tab_tarifario_precios_rows" data-tipo="articulo" data-referencia="{{ referencia }}">
-   <div class="box-header with-border">
-      <h3 class="box-title">Precios por tarifa</h3>
-   </div>
-   <div class="box-body table-responsive no-padding">
-      <table class="table table-striped">
-         <thead>
-            <tr>
-               <th>Tarifa</th>
-               <th class="text-right">Precio</th>
-               <th class="text-center">Activo</th>
-               <th class="text-center">En tarifa</th>
-               <th class="text-center">En catálogo</th>
-               <th></th>
-            </tr>
-         </thead>
-         <tbody>
-            {% for tarifa in tarifas %}
-            {% set precio = precios[tarifa.codtarifa]|default(null) %}
-            <tr data-codtarifa="{{ tarifa.codtarifa }}">
-               <td>{{ tarifa.nombre }}</td>
-               <td class="text-right">
-                  <div class="input-group input-group-sm" style="width: 130px; margin-left: auto;">
+   <div class="box-body">
+      {% for tarifa in tarifas %}
+      {% set precio = precios[tarifa.codtarifa]|default(null) %}
+      <div class="tarifario-tab-precio-bloque" data-codtarifa="{{ tarifa.codtarifa }}">
+         <div class="row">
+            <div class="col-sm-4">
+               <div class="form-group">
+                  <label>Precio</label>
+                  <div class="input-group input-group-sm">
                      <input type="text" name="precio" class="form-control text-right tarifario-tab-precio"
                             data-codtarifa="{{ tarifa.codtarifa }}"
                             value="{{ precio ? precio.precio : '' }}"
                             placeholder="0.00" autocomplete="off"/>
                      <span class="input-group-addon">{{ fsc.simbolo_divisa(tarifa.coddivisa) }}</span>
                   </div>
-               </td>
-               <td class="text-center">
-                  <input type="checkbox" name="activo" value="1" class="tarifario-tab-activo"
-                         data-codtarifa="{{ tarifa.codtarifa }}"{% if precio and precio.activo %} checked{% endif %}/>
-               </td>
-               <td class="text-center">
-                  <input type="checkbox" name="en_tarifa" value="1" class="tarifario-tab-en-tarifa"
-                         data-codtarifa="{{ tarifa.codtarifa }}"{% if visibilidad[tarifa.codtarifa].en_tarifa|default(false) %} checked{% endif %}/>
-               </td>
-               <td class="text-center">
-                  <input type="checkbox" name="en_catalogo" value="1" class="tarifario-tab-en-catalogo"
-                         data-codtarifa="{{ tarifa.codtarifa }}"{% if visibilidad[tarifa.codtarifa].en_catalogo|default(false) %} checked{% endif %}/>
-               </td>
-               <td class="text-right">
-                  <input type="hidden" name="guardar_precio_tab" value="1"/>
-                  <input type="hidden" name="codtarifa" value="{{ tarifa.codtarifa }}"/>
-                  <input type="hidden" name="referencia" value="{{ referencia }}"/>
-                  <button type="button" class="btn btn-xs btn-primary tarifario-tab-guardar"
-                          data-codtarifa="{{ tarifa.codtarifa }}"
-                          hx-post="index.php?page=tarif_tab_precios"
-                          hx-include="closest tr"
-                          hx-swap="none">
-                     <span class="glyphicon glyphicon-floppy-disk"></span>
-                  </button>
-               </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="6" class="text-muted">No hay tarifas activas.</td></tr>
-            {% endfor %}
-         </tbody>
-      </table>
+               </div>
+            </div>
+            <div class="col-sm-8">
+               <div class="row">
+                  <div class="col-sm-3">
+                     <div class="checkbox">
+                        <label>
+                           <input type="checkbox" name="activo" value="1" class="tarifario-tab-activo"
+                                  data-codtarifa="{{ tarifa.codtarifa }}"{% if precio and precio.activo %} checked{% endif %}/>
+                           Activo
+                        </label>
+                     </div>
+                  </div>
+                  <div class="col-sm-3">
+                     <div class="checkbox">
+                        <label>
+                           <input type="checkbox" name="en_tarifa" value="1" class="tarifario-tab-en-tarifa"
+                                  data-codtarifa="{{ tarifa.codtarifa }}"{% if visibilidad[tarifa.codtarifa].en_tarifa|default(false) %} checked{% endif %}/>
+                           En tarifa
+                        </label>
+                     </div>
+                  </div>
+                  <div class="col-sm-3">
+                     <div class="checkbox">
+                        <label>
+                           <input type="checkbox" name="en_catalogo" value="1" class="tarifario-tab-en-catalogo"
+                                  data-codtarifa="{{ tarifa.codtarifa }}"{% if visibilidad[tarifa.codtarifa].en_catalogo|default(false) %} checked{% endif %}/>
+                           En catálogo
+                        </label>
+                     </div>
+                  </div>
+                  <div class="col-sm-3 text-right">
+                     <input type="hidden" name="guardar_precio_tab" value="1"/>
+                     <input type="hidden" name="codtarifa" value="{{ tarifa.codtarifa }}"/>
+                     <input type="hidden" name="referencia" value="{{ referencia }}"/>
+                     <button type="button" class="btn btn-sm btn-primary tarifario-tab-guardar"
+                             data-codtarifa="{{ tarifa.codtarifa }}"
+                             hx-post="index.php?page=tarif_tab_precios"
+                             hx-include="closest .tarifario-tab-precio-bloque"
+                             hx-swap="none">
+                        <span class="glyphicon glyphicon-floppy-disk"></span>
+                        Guardar
+                     </button>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </div>
+      {% else %}
+      <p class="text-muted">No hay tarifas activas.</p>
+      {% endfor %}
    </div>
 </div>

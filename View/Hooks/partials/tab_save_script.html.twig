@@ -4,7 +4,8 @@
     JSON {ok, message, html} response on the htmx 4 colon after:request event,
     swaps the re-rendered rows, and reflects the result through a plain-text
     Alpine component. Idempotent via window flags because htmx re-executes
-    swapped scripts. -#}
+    swapped scripts. The host view owns the htmx:after:swap -> Alpine.initTree
+    re-init (AD-8), so this partial no longer binds it. -#}
 <script {{ csp_nonce_attr() }}>
 (function () {
    'use strict';
@@ -76,20 +77,6 @@
             component.notify(!!data.ok, data.message || '');
          }
       }
-   });
-})();
-
-(function () {
-   'use strict';
-   if (window.__tarifarioArticuloTabSwapBound === true) { return; }
-   window.__tarifarioArticuloTabSwapBound = true;
-
-   document.addEventListener('htmx:after:swap', function (evt) {
-      if (!window.Alpine || typeof window.Alpine.initTree !== 'function') { return; }
-      var detail = evt && evt.detail ? evt.detail : null;
-      var ctx = detail && detail.ctx ? detail.ctx : null;
-      var target = ctx && ctx.target ? ctx.target : document.body;
-      window.Alpine.initTree(target);
    });
 })();
 </script>

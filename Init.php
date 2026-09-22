@@ -31,17 +31,6 @@ final class Init
     ];
 
     /**
-     * Frozen article view hooks injected into catalogo_core's own
-     * ventas_articulo page (WU-1, AD-5). Mapping is 1:1 hook → template for
-     * grep auditability. Owned by catalogo_core after the tarifario article
-     * surface move.
-     */
-    private const ARTICULO_HOOK_TEMPLATES = [
-        'ventas_articulo_tabs_after' => '@catalogo_core/Hooks/ventas_articulo_tabs_after.html.twig',
-        'ventas_articulo_tab_pane_after' => '@catalogo_core/Hooks/ventas_articulo_tab_pane_after.html.twig',
-    ];
-
-    /**
      * Guards the TwigInitEvent hook registration so repeated Twig builds
      * (env cache cleared) never duplicate the registered hooks.
      */
@@ -188,9 +177,9 @@ final class Init
     /**
      * TwigLoaderEvent self-registers the @catalogo_core namespace over this
      * plugin's View dir so the injected tabs are self-contained and testable
-     * without $GLOBALS['plugins']; TwigInitEvent registers the opcional and
-     * article hook pairs (they need the registry during the Twig build).
-     * Idempotent behind the static guard.
+     * without $GLOBALS['plugins']; TwigInitEvent registers the opcional hook
+     * pair (it needs the registry during the Twig build). Idempotent behind the
+     * static guard.
      */
     private static function registerViewExtensions(): void
     {
@@ -214,8 +203,10 @@ final class Init
     }
 
     /**
-     * Registers the frozen opcional and article view hooks, guarded by the
-     * static flag so repeated Twig builds never duplicate them (AD-5).
+     * Registers the frozen opcional view hooks, guarded by the static flag so
+     * repeated Twig builds never duplicate them (AD-5). The article pair is no
+     * longer registered: the Tarifas surface lives in the host's unified
+     * `#datos` pane (D4) and the two frozen article markers stay inert.
      */
     private static function registerHooks(): void
     {
@@ -224,10 +215,6 @@ final class Init
         }
 
         foreach (self::OPCIONAL_HOOK_TEMPLATES as $hook => $template) {
-            ViewHookRegistry::register($hook, $template);
-        }
-
-        foreach (self::ARTICULO_HOOK_TEMPLATES as $hook => $template) {
             ViewHookRegistry::register($hook, $template);
         }
 

@@ -83,6 +83,16 @@ class VentasArticulo extends PageController
 
     // WU-2 absorbed state (ported 1:1 from tarifario's tarif_articulo_edit).
     public string $codtarifa = '';
+
+    /**
+     * Tarifa resolved for this render (AD-4); null when no active tarifa
+     * exists. The view reads `$tarifa_seleccionada.codtarifa` to mark the
+     * selector and to scope the per-tarifa pane (ART-09/ART-11).
+     *
+     * @var tarif_tarifa|null
+     */
+    public ?tarif_tarifa $tarifa_seleccionada = null;
+
     public array $tarifas = [];
     public array $imagenes = [];
     public array $articulo_etiquetas_disponibles = [];
@@ -211,6 +221,7 @@ class VentasArticulo extends PageController
         $tarifa = $this->tarifa_model();
         $this->tarifas = $tarifa->all_activas();
         $this->codtarifa = $this->resolveCodtarifa();
+        $this->resolveTarifaSeleccionada();
 
         $this->puede_editar = false;
         $this->imagenes = [];
@@ -228,10 +239,36 @@ class VentasArticulo extends PageController
     }
 
     /**
-     * Resolves the active codtarifa: request override, else the default tariff
-     * (ported 1:1 from tarif_controller's selection logic).
+     * Resolves the active codtarifa for the detail (AD-4): the supplied code is
+     * kept only when it is part of the active set, otherwise the default tariff
+     * when it is active, otherwise the first active tariff, otherwise ''.
+     *
+     * Ported 1:1 from tarif_opcional_edit::resolver_tarifa_seleccionada(): a
+     * stale or unknown code can never scope the pane to a nonexistent tarifa.
      */
     protected function resolveCodtarifa(): string
+    {
+        $supplied = $this->suppliedCodtarifa();
+        if ($supplied !== '' && $this->findActiveTarifa($supplied) !== null) {
+            return $supplied;
+        }
+
+        $defecto = $this->tarifa_model()->get_default();
+        if ($defecto && $this->findActiveTarifa((string) $defecto->codtarifa) !== null) {
+            return (string) $defecto->codtarifa;
+        }
+
+        if (count($this->tarifas) > 0) {
+            return (string) $this->tarifas[0]->codtarifa;
+        }
+
+        return '';
+    }
+
+    /**
+     * Raw codtarifa supplied by the request (query first, then POST body).
+     */
+    protected function suppliedCodtarifa(): string
     {
         if ($this->request->query->has('codtarifa')) {
             return (string) $this->request->query->get('codtarifa');
@@ -241,9 +278,34 @@ class VentasArticulo extends PageController
             return (string) $this->request->request->get('codtarifa');
         }
 
-        $defecto = $this->tarifa_model()->get_default();
+        return '';
+    }
 
-        return $defecto ? (string) $defecto->codtarifa : '';
+    /**
+     * The active tarifa matching $codtarifa, or null when it is not active.
+     */
+    protected function findActiveTarifa(string $codtarifa): ?tarif_tarifa
+    {
+        foreach ($this->tarifas as $tarifa) {
+            if ((string) $tarifa->codtarifa === $codtarifa) {
+                return $tarifa;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Exposes the resolved tarifa to the view (AD-4). Runs after
+     * resolveCodtarifa() normalized $codtarifa, so it only has to confirm the
+     * normalized code against the active set; with no active tarifa the
+     * selection stays null (ART-11).
+     */
+    protected function resolveTarifaSeleccionada(): void
+    {
+        $this->tarifa_seleccionada = $this->codtarifa !== ''
+            ? $this->findActiveTarifa($this->codtarifa)
+            : null;
     }
 
     // =====================================================================
@@ -397,7 +459,13 @@ class VentasArticulo extends PageController
         }
 
         $art->descripcion = (string) $request->request->get('sdescripcion', '');
-        $art->pvp = (float) $request->request->get('spvp', 0);
+        // AD-5 (C1): with an active tarifa selected the per-tarifa price row is
+        // the truth, so the base price must not be overwritten from the form.
+        // With no active tarifa (codtarifa === '', normalized by AD-4) the
+        // base-price path is unchanged and pvp stays editable (ART-01/ART-11).
+        if ($this->codtarifa === '') {
+            $art->pvp = (float) $request->request->get('spvp', 0);
+        }
 
         $codfamilia = $request->request->get('scodfamilia');
         $art->codfamilia = ($codfamilia !== null && $codfamilia !== '') ? (string) $codfamilia : null;

@@ -34,29 +34,42 @@ use Twig\TwigFilter;
 use Twig\TwigFunction;
 
 /**
- * WU-1 hook ownership: the article "Tarifas" tab is served by catalogo_core
- * alone (spec ATT-03/ATT-04, AD-5).
+ * D4 hook retirement: catalogo_core registers ZERO article hooks and the host
+ * `ventas_articulo.html.twig` renders the Tarifas surface as a section of the
+ * unified `#datos` pane (spec ATT-03/ATT-04, catalogo-render-hooks MODIFIED).
  *
  * Boots catalogo_core Init and simulates the core Twig build sequence
  * (TwigLoaderEvent at build start, TwigInitEvent at env init), exactly like
- * CatalogoOpcionalesHookOwnershipTest. The two article hooks must register once
- * behind the static guard, the @catalogo_core templates must resolve and render
- * without tarifario, and the relocated endpoint must keep CSRF + neutral
- * permission guards.
+ * CatalogoOpcionalesHookOwnershipTest. The retired article pair must stay
+ * unregistered across rebuilds, both hook templates must be gone from the tree,
+ * and the opcional pair must keep registering once behind the static guard.
+ * The endpoint/rows/hygiene contracts of the kept WU-1 surface stay covered.
  */
 final class CatalogoArticuloHookOwnershipTest extends TestCase
 {
-    /** @var array<string, string> article hook → catalogo_core template */
+    /** @var list<string> article hooks catalogo_core MUST NOT register any more */
     private const ARTICLE_HOOKS = [
-        'ventas_articulo_tabs_after' => '@catalogo_core/Hooks/ventas_articulo_tabs_after.html.twig',
-        'ventas_articulo_tab_pane_after' => '@catalogo_core/Hooks/ventas_articulo_tab_pane_after.html.twig',
+        'ventas_articulo_tabs_after',
+        'ventas_articulo_tab_pane_after',
+    ];
+
+    /** @var array<string, string> opcional hook → catalogo_core template */
+    private const OPCIONAL_HOOKS = [
+        'ventas_opcional_tabs_after' => '@catalogo_core/Hooks/ventas_opcional_tabs_after.html.twig',
+        'ventas_opcional_tab_pane_after' => '@catalogo_core/Hooks/ventas_opcional_tab_pane_after.html.twig',
     ];
 
     private const ENDPOINT_SLUG = 'tarif_tab_precios';
 
-    private const PANE_TEMPLATE = '/plugins/catalogo_core/View/Hooks/ventas_articulo_tab_pane_after.html.twig';
+    private const HOST_VIEW = '/plugins/catalogo_core/View/ventas_articulo.html.twig';
     private const ROWS_PARTIAL = '/plugins/catalogo_core/View/Hooks/partials/articulo_precios_rows.html.twig';
     private const SAVE_SCRIPT = '/plugins/catalogo_core/View/Hooks/partials/tab_save_script.html.twig';
+
+    /** @var list<string> retired article hook templates that MUST be deleted */
+    private const RETIRED_TEMPLATES = [
+        '/plugins/catalogo_core/View/Hooks/ventas_articulo_tabs_after.html.twig',
+        '/plugins/catalogo_core/View/Hooks/ventas_articulo_tab_pane_after.html.twig',
+    ];
 
     protected function setUp(): void
     {
@@ -102,53 +115,10 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
         return $loader;
     }
 
-    /** Minimal host fsc stand-in exposing the members the article hooks read. */
-    private function hostFsc(bool $isNew = false, string $ref = 'REF-001'): object
-    {
-        return new class($isNew, $ref) {
-            public $articulo;
-            public bool $is_new;
-            public array $tarifas = [];
-            public array $imagenes = [];
-            public array $articulo_etiquetas_disponibles = [];
-            public array $articulo_etiquetas_seleccionadas = [];
-            public function __construct(bool $isNew, string $ref)
-            {
-                $this->is_new = $isNew;
-                $this->articulo = $isNew ? null : (object) ['referencia' => $ref];
-            }
-
-            public function simbolo_divisa($coddivisa = ''): string
-            {
-                return (string) $coddivisa;
-            }
-        };
-    }
-
-    private function twigFor(FilesystemLoader $loader): Environment
-    {
-        // The moved pane imports the theme htmx/alpine macros (real bodies), so
-        // the macro sources are chained in front of the @catalogo_core loader.
-        $macroDir = FS_FOLDER . '/themes/AdminLTE/view/Macro';
-        $macros = new ArrayLoader([
-            'Macro/Htmx.html.twig' => (string) @file_get_contents($macroDir . '/Htmx.html.twig'),
-            'Macro/Alpine.html.twig' => (string) @file_get_contents($macroDir . '/Alpine.html.twig'),
-        ]);
-
-        $twig = new Environment(new ChainLoader([$loader, $macros]), ['cache' => false, 'auto_reload' => false]);
-        $twig->addFilter(new TwigFilter('trans', static fn (string $key, array $params = []): string => $key));
-        $twig->addFunction(new TwigFunction('csrf_field', static fn (): string => ''));
-        $twig->addFunction(new TwigFunction('csrf_token', static fn (): string => 'csrf-token'));
-        $twig->addFunction(new TwigFunction('csp_nonce_attr', static fn (): string => 'nonce="test"'));
-        $twig->addFunction(new TwigFunction('csrf_meta', static fn (): string => ''));
-
-        return $twig;
-    }
-
     private function movedSource(string $relative): string
     {
         $path = FS_FOLDER . $relative;
-        $this->assertFileExists($path, "missing moved hook file: {$relative}");
+        $this->assertFileExists($path, "missing kept hook file: {$relative}");
 
         return (string) file_get_contents($path);
     }
@@ -163,15 +133,31 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
         return $hooks[$hook] ?? [];
     }
 
-    // WU-1 — registration is owned by catalogo_core and idempotent.
+    // =====================================================================
+    // D4 — zero article registration, idempotent across rebuilds, templates
+    // retired; the opcional pair stays registered.
+    // =====================================================================
 
-    public function test_catalogo_core_registers_article_hooks_once_across_rebuilds(): void
+    public function test_catalogo_core_registers_zero_article_hooks_across_rebuilds(): void
     {
         $this->bootTwigBuild();
         $this->bootTwigBuild();
 
-        foreach (self::ARTICLE_HOOKS as $hook => $template) {
-            $this->assertTrue(ViewHookRegistry::has($hook), "Hook {$hook} must be registered after the Twig build");
+        foreach (self::ARTICLE_HOOKS as $hook) {
+            $this->assertFalse(
+                ViewHookRegistry::has($hook),
+                "Hook {$hook} must NOT be registered after the Twig build (D4)"
+            );
+            $this->assertSame(
+                [],
+                $this->registeredTemplates($hook),
+                "Hook {$hook} must stay unregistered across rebuilds"
+            );
+        }
+
+        // The opcional pair must be untouched by the retirement.
+        foreach (self::OPCIONAL_HOOKS as $hook => $template) {
+            $this->assertTrue(ViewHookRegistry::has($hook), "Hook {$hook} must stay registered");
             $this->assertSame(
                 [$template],
                 $this->registeredTemplates($hook),
@@ -180,68 +166,107 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
         }
     }
 
-    // WU-1 — the @catalogo_core templates resolve and render without tarifario.
-
-    public function test_catalogo_core_renders_article_tab_and_pane_without_tarifario(): void
+    public function test_retired_article_hook_templates_and_init_mappings_are_gone(): void
     {
-        $loader = $this->bootTwigBuild();
-        $twig = $this->twigFor($loader);
+        foreach (self::RETIRED_TEMPLATES as $relative) {
+            $this->assertFileDoesNotExist(
+                FS_FOLDER . $relative,
+                "Retired article hook template must be deleted: {$relative}"
+            );
+        }
 
-        $saved = $this->hostFsc(false, 'REF-777');
-        $header = ViewHookRegistry::render($twig, 'ventas_articulo_tabs_after', ['fsc' => $saved]);
-        $this->assertStringContainsString('tab_tarifario_precios', $header, 'Tab header must target the frozen pane id');
-        $this->assertStringContainsString(
-            'page=tarif_tab_precios&action=rows&tipo=articulo&ref=REF-777',
-            $header,
-            'Tab header must point at the catalogo_core article rows endpoint'
+        $init = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Init.php');
+        $this->assertStringNotContainsString(
+            'ARTICULO_HOOK_TEMPLATES',
+            $init,
+            'Init.php must not keep the retired article hook mapping'
         );
-        $this->assertStringContainsString('hx-target="#tab_tarifario_precios_rows"', $header, 'Header must target the rows placeholder');
-        $this->assertStringContainsString('hx-swap="outerHTML"', $header, 'Header must swap the rows placeholder');
+        foreach (self::ARTICLE_HOOKS as $hook) {
+            $this->assertStringNotContainsString(
+                $hook,
+                $init,
+                "Init.php must not reference the retired article hook {$hook}"
+            );
+        }
 
-        $pane = ViewHookRegistry::render($twig, 'ventas_articulo_tab_pane_after', ['fsc' => $saved]);
-        $this->assertStringContainsString('id="tab_tarifario_precios"', $pane, 'Pane must carry the frozen DOM id');
-        $this->assertStringContainsString('data-tipo="articulo"', $pane, 'Pane must identify the article surface');
+        $this->assertStringContainsString('OPCIONAL_HOOK_TEMPLATES', $init, 'The opcional mapping must stay');
+        foreach (self::OPCIONAL_HOOKS as $hook => $template) {
+            $this->assertStringContainsString($hook, $init, "The opcional hook {$hook} must stay registered");
+            $this->assertStringContainsString($template, $init, "The opcional template {$template} must stay mapped");
+        }
     }
 
-    // ATT-04 — an unsaved article has no tab (no reference to price).
+    // =====================================================================
+    // ATT-04 — the host renders the unified pane and injects no Tarifas
+    // surface at the two frozen markers.
+    // =====================================================================
 
-    public function test_unsaved_article_renders_no_article_tab(): void
-    {
-        $loader = $this->bootTwigBuild();
-        $twig = $this->twigFor($loader);
-        $new = $this->hostFsc(true);
-
-        $this->assertSame(
-            '',
-            trim(ViewHookRegistry::render($twig, 'ventas_articulo_tabs_after', ['fsc' => $new])),
-            'An unsaved article must render no tab header'
-        );
-        $this->assertSame(
-            '',
-            trim(ViewHookRegistry::render($twig, 'ventas_articulo_tab_pane_after', ['fsc' => $new])),
-            'An unsaved article must render no pane'
-        );
-    }
-
-    // ATT-04 / catalogo-render-hooks — the pair renders at the frozen host markers.
-
-    public function test_article_pair_renders_at_frozen_markers_with_tipo_articulo(): void
+    public function test_host_renders_the_unified_pane_without_an_injected_tarifas_surface(): void
     {
         $twig = $this->catalogoHostEnvironment();
-        $html = $twig->render('ventas_articulo.html.twig', $this->hostContext($this->fullHostFsc(false, 'REF-777')));
+        $html = $twig->render('ventas_articulo.html.twig', $this->hostContext($this->fullHostFsc(false, 'REF-777', true)));
 
-        $this->assertStringContainsString('tipo=articulo', $html, 'The host view must inject the article Tarifas header');
-        $this->assertStringContainsString('REF-777', $html, 'The article tab must carry the host reference');
+        // The unified pane owns the article-scoped Tarifas section.
+        $this->assertStringContainsString('id="datos"', $html, 'The host must render the unified #datos pane');
+        $this->assertStringContainsString('id="precios-tarifa"', $html, 'The host must expose the in-pane prices section');
+        $this->assertStringContainsString('id="tab_tarifario_precios"', $html, 'The unified pane must carry the frozen price box id');
+        $this->assertStringContainsString('data-tipo="articulo"', $html, 'The unified pane must identify the article surface');
+        $this->assertStringContainsString('REF-777', $html, 'The unified pane must carry the host reference');
         $this->assertStringContainsString(
-            '<div class="tab-pane" id="tab_tarifario_precios" data-tipo="articulo"',
+            'page=tarif_tab_precios&action=rows&tipo=articulo&ref=REF-777',
             $html,
-            'The host view must inject the article Tarifas pane'
+            'The unified pane must load its rows from the unchanged WU-1 endpoint'
         );
-        $this->assertInjectedInTabHeader($html);
-        $this->assertInjectedInTabContent($html);
+        $this->assertStringContainsString(
+            'codtarifa=T2',
+            $html,
+            'The unified pane must scope the rows request to the selected tarifa'
+        );
+
+        // No hook-injected Tarifas surface remains: the retired tab header link
+        // and the injected pane shell contribute nothing at the frozen markers.
+        $this->assertStringNotContainsString(
+            'href="#tab_tarifario_precios"',
+            $html,
+            'The retired Tarifas tab header must not be injected at ventas_articulo_tabs_after'
+        );
+        $this->assertStringNotContainsString(
+            '<div class="tab-pane" id="tab_tarifario_precios"',
+            $html,
+            'The retired Tarifas pane must not be injected at ventas_articulo_tab_pane_after'
+        );
+        $this->assertStringNotContainsString(
+            'Abre la pestaña para cargar los precios por tarifa.',
+            $html,
+            'The retired injected pane placeholder must be gone'
+        );
     }
 
-    // ATT-02/ATT-07 — the relocated endpoint keeps its guards and owns its partials.
+    public function test_unsaved_article_renders_no_price_surface(): void
+    {
+        $twig = $this->catalogoHostEnvironment();
+        $html = $twig->render('ventas_articulo.html.twig', $this->hostContext($this->fullHostFsc(true, '')));
+
+        $this->assertStringNotContainsString(
+            'id="tab_tarifario_precios"',
+            $html,
+            'An unsaved article must render no per-tarifa price box'
+        );
+        $this->assertStringNotContainsString(
+            'tab_tarifario_precios_rows',
+            $html,
+            'An unsaved article must render no rows placeholder'
+        );
+        $this->assertStringNotContainsString(
+            'name="spvp"',
+            $html,
+            'An unsaved article must render no base price input'
+        );
+    }
+
+    // =====================================================================
+    // ATT-02/ATT-07 — the endpoint keeps its guards and owns its partials.
+    // =====================================================================
 
     public function test_endpoint_extends_fbase_controller_and_owns_its_partials(): void
     {
@@ -272,22 +297,22 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
     }
 
     // =====================================================================
-    // ATT-05 — the moved tab runs on htmx 4 + Alpine CSP
+    // ATT-05 — the host view owns the htmx 4 + Alpine CSP boot
     // =====================================================================
 
-    public function test_moved_article_tab_pane_defers_boot_to_the_host(): void
+    public function test_host_view_owns_the_article_tab_boot(): void
     {
-        $pane = $this->movedSource(self::PANE_TEMPLATE);
-        $host = $this->movedSource('/plugins/catalogo_core/View/ventas_articulo.html.twig');
+        $script = $this->movedSource(self::SAVE_SCRIPT);
+        $host = $this->movedSource(self::HOST_VIEW);
 
-        // AD-W2-3: the pane no longer boots — the host owns htmx/Alpine boot.
-        $this->assertStringNotContainsString('htmx.boot(', $pane, 'Pane must not boot htmx after WU-2');
-        $this->assertStringNotContainsString('alpine.boot()', $pane, 'Pane must not boot Alpine after WU-2');
-        $this->assertStringContainsString('[x-cloak]', $pane, 'Pane must keep its [x-cloak] shell');
-        $this->assertStringContainsString('x-data="articuloTabPrecios"', $pane, 'Pane must keep its Alpine component');
+        // AD-W2-3: the article surface no longer boots — the host owns boot.
+        $this->assertStringNotContainsString('htmx.boot(', $script, 'Save wiring must not boot htmx');
+        $this->assertStringNotContainsString('alpine.boot()', $script, 'Save wiring must not boot Alpine');
 
         $this->assertStringContainsString('htmx.boot(', $host, 'Host view must own the htmx boot');
         $this->assertStringContainsString('alpine.boot()', $host, 'Host view must own the Alpine boot');
+        $this->assertStringContainsString('x-data="articuloTabPrecios"', $host, 'Host view must keep the per-tarifa Alpine component');
+        $this->assertStringContainsString('[x-cloak]', $host, 'Host view must keep its [x-cloak] shell');
     }
 
     public function test_moved_article_tab_mutations_use_hx_post(): void
@@ -305,18 +330,18 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
     public function test_moved_article_tab_registers_alpine_data_with_nonce_and_x_cloak(): void
     {
         $script = $this->movedSource(self::SAVE_SCRIPT);
-        $pane = $this->movedSource(self::PANE_TEMPLATE);
+        $host = $this->movedSource(self::HOST_VIEW);
 
         $this->assertStringContainsString('Alpine.data(', $script, 'Script must register components via Alpine.data()');
         $this->assertStringContainsString('alpine:init', $script, 'Registration must happen behind alpine:init');
         $this->assertStringContainsString('csp_nonce_attr()', $script, 'Script tag must be nonce\'d');
-        $this->assertStringContainsString('[x-cloak]', $pane, 'Pane must gate hidden Alpine components with [x-cloak]');
+        $this->assertStringContainsString('[x-cloak]', $host, 'Host view must gate hidden Alpine components with [x-cloak]');
         $this->assertStringNotContainsString('innerHTML', $script, 'x-text/plain DOM only — never innerHTML');
     }
 
     public function test_moved_article_tab_uses_colon_events_and_no_v2_names(): void
     {
-        $source = $this->movedSource(self::SAVE_SCRIPT) . $this->movedSource(self::PANE_TEMPLATE);
+        $source = $this->movedSource(self::SAVE_SCRIPT) . $this->movedSource(self::HOST_VIEW);
 
         $this->assertMatchesRegularExpression(
             '/htmx:after:(swap|request)/',
@@ -347,8 +372,8 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
     }
 
     // =====================================================================
-    // catalogo-render-hooks ADDED — the article tab renders resolver-driven
-    // feature values and persists nothing while rendering.
+    // ART-10 / ATT-04 — the rows read renders resolver-driven visibility and
+    // persists nothing while rendering.
     // =====================================================================
 
     public function test_tab_renders_resolver_driven_visibility(): void
@@ -438,9 +463,9 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
 
     /**
      * Builds a Twig environment that renders the real ventas_articulo host view
-     * with the Init-registered @catalogo_core namespace and the two article
-     * hooks. Theme/partial includes are stubbed so only the host marker output
-     * is observed; the real view body and macro sources are used.
+     * with the Init-registered @catalogo_core namespace. Theme/partial includes
+     * are stubbed so only the host body is observed; the real view body and
+     * macro sources are used.
      */
     private function catalogoHostEnvironment(): Environment
     {
@@ -488,35 +513,9 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
         return ['fsc' => $fsc, 'user' => null, 'empresa' => null, 'i18n' => null];
     }
 
-    private function fullHostFsc(bool $isNew, string $referencia): object
+    private function fullHostFsc(bool $isNew, string $referencia, bool $withTarifas = false): object
     {
-        return new CatalogoArticleHookHostFsc($isNew, $referencia);
-    }
-
-    private function assertInjectedInTabHeader(string $html): void
-    {
-        $open = strpos($html, 'id="ul_tabs"');
-        if ($open === false) {
-            $open = strpos($html, 'id="tab_articulo"');
-        }
-        $close = strpos($html, '</ul>', (int) $open);
-        $header = strpos($html, 'href="#tab_tarifario_precios"');
-
-        $this->assertNotFalse($open, 'Host view must expose its tab list');
-        $this->assertNotFalse($close, 'Host view must close its tab list');
-        $this->assertNotFalse($header, 'Tarifas tab header must be injected');
-        $this->assertGreaterThan($open, $header, 'Tarifas tab header must sit inside the tab list, after the list opens');
-        $this->assertLessThan($close, $header, 'Tarifas tab header must sit inside the tab list, before it closes');
-    }
-
-    private function assertInjectedInTabContent(string $html): void
-    {
-        $content = strpos($html, 'class="tab-content"');
-        $pane = strpos($html, '<div class="tab-pane" id="tab_tarifario_precios"');
-
-        $this->assertNotFalse($content, 'Host view must expose its .tab-content block');
-        $this->assertNotFalse($pane, 'Tarifas pane must be injected');
-        $this->assertGreaterThan($content, $pane, 'Tarifas pane must sit inside .tab-content');
+        return new CatalogoArticleHookHostFsc($isNew, $referencia, $withTarifas);
     }
 }
 
@@ -544,11 +543,22 @@ final class CatalogoArticleHookHostFsc
 
     public CatalogoArticleHookHostEntity $articulo;
     public bool $is_new;
+    public ?CatalogoArticleHookHostEntity $tarifa_seleccionada = null;
+    public string $codtarifa = '';
 
-    public function __construct(bool $isNew, string $referencia)
+    public function __construct(bool $isNew, string $referencia, bool $withTarifas = false)
     {
         $this->is_new = $isNew;
         $this->articulo = new CatalogoArticleHookHostEntity(['referencia' => $referencia]);
+
+        if ($withTarifas) {
+            $this->lists['tarifas'] = [
+                new CatalogoArticleHookHostEntity(['codtarifa' => 'T1', 'nombre' => 'Tarifa uno', 'por_defecto' => false]),
+                new CatalogoArticleHookHostEntity(['codtarifa' => 'T2', 'nombre' => 'Tarifa dos', 'por_defecto' => true]),
+            ];
+            $this->tarifa_seleccionada = $this->lists['tarifas'][1];
+            $this->codtarifa = 'T2';
+        }
     }
 
     public function __get(string $name): mixed
