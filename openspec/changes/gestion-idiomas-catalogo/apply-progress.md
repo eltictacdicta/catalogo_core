@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
-| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
-| **Status** | **success** — slice 1 (`1a` + `1b`) and slice 2 complete and green |
+| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2 and 3 complete and green |
 
 ---
 
@@ -84,6 +84,31 @@ Delivered whole (tasks 2.1–2.8 all `[x]` in `tasks.md`). The `#idiomas` anchor
 
 ---
 
+## Slice-3 task status — Article editor language selector
+
+Delivered whole (tasks 3.1–3.8 all `[x]` in `tasks.md`). The duplicated base
+description and the per-language loop are gone; the editor now renders exactly
+one description / short-description pair for the selected language.
+
+| Task | Tag(s) | State | Evidence |
+|---|---|---|---|
+| 3.1 RED — rewrite the `fsc.articulo.descripcion` assertion into a selector contract on the partial + the "base textarea is gone" guard | `[GDI-11, GDI-12; D-05]` | [x] | `tests/VentasArticuloControllerTest.php`; RED first (2 failures), then GREEN |
+| 3.2 RED — replace every `sdescripcion` POST with `codidioma` + `descripcion_<cod>`; add the three GDI-11 scenarios | `[GDI-11, ART-01; D-05]` | [x] | `tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`; RED first (3 failures), then GREEN |
+| 3.3 GREEN — rewrite `tab_multiidioma.html.twig` in place: link selector, hidden `codidioma`, exactly one dynamic pair | `[GDI-11, GDI-12; D-05, D-08]` | [x] | `View/partials/articulos/tab_multiidioma.html.twig`; Twig parse check OK |
+| 3.4 GREEN — remove the base `sdescripcion` textarea + hint from the Datos panel | `[GDI-11, GDI-12, ART-05; D-05]` | [x] | `View/ventas_articulo.html.twig`; `#multiidioma`/include/markers byte-unchanged (marker test green) |
+| 3.5 GREEN — `public string $codidioma`, `resolve_codidioma()`, set from `loadCatalogData()`, drop `$art->descripcion = sdescripcion` | `[GDI-11; D-05]` | [x] | `Controller/VentasArticulo.php`; unknown/stale codes fall to the effective default |
+| 3.6 GREEN — rewrite `saveMultiidiomaDescriptions()` per D-05 | `[GDI-11, ART-01; D-05, D-01]` | [x] | single destination slot; both `continue` branches and the trailing `$art->save()` gone |
+| 3.7 VERIFY — `CatalogoCoreHookMarkersTest` green **unedited** | `[GDI-12, ART-05]` | [x] | **12 tests, 68 assertions, OK**; `git status --short` on the test file is empty |
+| 3.8 VERIFY — `openspec/specs/**` untouched | `[ART-01, ART-05]` | [x] | `git status --short plugins/catalogo_core/openspec/specs/` is empty |
+
+> **Collateral (documented):** removing `$art->descripcion = sdescripcion` also
+> invalidated two `VentasArticuloPerTarifaPaneTest` assertions that used the base
+> description as their "other article field persists" exemplar. The exemplar was
+> switched to `sobservaciones` (still form-driven) and the harness gained the
+> DB-free language seams, preserving the test's intent without weakening it.
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -99,6 +124,8 @@ Delivered whole (tasks 2.1–2.8 all `[x]` in `tasks.md`). The `#idiomas` anchor
 | 1.10 / 1.11 | `ArticuloDescripcionClearingTest` → 5 tests, **5/5 failures** (`test()` rejected the empty description; `save()` neither deleted nor no-opped) | same file → 5 tests, 14 assertions, OK | — |
 | 2.1 / 2.2 / 2.5–2.7 | `--filter CatalogoIdiomaManagementTest` → 4 tests, **2 failures** (no `id="idiomas"` section; no language action dispatched) | same filter → 4 tests, 26 assertions, OK | — |
 | 2.3 / 2.4 | `--filter CatalogoIdiomaPermissionTest` → 5 tests, **5 errors** (`gestionarIdioma()` / `shouldDispatchIdioma()` undefined) | same filter → 5 tests, 25 assertions, OK | — |
+| 3.1 / 3.3 / 3.4 | focused run over the three files → **2 failures** (partial had no selector; view still rendered `name="sdescripcion"`) | same run → green | — |
+| 3.2 / 3.5 / 3.6 | focused run → **3 failures** (`descripcion_es` overwritten by `$art->descripcion`; `descripcion_es` injected into the `en` slot; the empty pair left the row) | same run → **48 tests, 200 assertions, OK** | — |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -144,6 +171,18 @@ No task was completed without a test-first step. No silent fallback to Standard 
 
 ---
 
+## Work Unit Evidence (slice 3)
+
+### Work unit `3` — selector-driven article editor descriptions
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml plugins/catalogo_core/tests/VentasArticuloControllerTest.php plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php plugins/catalogo_core/tests/Controller/VentasArticuloPerTarifaPaneTest.php` → **OK (48 tests, 200 assertions)**; RED first was **5 failures** across the two locked files |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 856 tests, 3753 assertions, 2 warnings, 1 skipped** (baseline before slice 3: 852 tests, 3741 assertions; +4 tests, no regressions). The HTTP boundary is exercised DB-free: `Request::create(..., 'POST', $fields)` + the `IdiomaRegistryFake` / `FakeCatalogoIdioma` / `FakeArticuloDescripcion` doubles, with the real `editarArticulo()` / `saveMultiidiomaDescriptions()` / `resolve_codidioma()` bodies executing through the seams. A real-browser POST of the selector is deferred to `verify`. |
+| **Rollback boundary** | Revert the slice's commits: `Controller/VentasArticulo.php` (`$codidioma`, `idioma_model()`, `suppliedCodidioma()`, `resolve_codidioma()`, the `loadCatalogData()` assignment, the `sdescripcion` removal and the rewritten `saveMultiidiomaDescriptions()`), `View/partials/articulos/tab_multiidioma.html.twig`, `View/ventas_articulo.html.twig` (the removed Datos row), the two `translations/messages.*.yaml` key removals and the three test files. No model, schema, search, Excel, consumer or `tarifario` file is touched. Clear the Twig cache after reverting the views. |
+
+---
+
 ## Test commands and results (exact)
 
 | Command | Result |
@@ -155,6 +194,11 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 2) | **FAILED (pre-existing, unrelated)** — 2062 tests, 8173 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); this slice touches only `plugins/catalogo_core/`. **No `catalogo_core` test failed.** Slice 1 recorded 8 pre-existing `OidcProvider` failures (the extra `OidcRegisterControllerMinimalClienteTest` case is order/state sensitive in that untouched plugin). |
 | `ddev exec composer phpstan` (after slice 2) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` error; no slice-2 file is analysed by this config. |
 | Twig parse check (slice 2) | `View/ventas_articulos.html.twig` tokenizes + parses with stubbed `trans`/`csrf_field`/`csp_nonce_attr` → **TWIG PARSE OK**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 3) | **OK** — **856 tests, 3753 assertions, 2 warnings, 1 skipped**. Slice 3 adds 4 tests (`VentasArticuloControllerTest` +1 net, `VentasArticuloArticleEditAbsorptionTest` +3). No failures, no regressions. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 3) | **OK — 12 tests, 68 assertions**, test file **unedited** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 3) | **FAILED (pre-existing, unrelated)** — 2071 tests, 8207 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4). **No `catalogo_core` test failed.** |
+| `ddev exec composer phpstan` (after slice 3) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` error; no slice-3 file is analysed by this config. |
+| Twig parse check (slice 3) | `View/partials/articulos/tab_multiidioma.html.twig` tokenizes + parses with a stubbed `trans` filter → **TWIG PARSE OK**. |
 
 ---
 
@@ -167,9 +211,11 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `1b` authored changed lines (additions + deletions) | **626** (`git show --stat ee66bd9c` = 418 + 48; `git show --stat c2269c87` = 155 + 5) |
 | Slice 1 total authored lines | **1649** across `1a` (1023) + `1b` (626) |
 | Slice 2 authored changed lines (additions + deletions) | **862** — `Controller/VentasArticulos.php` +150, `View/ventas_articulos.html.twig` +123, `extras/VentasArticulosListTrait.php` +22/−2, `translations/messages.en_EN.yaml` +18, `translations/messages.es_ES.yaml` +18, `tests/CatalogoIdiomaManagementTest.php` +179 (new), `tests/CatalogoIdiomaPermissionTest.php` +350 (new) |
+| Slice 3 authored changed lines (additions + deletions) | **386** — `Controller/VentasArticulo.php` +71/−30, `View/partials/articulos/tab_multiidioma.html.twig` +24/−22, `View/ventas_articulo.html.twig` +0/−11, `tests/Controller/VentasArticuloArticleEditAbsorptionTest.php` +141/−5, `tests/Controller/VentasArticuloPerTarifaPaneTest.php` +30/−4, `tests/VentasArticuloControllerTest.php` +42/−4, `translations/messages.en_EN.yaml` +0/−1, `translations/messages.es_ES.yaml` +0/−1 |
 | Pre-declared boundary | `1a` = tasks 1.1–1.9 · `1b` = tasks 1.10–1.17 |
 | Cut used for `1b`? | **No** — 626 ≤ 800, landed whole. |
 | Cut used for slice 2? | **No** — the slice was complete and green at 862 lines; no code, comment, blank line, doc or test was cut to fit 800. |
+| Cut used for slice 3? | **No** — 386 ≤ 800 and inside the 360–520 estimate, landed whole. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -183,6 +229,9 @@ further split of `1a` is proposed.
 
 **`1b` fits.** 626 authored lines ≤ 800; no `size:exception` is requested for `1b`, and no code,
 comment, blank line, doc or test was shrunk to reach the number.
+
+**Slice 3 fits.** 386 authored lines ≤ 800 and inside the 360–520 estimate; no `size:exception`
+is requested, and no code, comment, blank line, doc or test was cut or compressed to fit.
 
 **Slice 2 overage — `size:exception` requested.** Slice 2 measured **862 authored lines** against
 the 800 budget (62 over, `862/800`). The overage is concentrated in the two new test files
@@ -210,6 +259,7 @@ commit is the only available split.
 | `ee66bd9c` | `feat(catalogo_core): resolve article descriptions through the configured default language` | 5 | +418 / −48 |
 | `c2269c87` | `feat(catalogo_core): clear article descriptions through the model save path` | 2 | +155 / −5 |
 | `628c4313` | `feat(catalogo_core): manage catalog languages from the #idiomas section on ventas_articulos` | 7 | +860 / −2 |
+| `54f15e5a` | `feat(catalogo_core): drive the article editor descriptions from a language selector` | 8 | +308 / −78 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -227,6 +277,14 @@ Slice-2 files (commit `628c4313`): `Controller/VentasArticulos.php`,
 `translations/messages.es_ES.yaml`, `translations/messages.en_EN.yaml`,
 `tests/CatalogoIdiomaManagementTest.php`, `tests/CatalogoIdiomaPermissionTest.php`.
 The slice-2 SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
+
+Slice-3 files (commit `54f15e5a`): `Controller/VentasArticulo.php`,
+`View/partials/articulos/tab_multiidioma.html.twig`, `View/ventas_articulo.html.twig`,
+`translations/messages.es_ES.yaml`, `translations/messages.en_EN.yaml`,
+`tests/VentasArticuloControllerTest.php`,
+`tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`,
+`tests/Controller/VentasArticuloPerTarifaPaneTest.php`.
+The slice-3 SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -284,6 +342,33 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     describing the missing page-level attribute is worded without the literal. This keeps the
     grep gate strict (any future attribute immediately fails the test).
 
+### Slice-3 deviations (local decisions, no design change)
+
+11. **Line numbers in `explore.md` / `design.md` / `tasks.md` were stale.** The preceding
+    `articulo-detalle-tarifa-unificada` change (commit `1a643357`) rewrote the same files. All
+    slice-3 work was driven from the current bytes: the removed Datos row is at
+    `View/ventas_articulo.html.twig:117-127` (not `:121-124`), the `#multiidioma` include is at
+    `:342`, the two frozen markers at `:90` and `:384`, and the rewritten method was at
+    `Controller/VentasArticulo.php:824-859`. Behaviour and contracts matched the artifacts; only
+    the offsets drifted.
+12. **`resolve_codidioma()` validates against `$this->idiomas` (the already-loaded active set)
+    and falls back to `$this->idioma_model()->get_effective_default_code()`.** `$this->idiomas`
+    *is* `all_activos()` (loaded by `loadCatalogData()` immediately before), so this is the
+    design's "validate against `all_activos()`" without a second query. A new protected
+    `idioma_model()` seam (mirroring `articulo_model()` / `tarifa_model()`) makes it DB-free
+    testable; production still returns the real model.
+13. **`VentasArticuloPerTarifaPaneTest` was updated as collateral.** Removing
+    `$art->descripcion = sdescripcion` invalidated two assertions that used the base description
+    as their "other article field persists" exemplar. The exemplar moved to `sobservaciones`
+    (still form-driven) and the harness gained the DB-free language seams
+    (`language_registry()`, `description_model()`, `idioma_model()`), preserving the tests'
+    intent. This file was not in the locked list but the ART-01 change necessarily affected it;
+    no assertion was weakened or deleted.
+14. **The dead `description-default-language-hint` key was removed** from both translation files:
+    its only consumer was the removed hint. No new key was needed — the selector reuses
+    `article-multi-language`, `default-language`, `description`, `short-description` and
+    `no-languages-configured`.
+
 ---
 
 ## No-drift statements
@@ -308,20 +393,23 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   `tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`,
   `tests/Integration/CatalogoArticuloHookOwnershipTest.php`, `tests/TarifTabPreciosTest.php`,
   the two deleted hook templates, the untracked change dir and the two untracked Controller tests)
-  **unstaged and unmodified by this slice**.
+  **unstaged and unmodified by this slice**. (That pending work was committed as `1a643357` before
+  slice 3 started, so slice 3 built on a clean tree.)
+- **Slice-3 no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty (no
+  delta merged) and the core `openspec/` has no entry for this change. The slice-3 commit contains
+  only the 8 explicit paths listed below. `tests/Integration/CatalogoCoreHookMarkersTest.php` is
+  **unmodified** and green.
 
 ---
 
 ## Remaining work / next
 
-1. **Slices `1a`, `1b` and `2` are done** — committed and green.
-2. **Slice 3 (article editor selector)** is the next independent slice (disjoint files from
-   slice 2: the **singular** `Controller/VentasArticulo.php`,
-   `View/ventas_articulo.html.twig`, `View/partials/articulos/tab_multiidioma.html.twig`).
-3. **Slice `4a`:** GDI-08 cache invalidation (`articulo::invalidate_search_cache()` + callers)
-   and the language-agnostic search predicate.
-4. **`verify`** must follow this artifact: slices 1 and 2 are delivered in full; GDI-08 is a
-   documented `4a` gap, not a slice-1/2 failure. The real-DB boot smoke, the composed-SQL smoke
-   and a real-browser POST of the `#idiomas` panel remain for `verify`.
-5. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
+1. **Slices `1a`, `1b`, `2` and `3` are done** — committed and green.
+2. **Slice `4a`** is the next independent slice: GDI-08 cache invalidation
+   (`articulo::invalidate_search_cache()` + callers) and the language-agnostic search predicate.
+3. **`verify`** must follow this artifact: slices 1, 2 and 3 are delivered in full; GDI-08 is a
+   documented `4a` gap, not a slice-1/2/3 failure. The real-DB boot smoke, the composed-SQL smoke,
+   a real-browser POST of the `#idiomas` panel and a real-browser selector round trip
+   (`codidioma` GET → edit → POST → reload) remain for `verify`.
+4. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
