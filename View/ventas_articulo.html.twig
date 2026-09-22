@@ -115,17 +115,6 @@
                             </div>
                             <div class="panel-body">
                                 <div class="row">
-                                    <div class="col-sm-12">
-                                        <div class="form-group">
-                                            {{ 'description'|trans }}:
-                                            <textarea class="form-control" name="sdescripcion" rows="3" autocomplete="off">{{ fsc.articulo.descripcion }}</textarea>
-                                            {% if fsc.idiomas|length > 1 %}
-                                                <p class="help-block">{{ 'description-default-language-hint'|trans }}</p>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
                                     <div class="col-sm-3">
                                         <div class="form-group">
                                             {{ 'reference'|trans }}:

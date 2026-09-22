@@ -26,6 +26,9 @@ use FSFramework\Plugins\catalogo_core\Controller\VentasArticulo;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Tests\CatalogoCore\Support\FakeArticuloDescripcion;
+use Tests\CatalogoCore\Support\FakeCatalogoIdioma;
+use Tests\CatalogoCore\Support\IdiomaRegistryFake;
 
 /**
  * ART-10 / ATT-04 — scoped per-tarifa read for the unified article pane
@@ -92,6 +95,9 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
 
     /** @var object|null Tracked anonymous articulo standing in for the stored row. */
     public $trackedArticulo;
+
+    /** @var IdiomaRegistryFake|null In-memory DB for the language registry and descriptions. */
+    public $idiomaDb;
 
     /** @var int Article save() calls observed through the tracked model. */
     public int $articuloSaveCount = 0;
@@ -524,6 +530,10 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
             }
         }
 
+        require_once FS_FOLDER . '/plugins/catalogo_core/tests/Support/IdiomaRegistryFake.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/tests/Support/FakeCatalogoIdioma.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/tests/Support/FakeArticuloDescripcion.php';
+
         if (is_file(FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php')) {
             require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php';
         }
@@ -586,6 +596,16 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
             {
                 return [];
             }
+
+            protected function language_registry()
+            {
+                return (new FakeCatalogoIdioma())->useFakeDb($this->outer->idiomaDb);
+            }
+
+            protected function description_model()
+            {
+                return (new FakeArticuloDescripcion())->useFakeDb($this->outer->idiomaDb);
+            }
         };
     }
 
@@ -619,6 +639,11 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
             protected function articulo_model(): \articulo
             {
                 return $this->outer->trackedArticulo;
+            }
+
+            protected function idioma_model(): \FSFramework\model\catalogo_idioma
+            {
+                return (new FakeCatalogoIdioma())->useFakeDb($this->outer->idiomaDb);
             }
 
             protected function puedeEditarArticulo(string $referencia, string $codtarifa): bool
@@ -656,6 +681,7 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
     private function buildHostHarness(): void
     {
         $this->loadHostProductionClasses();
+        $this->idiomaDb = new IdiomaRegistryFake();
         $this->trackedArticulo = $this->buildTrackedArticulo();
         $this->hostController = $this->buildHostController();
     }
@@ -695,7 +721,7 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
 
         $this->runHostEditar([
             'sreferencia' => 'REF-1',
-            'sdescripcion' => 'Changed',
+            'sobservaciones' => 'Changed',
             'spvp' => $spvp,
         ]);
 
@@ -706,7 +732,7 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
         );
         $this->assertSame(
             'Changed',
-            $this->trackedArticulo->descripcion,
+            $this->trackedArticulo->observaciones,
             'The other article fields must still persist with a tarifa selected'
         );
         $this->assertGreaterThanOrEqual(1, $this->articuloSaveCount, 'The article save must still run');
@@ -720,7 +746,7 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
 
         $this->runHostEditar([
             'sreferencia' => 'REF-1',
-            'sdescripcion' => 'Base',
+            'sobservaciones' => 'Base',
             'spvp' => '99.99',
         ]);
 
@@ -729,7 +755,7 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
             $this->trackedArticulo->pvp,
             'With zero active tarifas the submitted base price must be written'
         );
-        $this->assertSame('Base', $this->trackedArticulo->descripcion);
+        $this->assertSame('Base', $this->trackedArticulo->observaciones);
         $this->assertGreaterThanOrEqual(1, $this->articuloSaveCount);
     }
 

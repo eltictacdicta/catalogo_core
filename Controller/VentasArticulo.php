@@ -74,6 +74,13 @@ class VentasArticulo extends PageController
     public array $fabricantes = [];
     public array $impuestos = [];
     public array $idiomas = [];
+
+    /**
+     * Language selected in the editor's multi-language selector (GDI-11). It
+     * drives the single description / short-description pair the view renders
+     * and the single slot `saveMultiidiomaDescriptions()` writes.
+     */
+    public string $codidioma = '';
     public array $articulo_opcionales = [];
     public array $articulo_grupos = [];
     public array $opcionales_disponibles = [];
@@ -296,6 +303,44 @@ class VentasArticulo extends PageController
     }
 
     /**
+     * Raw codidioma supplied by the request (posted hidden field first, then the
+     * selector's query parameter).
+     */
+    protected function suppliedCodidioma(Request $request): string
+    {
+        if ($request->request->has('codidioma')) {
+            return (string) $request->request->get('codidioma');
+        }
+
+        if ($request->query->has('codidioma')) {
+            return (string) $request->query->get('codidioma');
+        }
+
+        return '';
+    }
+
+    /**
+     * Resolves the editor's selected language (GDI-11 / D-05): the supplied code
+     * is kept only when it is part of the active set, otherwise the configured
+     * effective default. A stale or unknown code can never select a
+     * nonexistent/deactivated language, and the result is the single slot the
+     * multi-language save writes.
+     */
+    protected function resolve_codidioma(Request $request): string
+    {
+        $candidate = $this->suppliedCodidioma($request);
+        if ($candidate !== '') {
+            foreach ($this->idiomas as $idioma) {
+                if ((string) $idioma->codidioma === $candidate) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return (string) $this->idioma_model()->get_effective_default_code();
+    }
+
+    /**
      * Exposes the resolved tarifa to the view (AD-4). Runs after
      * resolveCodtarifa() normalized $codtarifa, so it only has to confirm the
      * normalized code against the active set; with no active tarifa the
@@ -315,6 +360,11 @@ class VentasArticulo extends PageController
     protected function articulo_model(): \articulo
     {
         return new \articulo();
+    }
+
+    protected function idioma_model(): catalogo_idioma
+    {
+        return new catalogo_idioma();
     }
 
     protected function tarifa_model(): tarif_tarifa
@@ -458,7 +508,6 @@ class VentasArticulo extends PageController
             }
         }
 
-        $art->descripcion = (string) $request->request->get('sdescripcion', '');
         // AD-5 (C1): with an active tarifa selected the per-tarifa price row is
         // the truth, so the base price must not be overwritten from the form.
         // With no active tarifa (codtarifa === '', normalized by AD-4) the
@@ -821,48 +870,40 @@ class VentasArticulo extends PageController
         $this->new_error_msg('Imagen no encontrada.');
     }
 
+    /**
+     * Persists the editor's single description / short-description pair for the
+     * selected language (GDI-11 / D-05).
+     *
+     * Only the selected language's fields are read, so a posted value can never
+     * land in a different language's slot. The empty-pair clearing decision and
+     * the mirror removal live in `articulo::set_descripcion_idioma()` /
+     * `articulo_descripcion::save()` (GDI-06, GDI-07); this method does not
+     * reimplement them. The default-language copy of `$art->descripcion` and the
+     * empty-input skip are deliberately gone (defects g and b).
+     */
     private function saveMultiidiomaDescriptions(\articulo $art, Request $request): void
     {
         if ($art->referencia === null || $art->referencia === '') {
             return;
         }
 
-        foreach ($this->idiomas as $idioma) {
-            $codidioma = (string) $idioma->codidioma;
+        $codidioma = $this->resolve_codidioma($request);
+        $descripcion = (string) $request->request->get('descripcion_' . $codidioma, '');
+        $descripcionCorta = (string) $request->request->get('descripcion_corta_' . $codidioma, '');
 
-            if (!empty($idioma->por_defecto)) {
-                $art->set_descripcion_idioma($codidioma, (string) $art->descripcion);
-                continue;
-            }
-
-            $descKey = 'descripcion_' . $codidioma;
-            $cortaKey = 'descripcion_corta_' . $codidioma;
-
-            if (!$request->request->has($descKey)) {
-                continue;
-            }
-
-            $descripcion = trim((string) $request->request->get($descKey, ''));
-            $descripcionCorta = trim((string) $request->request->get($cortaKey, ''));
-            if ($descripcion === '') {
-                continue;
-            }
-
-            $art->set_descripcion_idioma(
-                $codidioma,
-                $descripcion,
-                $descripcionCorta !== '' ? $descripcionCorta : null
-            );
-        }
-
-        $art->save();
+        $art->set_descripcion_idioma(
+            $codidioma,
+            $descripcion,
+            $descripcionCorta !== '' ? $descripcionCorta : null
+        );
     }
 
     private function loadCatalogData(): void
     {
-        $idioma = new catalogo_idioma();
+        $idioma = $this->idioma_model();
         $idioma->ensure_defaults();
         $this->idiomas = $idioma->all_activos();
+        $this->codidioma = $this->resolve_codidioma($this->request);
 
         $lista = new catalogo_lista_precio();
         $lista->ensure_defaults();

@@ -183,16 +183,54 @@ class VentasArticuloControllerTest extends TestCase
         );
     }
 
-    public function testTwigViewDisplaysArticleDescription(): void
+    public function testTwigViewRendersTheLanguageSelectorForTheSelectedLanguage(): void
+    {
+        $content = file_get_contents(
+            FS_FOLDER . '/plugins/catalogo_core/View/partials/articulos/tab_multiidioma.html.twig'
+        );
+
+        $this->assertStringContainsString(
+            '{% for idioma in fsc.idiomas %}',
+            $content,
+            'The selector must iterate the active languages (GDI-11)'
+        );
+        $this->assertStringContainsString(
+            '&codidioma=',
+            $content,
+            'Each language option must carry codidioma in the query string (GDI-11)'
+        );
+        $this->assertStringContainsString(
+            'get_descripcion_idioma(fsc.codidioma)',
+            $content,
+            'The pair must prefill the selected language description (GDI-11)'
+        );
+        $this->assertStringContainsString(
+            'get_descripcion_corta_idioma(fsc.codidioma)',
+            $content,
+            'The pair must prefill the selected language short description (GDI-11)'
+        );
+        $this->assertSame(
+            1,
+            substr_count($content, 'name="descripcion_{{ fsc.codidioma }}"'),
+            'Exactly one description field must be rendered for the selected language'
+        );
+        $this->assertSame(
+            1,
+            substr_count($content, 'name="descripcion_corta_{{ fsc.codidioma }}"'),
+            'Exactly one short-description field must be rendered for the selected language'
+        );
+    }
+
+    public function testTwigViewNoLongerRendersTheDuplicatedBaseDescription(): void
     {
         $content = file_get_contents(
             FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulo.html.twig'
         );
 
-        $this->assertStringContainsString(
-            'fsc.articulo.descripcion',
+        $this->assertStringNotContainsString(
+            'name="sdescripcion"',
             $content,
-            'Twig view must display the article description'
+            'The base sdescripcion textarea must be removed from the Datos panel (GDI-11)'
         );
     }
 

@@ -28,6 +28,9 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Tests\CatalogoCore\Support\FakeArticuloDescripcion;
+use Tests\CatalogoCore\Support\FakeCatalogoIdioma;
+use Tests\CatalogoCore\Support\IdiomaRegistryFake;
 
 /**
  * WU-2 absorption contract: the canonical ventas_articulo detail absorbs the
@@ -59,6 +62,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     public $trackedEtiquetaFamilia;
     /** @var object */
     public $trackedImagen;
+    /** @var IdiomaRegistryFake In-memory DB for the language registry and descriptions. */
+    public $idiomaDb;
 
     public bool $csrfValid = true;
     public bool $guardAllowed = true;
@@ -109,6 +114,9 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_articulo_etiqueta.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_tarifa_etiqueta_familia.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_imagen.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/tests/Support/IdiomaRegistryFake.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/tests/Support/FakeCatalogoIdioma.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/tests/Support/FakeArticuloDescripcion.php';
 
         foreach (['articulo'] as $short) {
             if (!class_exists($short, false)) {
@@ -150,6 +158,7 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
 
     private function resetState(): void
     {
+        $this->idiomaDb = new IdiomaRegistryFake();
         $this->csrfValid = true;
         $this->guardAllowed = true;
         $this->renameAllowed = true;
@@ -278,6 +287,16 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
             public function get_errors(): array
             {
                 return [];
+            }
+
+            protected function language_registry()
+            {
+                return (new FakeCatalogoIdioma())->useFakeDb($this->outer->idiomaDb);
+            }
+
+            protected function description_model()
+            {
+                return (new FakeArticuloDescripcion())->useFakeDb($this->outer->idiomaDb);
             }
         };
     }
@@ -449,6 +468,11 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
                 return $this->outer->trackedArticulo;
             }
 
+            protected function idioma_model(): \FSFramework\model\catalogo_idioma
+            {
+                return (new FakeCatalogoIdioma())->useFakeDb($this->outer->idiomaDb);
+            }
+
             protected function tarifa_model(): \FSFramework\model\tarif_tarifa
             {
                 return new class() extends \FSFramework\model\tarif_tarifa {
@@ -569,7 +593,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->runEditar([
             'sreferencia' => 'REF-1',
             'snueva_referencia' => 'REF-2',
-            'sdescripcion' => 'Changed',
+            'codidioma' => 'es',
+            'descripcion_es' => 'Changed',
         ]);
 
         $this->assertSame(1, $this->renameCalls, 'The reference change must go through the model reference setter');
@@ -583,7 +608,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->runEditar([
             'sreferencia' => 'REF-1',
             'snueva_referencia' => 'REF-9',
-            'sdescripcion' => 'Changed',
+            'codidioma' => 'es',
+            'descripcion_es' => 'Changed',
         ]);
 
         $this->assertSame(1, $this->renameCalls, 'The invalid/duplicate reference must reach the setter that rejects it');
@@ -597,7 +623,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     {
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'sdescripcion' => 'Desc',
+            'codidioma' => 'es',
+            'descripcion_es' => 'Desc',
             'scodfamilia' => 'FAM-1',
             'scodfabricante' => '',
             'scodimpuesto' => '',
@@ -675,6 +702,113 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $this->articuloSaveCount, 'A failed etiqueta step must not discard the successful article save');
         $errors = $this->controller->get_errors();
         $this->assertNotEmpty($errors, 'A failed etiqueta step must report an error');
+    }
+
+    // =====================================================================
+    // GDI-11 — the selector-driven single description / short-description pair
+    // =====================================================================
+
+    public function test_selector_save_persists_the_posted_default_language_value(): void
+    {
+        $this->idiomaDb = new IdiomaRegistryFake(
+            [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
+            [['referencia' => 'REF-1', 'codidioma' => 'es', 'descripcion' => 'BASE COLUMN', 'descripcion_corta' => null]]
+        );
+        $this->trackedArticulo = $this->buildTrackedArticulo();
+        $this->controller->idiomas = [(object) ['codidioma' => 'es', 'por_defecto' => true]];
+
+        $this->runEditar([
+            'sreferencia' => 'REF-1',
+            'codidioma' => 'es',
+            'descripcion_es' => 'POSTED DEFAULT',
+            'descripcion_corta_es' => '',
+            // The legacy base field is still posted by old clients; it must be
+            // ignored for the language slot (defect g).
+            'sdescripcion' => 'BASE COLUMN',
+        ]);
+
+        $this->assertCount(1, $this->idiomaDb->descripciones);
+        $this->assertSame(
+            'POSTED DEFAULT',
+            $this->idiomaDb->descripciones[0]['descripcion'],
+            'The posted default-language value must persist and never be overwritten by the base column (defect g)'
+        );
+    }
+
+    public function test_selector_save_never_writes_another_language_slot(): void
+    {
+        $this->idiomaDb = new IdiomaRegistryFake(
+            [
+                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ],
+            [
+                ['referencia' => 'REF-1', 'codidioma' => 'es', 'descripcion' => 'ES ORIGINAL', 'descripcion_corta' => null],
+                ['referencia' => 'REF-1', 'codidioma' => 'en', 'descripcion' => 'EN ORIGINAL', 'descripcion_corta' => null],
+            ]
+        );
+        $this->trackedArticulo = $this->buildTrackedArticulo();
+        $this->controller->idiomas = [
+            (object) ['codidioma' => 'es', 'por_defecto' => true],
+            (object) ['codidioma' => 'en', 'por_defecto' => false],
+        ];
+
+        $this->runEditar([
+            'sreferencia' => 'REF-1',
+            'codidioma' => 'en',
+            'descripcion_en' => 'EN UPDATED',
+            'descripcion_corta_en' => '',
+            // A stale payload for another language must be ignored entirely.
+            'descripcion_es' => 'ES INJECTED',
+        ]);
+
+        $rows = $this->idiomaRowsByCode();
+        $this->assertSame('EN UPDATED', $rows['en']['descripcion'], 'The selected language pair must persist');
+        $this->assertSame(
+            'ES ORIGINAL',
+            $rows['es']['descripcion'],
+            'A posted value must never be written into a different language slot (GDI-11)'
+        );
+    }
+
+    public function test_selector_save_clears_the_language_row_on_an_empty_pair(): void
+    {
+        // The selected language is NOT the default one: that is exactly the slot
+        // the legacy empty-input skip (defect b) refused to clear.
+        $this->idiomaDb = new IdiomaRegistryFake(
+            [
+                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ],
+            [['referencia' => 'REF-1', 'codidioma' => 'en', 'descripcion' => 'TO CLEAR', 'descripcion_corta' => null]]
+        );
+        $this->trackedArticulo = $this->buildTrackedArticulo();
+        $this->controller->idiomas = [
+            (object) ['codidioma' => 'es', 'por_defecto' => true],
+            (object) ['codidioma' => 'en', 'por_defecto' => false],
+        ];
+
+        $this->runEditar([
+            'sreferencia' => 'REF-1',
+            'codidioma' => 'en',
+            'descripcion_en' => '',
+            'descripcion_corta_en' => '',
+        ]);
+
+        $this->assertSame([], $this->idiomaDb->descripciones, 'An empty pair must delete the language row (GDI-07)');
+    }
+
+    /**
+     * @return array<string, array{referencia: string, codidioma: string, descripcion: string, descripcion_corta: ?string}>
+     */
+    private function idiomaRowsByCode(): array
+    {
+        $rows = [];
+        foreach ($this->idiomaDb->descripciones as $row) {
+            $rows[(string) $row['codidioma']] = $row;
+        }
+
+        return $rows;
     }
 
     // =====================================================================
@@ -798,14 +932,16 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->guardAllowed = false;
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'sdescripcion' => 'MUTATED',
+            'codidioma' => 'es',
+            'descripcion_es' => 'MUTATED',
             'scodfamilia' => 'FAM-1',
         ]);
 
         $this->assertSame(1, $this->guardCalls);
         $this->assertSame(0, $this->articuloGetCalls, 'A denied mutation must not load the article model');
         $this->assertSame(0, $this->articuloSaveCount, 'A denied mutation must not save');
-        $this->assertSame('', $this->trackedArticulo->descripcion, 'A denied mutation must leave stored values unchanged');
+        $this->assertSame([], $this->idiomaDb->descripciones, 'A denied mutation must leave every language row unchanged');
+        $this->assertSame([], $this->idiomaDb->executed, 'A denied mutation must emit no language statement');
         $this->assertSame(0, $this->tarifaAddCalls, 'A denied mutation must not touch the per-tarifa row');
     }
 
