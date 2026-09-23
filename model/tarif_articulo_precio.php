@@ -98,6 +98,18 @@ class tarif_articulo_precio extends \fs_model
         return '';
     }
 
+    /**
+     * Resolves the configured default language for the raw-SQL readers
+     * (GDI-10 / D-10). They carry no language context, so the code is resolved
+     * once in PHP and interpolated into the join; hard-coding a locale here
+     * would ignore the registry. Overridable so the emitted SQL is testable
+     * without a database.
+     */
+    protected function default_codidioma(): string
+    {
+        return (new catalogo_idioma())->get_effective_default_code();
+    }
+
     public function url()
     {
         if (is_null($this->referencia)) {
@@ -418,8 +430,12 @@ class tarif_articulo_precio extends \fs_model
     {
         $list = [];
         
-        $sql = "SELECT ap.*, a.descripcion, a.codfamilia FROM " . $this->table_name . " ap "
+        // No-context reader (GDI-10 / D-10): the configured default is resolved
+        // in PHP and passed into the join; COALESCE keeps the frozen base column
+        // as the last-resort fallback.
+        $sql = "SELECT ap.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, a.codfamilia FROM " . $this->table_name . " ap "
             . "INNER JOIN articulos a ON ap.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "WHERE ap.codtarifa = " . $this->var2str($codtarifa);
         
         if (!empty($familias)) {

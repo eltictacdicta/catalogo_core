@@ -5,6 +5,18 @@ namespace FSFramework\Plugins\catalogo_core\Model;
 class CatalogoApiService
 {
     /**
+     * DB seam: the article model behind the public listing. Overridable so the
+     * no-context consumer is testable without a live database (same seam pattern
+     * the plugin's controllers use for `idioma_model()`).
+     *
+     * @return Articulo
+     */
+    protected function articulo_model()
+    {
+        return new Articulo();
+    }
+
+    /**
      * Returns public articles only.
      *
      * Supported filters (all optional):
@@ -33,7 +45,7 @@ class CatalogoApiService
         $bloqueados = (bool) ($filters['bloqueados'] ?? false);
 
         // Nota: el modelo `articulo::search` no filtra por `publico`, por eso filtramos después.
-        $artModel = new Articulo();
+        $artModel = $this->articulo_model();
         $articulos = $artModel->search($query, $offset, $codfamilia, $conStock, $codfabricante, $bloqueados);
         if ($limit > 0) {
             $articulos = array_slice($articulos, 0, $limit);
@@ -47,7 +59,11 @@ class CatalogoApiService
 
             $result[] = [
                 'referencia' => $a->referencia,
-                'descripcion' => $a->descripcion,
+                // No-context consumer (GDI-10 / D-10): the public API has no
+                // language parameter, so it resolves the configured default
+                // through the article read chain (requested -> configured
+                // default -> `articulos.descripcion` -> '').
+                'descripcion' => $a->get_descripcion_idioma(),
                 'codfamilia' => $a->codfamilia,
                 'codfabricante' => $a->codfabricante,
                 'pvp' => (float) ($a->pvp ?? 0),

@@ -112,6 +112,18 @@ class tarif_tarifa_articulo extends \fs_model
     }
 
     /**
+     * Resolves the configured default language for the raw-SQL readers
+     * (GDI-10 / D-10). They carry no language context, so the code is resolved
+     * once in PHP and interpolated into the join; hard-coding a locale here
+     * would ignore the registry. Overridable so the emitted SQL is testable
+     * without a database.
+     */
+    protected function default_codidioma(): string
+    {
+        return (new catalogo_idioma())->get_effective_default_code();
+    }
+
+    /**
      * Migra los artículos existentes a la tarifa por defecto.
      * Usa la familia del artículo y los que tienen precio en tarif_articulo_precios.
      * @return string SQL de migración
@@ -168,9 +180,10 @@ class tarif_tarifa_articulo extends \fs_model
      */
     public function get($codtarifa, $referencia)
     {
-        $sql = "SELECT ta.*, a.descripcion, f.descripcion as familia_descripcion "
+        $sql = "SELECT ta.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, f.descripcion as familia_descripcion "
             . "FROM " . $this->table_name . " ta "
             . "LEFT JOIN articulos a ON ta.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "LEFT JOIN familias f ON ta.codfamilia = f.codfamilia "
             . "WHERE ta.codtarifa = " . $this->var2str($codtarifa)
             . " AND ta.referencia = " . $this->var2str($referencia) . ";";
@@ -266,9 +279,10 @@ class tarif_tarifa_articulo extends \fs_model
     public function all_from_tarifa($codtarifa, $offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $list = [];
-        $sql = "SELECT ta.*, a.descripcion, f.descripcion as familia_descripcion "
+        $sql = "SELECT ta.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, f.descripcion as familia_descripcion "
             . "FROM " . $this->table_name . " ta "
             . "LEFT JOIN articulos a ON ta.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "LEFT JOIN familias f ON ta.codfamilia = f.codfamilia "
             . "WHERE ta.codtarifa = " . $this->var2str($codtarifa)
             . " ORDER BY ta.orden ASC, a.referencia ASC";
@@ -292,9 +306,10 @@ class tarif_tarifa_articulo extends \fs_model
     public function all_from_familia($codtarifa, $codfamilia, $offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $list = [];
-        $sql = "SELECT ta.*, a.descripcion, f.descripcion as familia_descripcion "
+        $sql = "SELECT ta.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, f.descripcion as familia_descripcion "
             . "FROM " . $this->table_name . " ta "
             . "LEFT JOIN articulos a ON ta.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "LEFT JOIN familias f ON ta.codfamilia = f.codfamilia "
             . "WHERE ta.codtarifa = " . $this->var2str($codtarifa)
             . " AND ta.codfamilia = " . $this->var2str($codfamilia)
@@ -318,9 +333,10 @@ class tarif_tarifa_articulo extends \fs_model
     public function all_en_tarifa($codtarifa, $offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $list = [];
-        $sql = "SELECT ta.*, a.descripcion, f.descripcion as familia_descripcion "
+        $sql = "SELECT ta.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, f.descripcion as familia_descripcion "
             . "FROM " . $this->table_name . " ta "
             . "LEFT JOIN articulos a ON ta.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "LEFT JOIN familias f ON ta.codfamilia = f.codfamilia "
             . "WHERE ta.codtarifa = " . $this->var2str($codtarifa)
             . " AND ta.en_tarifa = TRUE"
@@ -344,9 +360,10 @@ class tarif_tarifa_articulo extends \fs_model
     public function all_en_catalogo($codtarifa, $offset = 0, $limit = FS_ITEM_LIMIT)
     {
         $list = [];
-        $sql = "SELECT ta.*, a.descripcion, f.descripcion as familia_descripcion "
+        $sql = "SELECT ta.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, f.descripcion as familia_descripcion "
             . "FROM " . $this->table_name . " ta "
             . "LEFT JOIN articulos a ON ta.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "LEFT JOIN familias f ON ta.codfamilia = f.codfamilia "
             . "WHERE ta.codtarifa = " . $this->var2str($codtarifa)
             . " AND ta.en_catalogo = TRUE"
@@ -373,16 +390,19 @@ class tarif_tarifa_articulo extends \fs_model
         $list = [];
         $query = $this->no_html(mb_strtolower($query, 'UTF8'));
 
-        $sql = "SELECT ta.*, a.descripcion, f.descripcion as familia_descripcion "
+        $sql = "SELECT ta.*, COALESCE(d.descripcion, a.descripcion) AS descripcion, f.descripcion as familia_descripcion "
             . "FROM " . $this->table_name . " ta "
             . "LEFT JOIN articulos a ON ta.referencia = a.referencia "
+            . "LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = " . $this->var2str($this->default_codidioma()) . " "
             . "LEFT JOIN familias f ON ta.codfamilia = f.codfamilia "
             . "WHERE ta.codtarifa = " . $this->var2str($codtarifa);
         
         if (!empty($query)) {
             $like = $this->var2str('%' . $query . '%');
+            // Match the resolved description (configured default, base column as
+            // the fallback) so a translated term is findable (GDI-10 / D-10).
             $sql .= " AND (lower(ta.referencia) LIKE " . $like
-                . " OR lower(a.descripcion) LIKE " . $like . ")";
+                . " OR lower(COALESCE(d.descripcion, a.descripcion)) LIKE " . $like . ")";
         }
         
         $sql .= " ORDER BY ta.orden ASC, a.referencia ASC";

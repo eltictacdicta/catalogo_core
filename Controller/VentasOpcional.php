@@ -386,17 +386,7 @@ class VentasOpcional extends PageController
     {
         $this->setTemplate(false);
 
-        $articulo = new \FSFramework\model\articulo();
-        $suggestions = [];
-
-        foreach ($articulo->search($query) as $art) {
-            $suggestions[] = [
-                'value' => $art->referencia . ' - ' . $art->descripcion(50),
-                'data' => $art->referencia,
-                'referencia' => $art->referencia,
-                'descripcion' => $art->descripcion(120),
-            ];
-        }
+        $suggestions = $this->buscarSugerencias($query);
 
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
@@ -404,5 +394,42 @@ class VentasOpcional extends PageController
             'suggestions' => $suggestions,
         ]);
         exit;
+    }
+
+    /**
+     * DB seam: the article model behind the autocomplete finder. Overridable so
+     * the no-context consumer is testable without a live database (same seam
+     * pattern the plugin's controllers use for `idioma_model()`).
+     *
+     * @return \FSFramework\model\articulo
+     */
+    protected function articulo_model()
+    {
+        return new \FSFramework\model\articulo();
+    }
+
+    /**
+     * Builds the autocomplete suggestions.
+     *
+     * No-context consumer (GDI-10 / D-10): this controller has no `codidioma`,
+     * so the description is resolved through the configured default language and
+     * the chain ends at the frozen base column.
+     *
+     * @return array<int, array<string, string>>
+     */
+    protected function buscarSugerencias(string $query): array
+    {
+        $suggestions = [];
+
+        foreach ($this->articulo_model()->search($query) as $art) {
+            $suggestions[] = [
+                'value' => $art->referencia . ' - ' . $art->descripcion_idioma(null, 50),
+                'data' => $art->referencia,
+                'referencia' => $art->referencia,
+                'descripcion' => $art->get_descripcion_idioma(),
+            ];
+        }
+
+        return $suggestions;
     }
 }
