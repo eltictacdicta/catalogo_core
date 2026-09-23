@@ -537,10 +537,6 @@ final class Init
 
     private static function migrateLegacyTables(): void
     {
-        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
-            return;
-        }
-
         try {
             $db = \FSFramework\DependencyInjection\Container::db();
             CatalogLegacyTableMigration::migrateIfNeeded($db);
@@ -555,10 +551,6 @@ final class Init
      */
     private static function plugin_db(): ?\fs_db2
     {
-        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
-            return null;
-        }
-
         try {
             return \FSFramework\DependencyInjection\Container::db();
         } catch (\Throwable $e) {
@@ -578,10 +570,6 @@ final class Init
      */
     private static function migrateOpcionalExtension(): void
     {
-        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
-            return;
-        }
-
         try {
             $db = \FSFramework\DependencyInjection\Container::db();
             TarifOpcionalExtMigration::migrateIfNeeded($db);
@@ -592,10 +580,6 @@ final class Init
 
     private static function ensureArticuloOpcionalGrupoTable(): void
     {
-        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
-            return;
-        }
-
         try {
             self::touchNamespacedModel('catalogo_articulo_opcional_grupo');
         } catch (\Throwable $e) {

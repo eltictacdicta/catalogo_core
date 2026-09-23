@@ -191,10 +191,6 @@ final class CaracteristicaRegistry
             return $db;
         }
 
-        if (!class_exists('\FSFramework\DependencyInjection\Container', false)) {
-            return null;
-        }
-
         try {
             return \FSFramework\DependencyInjection\Container::db();
         } catch (\Throwable $e) {

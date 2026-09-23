@@ -73,6 +73,15 @@ final class CatalogoOpcionalesHookOwnershipTest extends TestCase
     {
         FSEventDispatcher::reset();
 
+        // Init::init() runs boot migrations that need a functional fs_db2.
+        // Production guarantees one before Kernel::boot() (index.php calls
+        // fs_schema::selfHealCoreTables(), which constructs a real fs_db2).
+        // The container's lazy 'db' service is a Symfony ghost whose
+        // constructor never runs, so it cannot seed fs_db2's static engine on
+        // its own. Mirror the production precondition so init() boots exactly
+        // as it does in production.
+        new \fs_db2();
+
         $prop = (new \ReflectionClass(ViewHookRegistry::class))->getProperty('hooks');
         $prop->setAccessible(true);
         $prop->setValue(null, []);
