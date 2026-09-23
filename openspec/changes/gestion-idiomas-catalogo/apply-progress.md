@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
-| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2 and 3 complete and green |
+| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3 and 4a complete and green |
 
 ---
 
@@ -109,6 +109,33 @@ one description / short-description pair for the selected language.
 
 ---
 
+## Slice-4a task status — Language-agnostic search + cache invalidation
+
+Delivered whole (tasks 4a.1–4a.8 all `[x]` in `tasks.md`). Description writes now
+invalidate the search cache through a single entry point, and article text search
+matches every language through one isolated predicate.
+
+| Task | Tag(s) | State | Evidence |
+|---|---|---|---|
+| 4a.1 RED — `tests/ArticuloSearchCacheInvalidationTest.php` (2 GDI-08 scenarios + a direct-delete case + the D-03 writer gate) | `[GDI-08; D-03]` | [x] | 4 tests, RED first (3 failures: cache survived save/delete/clearing; grep gate 0 ≠ 2), then GREEN |
+| 4a.2 GREEN — `articulo::invalidate_search_cache()` (public static) + `clean_cache()` delegation | `[GDI-08; D-03]` | [x] | `model/core/articulo.php`; real test cache adapter exercised |
+| 4a.3 GREEN — `articulo_descripcion::save()` / `delete()` invalidate; the empty-pair branch invalidates through `delete()` | `[GDI-08; D-03]` | [x] | `model/core/articulo_descripcion.php`; clearing test asserts the cached key is gone |
+| 4a.4 RED — `tests/ArticuloSearchMultiidiomaTest.php` (3 GDI-09 scenarios incl. the predicate grep gate) | `[GDI-09; D-04]` | [x] | 3 tests, RED first (2 failures + 2 errors: predicate/join undefined; the term was unfindable), then GREEN |
+| 4a.5 GREEN — `languageDescriptionPredicate()` + `languageDescriptionJoin()`; every base reference `a.`-qualified; all three text paths share the helper | `[GDI-09; D-04, D11]` | [x] | `Services/ArticuloSearchQueryBuilder.php`; the D11 note is verbatim inline |
+| 4a.6 GREEN — `search()` emits `SELECT DISTINCT a.* FROM articulos a` + join + `ORDER BY a.referencia ASC`; `buildSearchWhereClause()` qualifies family/fabricante/stock/bloqueado | `[GDI-09; D-04]` | [x] | `model/core/articulo.php`; collation rationale commented |
+| 4a.7 RED → GREEN — `tests/Services/ArticuloSearchQueryBuilderTest.php` updated to `a.`-qualified expectations + predicate/join/ambiguity assertions | `[GDI-09; D-04]` | [x] | 9 tests, RED first (11 failures + 2 errors across the three files), then GREEN |
+| 4a.8 VERIFY — D-03 writer gate encoded as a durable test (allowlist: the description model, the language-delete cleanup, the activation migration) | `[GDI-08; D-03]` | [x] | passes; the design's literal "only `CatalogLegacyTableMigration` elsewhere" is incomplete — see deviation 16 |
+
+> **Discovered gap (documented, not silently fixed):** `catalogo_idioma::delete()`
+> (slice 1a) removes the language's `articulo_descripciones` rows with raw SQL and
+> does **not** invalidate the search cache. GDI-08's letter ("every write that
+> deletes a row") therefore has one uncovered writer outside
+> `articulo_descripcion`. It is out of the declared slice-4a scope (task 4a.3 names
+> only the description model's `save()`/`delete()`), so it is reported here and in
+> "Deviations" rather than fixed silently. See deviation 16.
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -126,6 +153,7 @@ one description / short-description pair for the selected language.
 | 2.3 / 2.4 | `--filter CatalogoIdiomaPermissionTest` → 5 tests, **5 errors** (`gestionarIdioma()` / `shouldDispatchIdioma()` undefined) | same filter → 5 tests, 25 assertions, OK | — |
 | 3.1 / 3.3 / 3.4 | focused run over the three files → **2 failures** (partial had no selector; view still rendered `name="sdescripcion"`) | same run → green | — |
 | 3.2 / 3.5 / 3.6 | focused run → **3 failures** (`descripcion_es` overwritten by `$art->descripcion`; `descripcion_es` injected into the `en` slot; the empty pair left the row) | same run → **48 tests, 200 assertions, OK** | — |
+| 4a.1 / 4a.2 / 4a.3 | focused run over the three new/updated files → **16 tests, 24 assertions, 2 errors + 11 failures**: `languageDescriptionPredicate`/`languageDescriptionJoin` undefined, the cached `articulos_search_*` key survived every description write, the term in the `en` row was unfindable, the writer gate counted 0 invalidations | same run → **16 tests, 65 assertions, OK** | — |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -183,6 +211,26 @@ No task was completed without a test-first step. No silent fallback to Standard 
 
 ---
 
+## Work Unit Evidence (slice 4a)
+
+### Work unit `4a-cache` — search-cache invalidation on every description write (GDI-08)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml plugins/catalogo_core/tests/ArticuloSearchCacheInvalidationTest.php` → **OK (4 tests, 18 assertions)**; RED first was **3 failures** (the cached key survived the non-default write, the clearing path and the direct delete; the writer gate counted 0 invalidations) |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 866 tests, 3806 assertions, 2 warnings, 1 skipped** (baseline before slice 4a: 856 tests, 3753 assertions; +10 tests, no regressions). The cache boundary is exercised against the **real** `fs_cache` adapter (Symfony `CacheManager`), with `articulo::$search_tags`/`$cleaned_cache` reset by Reflection. |
+| **Rollback boundary** | Revert commit `1df1a7eb`: `model/core/articulo.php` (`invalidate_search_cache()` + the `clean_cache()` delegation), `model/core/articulo_descripcion.php` (the two invalidator calls) and `tests/ArticuloSearchCacheInvalidationTest.php`. No schema, view, search-predicate or consumer file is touched; reverting only re-introduces stale `articulos_search_*` entries — search itself keeps working. |
+
+### Work unit `4a-search` — language-agnostic article search (GDI-09)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml plugins/catalogo_core/tests/ArticuloSearchMultiidiomaTest.php plugins/catalogo_core/tests/Services/ArticuloSearchQueryBuilderTest.php` → **OK (12 tests, 47 assertions)**; RED first was **2 errors + 8 failures** (`languageDescriptionPredicate`/`languageDescriptionJoin` undefined; the term was unfindable; every expectation was unqualified) |
+| **Runtime harness command/scenario and exact result** | Included in the slice run above: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 866 tests, 3806 assertions, 2 warnings, 1 skipped**. The search boundary is exercised DB-free through `SearchCatalogFake` (records the emitted SQL and evaluates its description predicate against seeded rows), `SearchCacheFake` and the `make_articulo()` seam on `FakeSearchArticulo`. A real-DB composed-SQL smoke remains for `verify`. |
+| **Rollback boundary** | Revert commit `210a80bd`: `Services/ArticuloSearchQueryBuilder.php` (the two helpers + the `a.` qualification), `model/core/articulo.php` (`search()` alias/join/DISTINCT/ORDER BY, `buildSearchWhereClause()` qualification, the `make_articulo()` seam), `tests/ArticuloSearchMultiidiomaTest.php`, `tests/Services/ArticuloSearchQueryBuilderTest.php` and the three `tests/Support/` fakes. The invalidator from `4a-cache` is independent and stays; `ORDER BY lower(referencia)` returns with the revert. No schema, view, Excel, API or consumer file is touched. |
+
+---
+
 ## Test commands and results (exact)
 
 | Command | Result |
@@ -199,6 +247,10 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 3) | **FAILED (pre-existing, unrelated)** — 2071 tests, 8207 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4). **No `catalogo_core` test failed.** |
 | `ddev exec composer phpstan` (after slice 3) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` error; no slice-3 file is analysed by this config. |
 | Twig parse check (slice 3) | `View/partials/articulos/tab_multiidioma.html.twig` tokenizes + parses with a stubbed `trans` filter → **TWIG PARSE OK**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4a) | **OK** — **866 tests, 3806 assertions, 2 warnings, 1 skipped**. Slice 4a adds 10 tests: `ArticuloSearchCacheInvalidationTest` +4 (new), `ArticuloSearchMultiidiomaTest` +3 (new), `ArticuloSearchQueryBuilderTest` +3 (2 new + net from the rewrite). No failures, no regressions. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4a) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4a) | **FAILED (pre-existing, unrelated)** — 2088 tests, 8288 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4). **No `catalogo_core` test failed.** |
+| `ddev exec composer phpstan` (after slice 4a) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` error; phpstan paths are `src` and root `tests` only, so no slice-4a file is analysed by this config. |
 
 ---
 
@@ -212,10 +264,12 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | Slice 1 total authored lines | **1649** across `1a` (1023) + `1b` (626) |
 | Slice 2 authored changed lines (additions + deletions) | **862** — `Controller/VentasArticulos.php` +150, `View/ventas_articulos.html.twig` +123, `extras/VentasArticulosListTrait.php` +22/−2, `translations/messages.en_EN.yaml` +18, `translations/messages.es_ES.yaml` +18, `tests/CatalogoIdiomaManagementTest.php` +179 (new), `tests/CatalogoIdiomaPermissionTest.php` +350 (new) |
 | Slice 3 authored changed lines (additions + deletions) | **386** — `Controller/VentasArticulo.php` +71/−30, `View/partials/articulos/tab_multiidioma.html.twig` +24/−22, `View/ventas_articulo.html.twig` +0/−11, `tests/Controller/VentasArticuloArticleEditAbsorptionTest.php` +141/−5, `tests/Controller/VentasArticuloPerTarifaPaneTest.php` +30/−4, `tests/VentasArticuloControllerTest.php` +42/−4, `translations/messages.en_EN.yaml` +0/−1, `translations/messages.es_ES.yaml` +0/−1 |
+| Slice 4a authored changed lines (additions + deletions) | **861** — production: `Services/ArticuloSearchQueryBuilder.php` +56/−17, `model/core/articulo.php` +77/−27, `model/core/articulo_descripcion.php` +15/−1. Tests: `tests/ArticuloSearchCacheInvalidationTest.php` +217 (new), `tests/ArticuloSearchMultiidiomaTest.php` +123 (new), `tests/Services/ArticuloSearchQueryBuilderTest.php` +44/−7, `tests/Support/SearchCatalogFake.php` +217 (new), `tests/Support/SearchCacheFake.php` +52 (new), `tests/Support/FakeSearchArticulo.php` +41 (new) |
 | Pre-declared boundary | `1a` = tasks 1.1–1.9 · `1b` = tasks 1.10–1.17 |
 | Cut used for `1b`? | **No** — 626 ≤ 800, landed whole. |
 | Cut used for slice 2? | **No** — the slice was complete and green at 862 lines; no code, comment, blank line, doc or test was cut to fit 800. |
 | Cut used for slice 3? | **No** — 386 ≤ 800 and inside the 360–520 estimate, landed whole. |
+| Cut used for slice 4a? | **No** — the slice was complete and green at 861 lines; no code, comment, blank line, doc or test was cut to fit 800. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -249,7 +303,26 @@ mutation. No cohesive split therefore fits the budget, so the overage is reporte
 review units ≤800, promoting `tests/CatalogoIdiomaPermissionTest.php` to its own follow-up
 commit is the only available split.
 
+**Slice 4a overage — `size:exception` requested.** Slice 4a measured **861 authored lines**
+against the 800 budget (61 over, `861/800`), essentially the same disposition as slice 2
+(862). The overage is concentrated in test infrastructure: the three new `tests/Support/`
+fakes (310 lines) plus the two new test files (340 lines) = 650 of the 861; production code
+is only 211 lines across three files, inside the 480–620 slice estimate for the production
+side. The slice was delivered **complete and green**; no code, comment, blank line, doc or
+test was cut or compressed to fit.
+
+One honest slicing pass was evaluated and **was** applied for reviewability: the two
+deliverables are independent work units and were committed separately
+(`1df1a7eb` cache invalidation, `210a80bd` language-agnostic search), so each commit is a
+reviewable unit. The two units were **not** promoted to separate PR slices because
+`tasks.md` defines slice 4a as one slice and slice 4b depends on 4a's D-03 being in place;
+splitting them would also split the shared `model/core/articulo.php` file mid-slice. No
+cohesive split therefore brings the slice under 800 without deleting test coverage, so the
+overage is reported for a `size:exception` (same disposition the maintainer accepted for
+`1a` and that slice 2 requests).
+
 ---
+
 
 ## Commits created
 
@@ -260,6 +333,8 @@ commit is the only available split.
 | `c2269c87` | `feat(catalogo_core): clear article descriptions through the model save path` | 2 | +155 / −5 |
 | `628c4313` | `feat(catalogo_core): manage catalog languages from the #idiomas section on ventas_articulos` | 7 | +860 / −2 |
 | `54f15e5a` | `feat(catalogo_core): drive the article editor descriptions from a language selector` | 8 | +308 / −78 |
+| `1df1a7eb` | `feat(catalogo_core): invalidate the article search cache on every description write` | 3 | +257 / −9 |
+| `210a80bd` | `feat(catalogo_core): search articles across all description languages` | 7 | +560 / −35 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -285,6 +360,14 @@ Slice-3 files (commit `54f15e5a`): `Controller/VentasArticulo.php`,
 `tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`,
 `tests/Controller/VentasArticuloPerTarifaPaneTest.php`.
 The slice-3 SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
+
+Slice-4a files (commit `1df1a7eb`): `model/core/articulo.php` (hunk 1 only),
+`model/core/articulo_descripcion.php`, `tests/ArticuloSearchCacheInvalidationTest.php`.
+Slice-4a files (commit `210a80bd`): `Services/ArticuloSearchQueryBuilder.php`,
+`model/core/articulo.php` (hunks 2–4), `tests/Services/ArticuloSearchQueryBuilderTest.php`,
+`tests/ArticuloSearchMultiidiomaTest.php`, `tests/Support/SearchCatalogFake.php`,
+`tests/Support/SearchCacheFake.php`, `tests/Support/FakeSearchArticulo.php`.
+The slice-4a SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -369,6 +452,35 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     `article-multi-language`, `default-language`, `description`, `short-description` and
     `no-languages-configured`.
 
+### Slice-4a deviations (local decisions, no design change)
+
+15. **The `make_articulo()` seam on `articulo` (slice 4a).** The design did not name a seam for
+    the search path, but `all_from()` hard-coded `new \articulo($data)`, which triggers the lazy
+    schema path (a live-database constructor) and makes `search()` untestable DB-free. A
+    protected `make_articulo(array $data)` returning `new \articulo($data)` was extracted and
+    used by `all_from()`; production behaviour is byte-identical, and `FakeSearchArticulo`
+    overrides it. This mirrors the slice-1b `language_registry()` / `description_model()` seams.
+16. **The D-03 writer gate is documented as an allowlist, not the design's literal claim.** Task
+    4a.8 and design D-03 assert that `CatalogLegacyTableMigration` is the only writer of
+    `articulo_descripciones` outside `articulo_descripcion`. That is factually incomplete:
+    `catalogo_idioma::delete()` (added in slice 1a for GDI-03) deletes the language's description
+    rows with raw SQL. The durable gate therefore allows the description model, the language-delete
+    cleanup and the activation migration, and asserts that `articulo_descripcion::save()` /
+    `delete()` both invalidate. The `catalogo_idioma::delete()` write **does not invalidate the
+    search cache** — a real gap against GDI-08's letter, out of the declared slice-4a caller list
+    (task 4a.3 names only the description model), reported for `verify`/a follow-up rather than
+    silently patched or silently ignored.
+17. **The `languageDescriptionPredicate()` `$quote` parameter is accepted but unused.** The
+    interface contract fixes the signature `(string $like, callable $quote)`; the LIKE literal is
+    quoted by the caller, so the helper only concatenates it. It is documented as intentional
+    symmetry with the builder's other condition callbacks rather than removed (which would break
+    the contract).
+18. **Numeric queries now lower-case the description leg.** Routing the numeric path through the
+    shared predicate adds `lower()` to its description match. The previous numeric path used a
+    case-sensitive `descripcion LIKE`; on MySQL's default collation `lower()` is a no-op, and on
+    PostgreSQL it makes the numeric-query description match case-insensitive like the other two
+    paths. This is required to keep exactly one language-agnostic predicate (GDI-09's grep gate).
+
 ---
 
 ## No-drift statements
@@ -399,17 +511,29 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   delta merged) and the core `openspec/` has no entry for this change. The slice-3 commit contains
   only the 8 explicit paths listed below. `tests/Integration/CatalogoCoreHookMarkersTest.php` is
   **unmodified** and green.
+- **Slice-4a no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty (no
+  delta merged) and the repository-root `openspec/` still has no entry for this change. The two
+  slice-4a commits contain only the explicit paths listed in "Commits created" (the second one
+  staged the remaining `articulo.php` hunks with `git add -p` for the first). No schema file
+  (`model/table/articulo_descripciones.xml`, `model/table/catalogo_idiomas.xml`) was touched; no
+  view, controller, Excel, API or consumer file was touched; no new Composer dependency was added.
 
 ---
 
 ## Remaining work / next
 
-1. **Slices `1a`, `1b`, `2` and `3` are done** — committed and green.
-2. **Slice `4a`** is the next independent slice: GDI-08 cache invalidation
-   (`articulo::invalidate_search_cache()` + callers) and the language-agnostic search predicate.
-3. **`verify`** must follow this artifact: slices 1, 2 and 3 are delivered in full; GDI-08 is a
-   documented `4a` gap, not a slice-1/2/3 failure. The real-DB boot smoke, the composed-SQL smoke,
-   a real-browser POST of the `#idiomas` panel and a real-browser selector round trip
-   (`codidioma` GET → edit → POST → reload) remain for `verify`.
-4. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
+1. **Slices `1a`, `1b`, `2`, `3` and `4a` are done** — committed and green.
+2. **Slice `4b`** (Excel export/import with per-language columns) is next; it depends on slice 1's
+   `set_descripcion_idioma()` and on slice 4a's D-03 for the per-row invalidation claim.
+3. **Slice `4c`** (`catalogo_core` no-context consumers) is independent and can run in parallel with
+   4b after slice 1.
+4. **`verify`** must follow this artifact: slices 1, 2, 3 and 4a are delivered in full. The real-DB
+   boot smoke, a real-DB composed-SQL smoke of `articulo::search()` (the D-04 join + `DISTINCT` +
+   `ORDER BY a.referencia` against MySQL and PostgreSQL), a real-browser POST of the `#idiomas`
+   panel and a real-browser selector round trip (`codidioma` GET → edit → POST → reload) remain for
+   `verify`. The `catalogo_idioma::delete()` cache-invalidation gap (deviation 16) is a documented
+   follow-up, not a slice-4a failure.
+5. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
+   maintainer, as recorded in "Budget measurement and cut decision".
+6. **`size:exception` disposition for slice 4a** (861 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
