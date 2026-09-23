@@ -27,13 +27,24 @@ persistence through `tarif_tarifa_articulo_etiqueta`, and the images entry point
 so a failure in the per-tarifa or etiquetas step does not silently drop the basic
 article save. With a tarifa selected, `editarArticulo()` MUST NOT write
 `articulos.pvp`; it MUST write `articulos.pvp` from the form ONLY when no active
-tarifa is selected, keeping the base-price edit path reachable. The current
+tarifa is selected, keeping the base-price edit path reachable. The multi-language
+description surface MUST be selector-driven (`gestion-idiomas` `GDI-11`): the view
+renders one description / short-description pair for the selected language, and
+`saveMultiidiomaDescriptions()` (`Controller/VentasArticulo.php:824-859`) persists
+that pair for the selected language and clears the language's row when both fields
+are empty — it MUST NOT overwrite the posted default-language value with
+`$art->descripcion` and MUST NOT skip empty input. The current
 `VentasArticuloControllerTest` contracts (public `idiomas` /
 `articulo_opcionales` arrays, `saveMultiidiomaDescriptions`,
 `addOpcionalArticulo`, `#multiidioma` / `#opcionales` partial includes, `ref`
-acceptance, `articulo::get()`) MUST stay green.
+acceptance, `articulo::get()`) MUST stay green; the assertions that locked the
+duplicated base `fsc.articulo.descripcion` textarea are re-expressed for the
+selector in the same slice.
 (Previously: the canonical save wrote `articulos.pvp` from the form on every save,
-regardless of the selected tarifa.)
+regardless of the selected tarifa, and the detail rendered a base
+`fsc.articulo.descripcion` textarea plus a per-language loop that duplicated the
+default language; `saveMultiidiomaDescriptions()` discarded the posted
+default-language value in favour of `$art->descripcion` and skipped empty input.)
 
 _Strength: MUST._
 
@@ -73,6 +84,14 @@ _Strength: MUST._
 - WHEN `editarArticulo()` saves the article
 - THEN `articulos.pvp` is written from the submitted base price
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticuloTarifaSelectionTest.php` (RED-first, new)
+
+#### Scenario: Selector-driven multi-language save persists the posted value
+
+- GIVEN a POST for the default language whose `descripcion_<default>` differs from `$art->descripcion`
+- WHEN the canonical save runs
+- THEN the posted value is persisted for the default language and is not overwritten by the base column
+- AND a POST with both fields empty for a language deletes that language's row
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
 
 ### Requirement: ART-02 — Canonical detail absorbs per-tarifa price/state and article-opcional editing
 
@@ -151,10 +170,16 @@ includes MUST stay. The exact four frozen host hook markers, including
 current names, call shape and positions, rendering empty with no registrant (D4).
 The locked literals `#multiidioma`, `#opcionales`, `tab_multiidioma.html.twig`,
 `tab_opcionales.html.twig` and `fsc.articulo.pvp` MUST survive so ART-08's
-`VentasArticuloControllerTest` stays green with no test edits.
+`VentasArticuloControllerTest` stays green with no test edits. The Idiomas section
+inside the unified pane MUST host the selector-driven single description /
+short-description pair (`gestion-idiomas` `GDI-11`), keeping the `#multiidioma`
+in-pane anchor (`View/ventas_articulo.html.twig:106`) and the
+`partials/articulos/tab_multiidioma.html.twig` include (`:342`); the selector work
+MUST NOT add, rename, move or remove any hook marker.
 (Previously: the view preserved five separate tabs `#datos`, `#precios`,
 `#stock`, `#multiidioma`, `#opcionales` and injected the Tarifas tab at the
-frozen markers.)
+frozen markers; the `#multiidioma` section hosted the base textarea plus the
+per-language loop.)
 
 _Strength: MUST._
 
@@ -181,6 +206,13 @@ _Strength: MUST._
 - THEN the four frozen marker calls keep their exact names, context shape and positions
 - Test: `plugins/catalogo_core/tests/Integration/CatalogoCoreHookMarkersTest.php`
 
+#### Scenario: The selector work leaves the frozen markers untouched
+
+- GIVEN the selector-driven Idiomas section inside the unified pane
+- WHEN the view source is inspected
+- THEN `#multiidioma`, the `tab_multiidioma.html.twig` include and the four frozen markers are present at their pre-change names and positions
+- AND no new, renamed or moved marker was introduced
+- Test: `plugins/catalogo_core/tests/Integration/CatalogoCoreHookMarkersTest.php`
 ### Requirement: ART-06 — Duplicate edit surfaces retired with links repointed
 
 `tarif_articulo_edit` and `tarif_articulo_precios` (controllers and views) MUST be
