@@ -1130,16 +1130,33 @@ class articulo extends \fs_model
          * función cada vez que se guarda un artículo, por eso es mejor limitarla.
          */
         if (!self::$cleaned_cache) {
-            /// obtenemos los datos de memcache
-            $this->get_search_tags();
-
-            if (!empty(self::$search_tags)) {
-                foreach (self::$search_tags as $value) {
-                    $this->cache->delete('articulos_search_' . $value['tag']);
-                }
-            }
-
+            self::invalidate_search_cache();
             self::$cleaned_cache = TRUE;
+        }
+    }
+
+    /**
+     * Invalida los resultados cacheados de la búsqueda de artículos.
+     *
+     * Single cache-invalidation entry point for the article search family
+     * (`articulos_search_*`). It is public and static because the multi-language
+     * description writes (`articulo_descripcion::save()` / `delete()`) own the
+     * same obligation and cannot build an `articulo` without triggering the lazy
+     * schema path (GDI-08 / D-03). Unlike `clean_cache()`, this method has no
+     * once-per-request guard: every description write must invalidate.
+     */
+    public static function invalidate_search_cache(): void
+    {
+        $cache = new \fs_cache();
+        $tags = $cache->get_array('articulos_searches');
+        if (!is_array($tags)) {
+            return;
+        }
+
+        foreach ($tags as $value) {
+            if (!empty($value['tag'])) {
+                $cache->delete('articulos_search_' . $value['tag']);
+            }
         }
     }
 

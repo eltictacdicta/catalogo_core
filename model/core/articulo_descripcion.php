@@ -164,6 +164,12 @@ class articulo_descripcion extends \fs_model
             if (is_null($this->id)) {
                 $this->id = $this->db->lastval();
             }
+
+            // Every write to the description table owns the search-cache
+            // obligation (GDI-08 / D-03): `articulo::save()` is not part of the
+            // language write path, so the invalidation must happen here.
+            articulo::invalidate_search_cache();
+
             return true;
         }
 
@@ -172,6 +178,14 @@ class articulo_descripcion extends \fs_model
 
     public function delete()
     {
-        return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
+        $deleted = $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
+        if ($deleted) {
+            // The empty-pair branch of save() delegates here, so the clearing
+            // path invalidates the search cache through this single call
+            // (GDI-08 / D-03).
+            articulo::invalidate_search_cache();
+        }
+
+        return $deleted;
     }
 }
