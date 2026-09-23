@@ -28,18 +28,31 @@ Chain strategy: pending
 | 5 | Hook retirement (D4) with markers inert | PR 5 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'CatalogoArticuloHookOwnershipTest\|CatalogoCoreHookMarkersTest'` | Manual smoke: article page renders with two empty markers and no injected Tarifas tab | `Init.php` const+loop, restore 2 deleted hook templates, revert ownership test |
 | 6 | Regression gate (no diff unless a fix is needed) | chain gate | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` + `ddev exec composer phpstan` | Manual smoke checklist in `verify` phase | N/A — verification only |
 
-## Task 0 — BLOCKING prerequisite: archive sibling `caracteristicas-producto` first
+## Task 0 — Prerequisite (SATISFIED at archive): archive sibling `caracteristicas-producto` first
 
 Satisfies AD-10. This change's ART-01/ART-05 and `catalogo-render-hooks`/ATT
 deltas are authored against the sibling's **post-merge** canonical text, so the
-sibling MUST archive first. This is a hard gate: do NOT start Unit 1 until 0.3
-passes.
+sibling MUST archive first. This was the hard gate before Unit 1.
 
-- [ ] 0.1 Confirm the sibling's only open items (`WU-7 7.5` soak, `7.6` gated drop) are closed in `plugins/catalogo_core/openspec/changes/caracteristicas-producto/verify-report.md` (read-only) — `verdict` is no longer `fail`/`blockers: 0`.
-- [ ] 0.2 Archive `plugins/catalogo_core/openspec/changes/caracteristicas-producto/` to `plugins/catalogo_core/openspec/changes/archive/YYYY-MM-DD-caracteristicas-producto/`, merging its deltas into `plugins/catalogo_core/openspec/specs/articulo-detalle-canonico/spec.md`, `.../catalogo-render-hooks/spec.md` and `.../articulo-tarifa-tab-management/spec.md`.
-- [ ] 0.3 **Acceptance check** — `ls plugins/catalogo_core/openspec/changes/` lists no `caracteristicas-producto` entry, and the canonical `articulo-detalle-canonico` ART-01 contains the sibling's post-merge wording ("per-tarifa visibility as articulo-scope feature values"). Command: `grep -n "articulo-scope feature values" plugins/catalogo_core/openspec/specs/articulo-detalle-canonico/spec.md` (read-only) returns ART-01.
-- [ ] 0.4 Confirm no entry exists in the core `openspec/changes/articulo-detalle-tarifa-unificada/` and keep it that way. Command: `ls openspec/changes/ | grep articulo-detalle-tarifa-unificada` (read-only) → empty.
-- [ ] 0.5 Coordinate with the active `remove-fs-demo` change sharing `Controller/VentasArticulo.php` and the absorption test: rebase deliberately, keep deltas narrow (no blocking gate; recorded risk).
+> **Archive-time reconciliation (2026-09-23).** The blocking prerequisite is
+> satisfied: the sibling archived on 2026-09-23 to
+> `changes/archive/2026-09-23-caracteristicas-producto/` (commit `c49ffc68`) and
+> its deltas were merged into the canonical specs (commit `f369faf7`). Items
+> `0.2`, `0.3` and `0.4` are checked with that evidence. Item `0.1` is **not**
+> checked as written: the sibling's open items (`7.5` soak, `7.6` gated drop)
+> were **relocated**, not closed, by an explicit maintainer decision — the
+> sibling delivered CAR-15 clause 1 automatically (`Init::upgrade()` →
+> `CaracteristicaColumnDropMigration::migrateIfNeeded()`, commit `c4fa9ecd`) and
+> staged clause 2 into the new active change
+> `changes/caracteristicas-post-soak-drop/`. No claim is made that `7.5`/`7.6`
+> were completed. Item `0.5` is a standing coordination note, not a blocker. See
+> `archive-report.md` for the full record.
+
+- [ ] 0.1 NOT CLOSED as written — the sibling's `WU-7 7.5` (soak) and `7.6` (gated drop) were **relocated**, not completed, by maintainer decision (see the reconciliation note above and `archive-report.md`). The prerequisite itself (sibling archived) holds.
+- [x] 0.2 Done — the sibling archived to `plugins/catalogo_core/openspec/changes/archive/2026-09-23-caracteristicas-producto/`; its deltas were merged into the canonical `articulo-detalle-canonico`, `catalogo-render-hooks` and `articulo-tarifa-tab-management` specs.
+- [x] 0.3 **Acceptance check passed** — `ls plugins/catalogo_core/openspec/changes/` lists no `caracteristicas-producto` entry, and `grep -n "articulo-scope feature values" plugins/catalogo_core/openspec/specs/articulo-detalle-canonico/spec.md` returns ART-01 (L24, L49, L64).
+- [x] 0.4 Confirmed — `ls openspec/changes/ | grep -c articulo-detalle-tarifa-unificada` → `0` at archive time; no core `openspec/` entry was ever created.
+- [ ] 0.5 Standing coordination note (not a blocker) — `remove-fs-demo` still shares `Controller/VentasArticulo.php`; keep any future rebase narrow.
 
 ## Unit 1 — Validated tarifa selection (AD-4) → PR 1
 
@@ -110,10 +123,10 @@ passes.
 **Satisfies**: ART-08 (suite ≥ 794 tests / 3450 assertions, exit 0).
 **Verification**: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` and `ddev exec composer phpstan` and `ddev exec php -l` on every touched plugin PHP file.
 
-- [ ] 6.1 Run the plugin suite; require `exit 0` and at least the 794/3450 baseline.
-- [ ] 6.2 Run `ddev exec composer phpstan`; record the scope limitation (`phpstan.neon` analyses `src` + `tests`, so it is the repo gate, not plugin type-safety) and pair it with `php -l` on touched plugin files.
-- [ ] 6.3 Run the manual smoke: `index.php?page=ventas_articulo&ref=<ref>` with active tarifas (selector + unified pane + one-rail row save) and with zero tarifas (no selector, editable base `pvp`).
-- [ ] 6.4 Confirm `VentasArticuloControllerTest.php` and `CatalogoCoreHookMarkersTest.php` are byte-identical to `HEAD` (unedited).
+- [x] 6.1 Done at archive — `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **`920 tests / 4013 assertions`, 2 warnings, 1 skipped, `exit 0`** (re-run 2026-09-23 after the archive move). The literal `794/3450` baseline in the goal line is the apply-time figure; the suite grew to `920/4013` because the sibling `caracteristicas-producto` tests landed first. `≥ 794/3450` holds. `plugins/tarifario`: `266 tests / 1093 assertions`, 2 skipped, `exit 0`.
+- [x] 6.2 Done at archive — `ddev exec composer phpstan` exits `1` on a **pre-existing, out-of-scope** core-test error (`tests/Core/PluginEnableAjaxSafetyTest.php:308`, added by core release `14a4c7b7`). `phpstan.neon` declares `paths: [src, tests]`, so it never analyses `plugins/`; the maintainer chose not to touch core and **explicitly waived** this gate for this change. The plugin's real type gate is the plugin suite plus `php -l` on the 8 touched PHP files (all clean, per `verify-report.md`).
+- [ ] 6.3 **MANUAL / NOT EXECUTED** — no live HTTP harness exists in the repo (the plugin suite is DB-free seam/render tests). The command-level checklist is recorded verbatim in `verify-report.md` §"Manual Smoke Checklist". Not a blocker: no automated contract depends on it.
+- [x] 6.4 Done at archive — `VentasArticuloControllerTest.php` and `CatalogoCoreHookMarkersTest.php` are byte-identical to the plugin-repo `HEAD` (sha256 match; `git diff HEAD` empty), per `verify-report.md` §"Locked-Contract Audit".
 
 ## Coherent rewrites
 
