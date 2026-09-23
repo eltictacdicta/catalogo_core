@@ -483,7 +483,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     public function test_clause_1_drop_leaves_the_feature_tables_intact(): void
     {
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         self::assertTrue($migration::dropD12OpcionalColumns($db));
 
@@ -500,7 +500,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     {
         $snapshot = $this->opcionalLegacySnapshot();
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         // Sanity: the snapshot is the state the feature tables already derive.
         $this->assertDerivesEveryOpcionalValue($snapshot, 'before the drop');
@@ -525,7 +525,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     {
         $snapshot = $this->opcionalLegacySnapshot();
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropD12OpcionalColumns($db);
         $this->restoreNullableLegacyColumns($db, CaracteristicaColumnDropMigration::D12_TABLES);
@@ -544,7 +544,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     public function test_clause_2_drop_leaves_the_feature_tables_intact(): void
     {
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         self::assertTrue($migration::dropLegacyArticleFamilyColumns($db));
 
@@ -559,7 +559,7 @@ final class CaracteristicaReversibilityTest extends TestCase
         $articles = $this->articleLegacySnapshot();
         $families = $this->familyLegacySnapshot();
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $this->assertDerivesEveryArticleValue($articles, 'before the drop');
         $this->assertDerivesEveryFamilyValue($families, 'before the drop');
@@ -578,7 +578,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     public function test_clause_2_reversal_restores_the_pre_drop_column_set(): void
     {
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropLegacyArticleFamilyColumns($db);
         $this->restoreNullableLegacyColumns($db, [
@@ -611,7 +611,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     public function test_clause_2_reversal_needs_no_restore_for_the_retired_familia_ext_table(): void
     {
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropLegacyArticleFamilyColumns($db);
 
@@ -639,7 +639,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     {
         $snapshot = $this->opcionalLegacySnapshot();
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropDeadOpcionalColumns($db);
 
@@ -667,7 +667,7 @@ final class CaracteristicaReversibilityTest extends TestCase
     {
         $snapshot = $this->snapshotMap();
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $before = CaracteristicaColumnDropMigration::pendingVisibilityColumns($db);
         self::assertNotSame([], $before, 'the pre-drop schema must still carry the gated columns');
@@ -693,22 +693,22 @@ final class CaracteristicaReversibilityTest extends TestCase
         self::assertTrue($this->featureTablesSurvive($db), 'the source of truth was never dropped');
     }
 
-    public function test_the_soak_gate_blocks_clause_2_and_the_dead_cleanup_but_not_clause_1(): void
+    public function test_the_legacy_opt_out_blocks_clause_2_and_the_dead_cleanup_but_not_clause_1(): void
     {
         $snapshot = $this->snapshotMap();
         $db = new ReversibilitySpyDb($this->preDropSchema);
-        $migration = $this->migrationWithReadThrough(false);
+        $migration = $this->migrationWithLegacyReadExplicit(true);
 
         // CAR-15: clause 1 is gated on the CAR-12 parity test only — no soak.
         self::assertTrue($migration::dropD12OpcionalColumns($db));
 
-        // The soak-gated clauses refuse and change no schema.
+        // The opt-out-gated clauses refuse and change no schema.
         self::assertFalse($migration::dropLegacyArticleFamilyColumns($db));
         self::assertFalse($migration::dropDeadOpcionalColumns($db));
 
         $sql = implode("\n", $db->execStatements);
         foreach (['tarif_articulo_precios', 'tarif_tarifa_articulo', 'tarif_tarifa_familia', 'catalogo_opcionales'] as $table) {
-            self::assertStringNotContainsString($table, $sql, $table . ' must be untouched while the soak gate is closed');
+            self::assertStringNotContainsString($table, $sql, $table . ' must be untouched while the opt-out is set');
         }
         self::assertContains('en_catalogo', $db->schema['tarif_articulo_precios']);
         self::assertContains('en_tarifa', $db->schema['tarif_tarifa_familia']);
@@ -845,13 +845,16 @@ final class CaracteristicaReversibilityTest extends TestCase
     }
 
     /**
+     * The legacy opt-out seam: TRUE means the legacy path was explicitly
+     * selected (the gated clauses refuse); FALSE is the feature default.
+     *
      * @return class-string<CaracteristicaColumnDropMigration>
      */
-    private function migrationWithReadThrough(bool $enabled): string
+    private function migrationWithLegacyReadExplicit(bool $explicit): string
     {
-        if ($enabled) {
+        if ($explicit) {
             return get_class(new class () extends CaracteristicaColumnDropMigration {
-                protected static function read_through(): bool
+                protected static function legacy_read_explicitly_enabled(): bool
                 {
                     return true;
                 }
@@ -859,7 +862,7 @@ final class CaracteristicaReversibilityTest extends TestCase
         }
 
         return get_class(new class () extends CaracteristicaColumnDropMigration {
-            protected static function read_through(): bool
+            protected static function legacy_read_explicitly_enabled(): bool
             {
                 return false;
             }

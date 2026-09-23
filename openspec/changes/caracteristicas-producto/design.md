@@ -37,7 +37,7 @@ MUST be used verbatim by `tasks`/`apply`/`verify`.
 | Column-drop migration | `FSFramework\Plugins\catalogo_core\Services\CaracteristicaColumnDropMigration` | **[DECISION]** CAR-15 needs two gated, introspective drops; a dedicated service keeps them out of the backfill and independently revertible |
 | Value store (write façade) | `FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore` | **[DECISION]** `CAR-08`'s own test file is `CaracteristicaValorStoreTest.php`, and panel + import + family toggle + article tab + clone all need one materialization + dual-write point |
 | Read-through flag helper | `FSFramework\Plugins\catalogo_core\Services\CaracteristicaConfig` | single place that resolves the constant |
-| Read-through constant | `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` | **pinned name** (README decision 5); boolean; `FALSE` when undefined |
+| Read-through constant | `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` | **pinned name** (README decision 5); boolean; **feature path when undefined**; only an explicit `FALSE` opts out to legacy |
 | DEF tarifa code | `'DEF'` (`CaracteristicaResolver::DEF_TARIFA`) | existing convention |
 | Hook context key | `caracteristicas` | map `codigo => effective value`; **pinned name** (already stated in `catalogo-render-hooks` delta) |
 | Panel controller | `FSFramework\Plugins\catalogo_core\Controller\VentasCaracteristicas` | wrapper `controller/ventas_caracteristicas.php` → global class `ventas_caracteristicas` |
@@ -47,8 +47,17 @@ MUST be used verbatim by `tasks`/`apply`/`verify`.
 
 **[DECISION] `CaracteristicaConfig::READ_THROUGH_FLAG`** exists so the literal constant
 string appears in exactly one file; every consumer calls
-`CaracteristicaConfig::read_through(): bool` (`defined(READ_THROUGH_FLAG) && (bool) constant(...)`).
+`CaracteristicaConfig::read_through(): bool`, which delegates to
+`legacy_read_explicitly_enabled(): bool` (`defined(READ_THROUGH_FLAG) && constant(...) === false`).
 Rationale: prevents `defined()`/constant-name drift across ~10 call sites.
+
+**[DECISION — amended] The feature path is the DEFAULT.** `read_through()` returns `TRUE`
+when the constant is undefined and when it is explicitly `TRUE`; only an explicit `FALSE`
+selects the legacy columns. Production must need **no flag at all**: WU-7's gated drop
+removes the 12 legacy `en_catalogo`/`en_tarifa` columns, so an undefined constant must keep
+reading the feature tables or the catalog would silently fall back to "not visible". The
+constant survives only as a documented **emergency opt-out** (rollback), and the drop gate
+tests that opt-out precisely via `legacy_read_explicitly_enabled()`.
 
 ---
 
@@ -625,7 +634,10 @@ no-op"). Operator edits survive because the guard is `NOT EXISTS`, never an `UPD
 ### 8.4 Read-through flag and dual-write soak (CAR-14)
 
 - `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` is read **only** through
-  `CaracteristicaConfig::read_through()`. Default `FALSE` when undefined.
+  `CaracteristicaConfig::read_through()`. **The feature path is the default**: an
+  undefined constant resolves to the feature tables, and only an explicit `FALSE`
+  opts out to the legacy columns (the emergency rollback switch). This is what lets
+  production require no flag once WU-7 drops the legacy columns.
 - Consumers and their two branches:
 
 | Consumer | flag off (legacy) | flag on (resolver) |
@@ -692,10 +704,11 @@ no-op"). Operator edits survive because the guard is `NOT EXISTS`, never an `UPD
   `tarif_tarifa_familia` can only see per-key columns, so they exclude that key. The
   documented rule for the soak is therefore:
 
-  1. **flag OFF (default)** — catalog candidate membership stays exactly the pre-change
-     output (byte-identical): the legacy pre-filters keep defining the candidate set,
-     and a global-only key stays excluded until the filter rewrite lands.
-  2. **flag ON** — resolver-driven reads may include a global-only key, so the two
+  1. **flag OFF (legacy opt-out)** — catalog candidate membership stays exactly the
+     pre-change output (byte-identical): the legacy pre-filters keep defining the
+     candidate set, and a global-only key stays excluded until the filter rewrite lands.
+     This is the emergency opt-out, not the default; the feature path is the default.
+  2. **flag ON (the default)** — resolver-driven reads may include a global-only key, so the two
      surfaces are intentionally **not** interchangeable for global-only visibility
      during the soak.
   3. **No filter rewrite happens in this change.** The DEV-17 rewrite (or removal) of
@@ -728,10 +741,12 @@ public static function hasColumn(\fs_db2 $db, string $table, string $column): bo
   supports it, behind the `hasColumn()` guard.
 - Clause 2 (post-soak): drops `en_catalogo`/`en_tarifa` from `tarif_articulo_precios`,
   `tarif_tarifa_articulo`, `tarif_tarifa_familia` and `tarif_familia_ext` **only when
-  the read-through flag is enabled AND verified stable**. Implemented as an explicit
-  pre-condition check (`CaracteristicaConfig::read_through()` must be `TRUE`) plus
-  `hasColumn()` guards; when the flag is off the method returns `false` and changes no
-  schema. `tarif_familia_ext` may already lack the columns ⇒ no-op for that table.
+  the legacy read path was NOT explicitly selected**. The feature path is the default, so
+  the precondition holds while the constant is undefined or `TRUE`. Implemented as an
+  explicit pre-condition check (`CaracteristicaConfig::legacy_read_explicitly_enabled()`
+  must be `FALSE`) plus `hasColumn()` guards; when the emergency opt-out is set the
+  method returns `false` and changes no schema. `tarif_familia_ext` may already lack the
+  columns ⇒ no-op for that table.
   Idempotent: a second run finds no columns and does nothing.
   **Ordered prerequisite (DEV-17):** the legacy membership filters must be rewritten to
   the feature tables before this clause runs — see §8.4.
@@ -751,9 +766,9 @@ public static function hasColumn(\fs_db2 $db, string $table, string $column): bo
 - **Closed-loop entry point (WU-7 7.3)**: `CaracteristicaColumnDropMigration::runPostSoak($db,
   $dev17MembershipFiltersRewritten)` runs the declared order (`POST_SOAK_STEPS`:
   clause 1 → clause 2 → dead-column cleanup) and reports the live schema via
-  `pendingVisibilityColumns()`. It refuses atomically while the read-through gate is off
-  **or** the DEV-17 rewrite is unattested (`$dev17MembershipFiltersRewritten` has no
-  permissive default). The DEV-17 guard is an explicit operator attestation, not a
+  `pendingVisibilityColumns()`. It refuses atomically while the legacy read path was
+  explicitly selected (the emergency opt-out) **or** the DEV-17 rewrite is unattested
+  (`$dev17MembershipFiltersRewritten` has no permissive default). The DEV-17 guard is an explicit operator attestation, not a
   machine check: the membership-filter surface is tarifario-owned (CAR-19 forbids the
   reference) and catalogo_core legitimately still reads the legacy columns during the
   soak (backfill, dual-write, models), so a source scan could not discriminate them.
@@ -1205,8 +1220,9 @@ Total authored: **~4,000–7,000 lines**, ~56 production files across two plugin
 
 ### 15.2 Rollback per WU
 
-WU-1/WU-2/WU-3 are additive: revert the commits, drop the five new tables, disable the
-read-through flag; legacy columns stay authoritative. WU-4's opcional drop is reversible
+WU-1/WU-2/WU-3 are additive: revert the commits, drop the five new tables, set the
+read-through constant explicitly to `FALSE` (the emergency opt-out); legacy columns stay
+authoritative. WU-4's opcional drop is reversible
 only after its parity evidence; WU-5/WU-6 are independently revertible. WU-7 is a
 separate commit with a pre-drop dump and a re-derive-from-feature-values restore path.
 Clear the Twig cache after any revert (frozen markers/templates).

@@ -24,9 +24,10 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  *     derived read-only indicator replaces the flags immediately, so no
  *     article/family soak is required.
  *  2. `dropLegacyArticleFamilyColumns()` — the legacy article/family columns
- *     (WU-7). Refuses to run unless the read-through flag is enabled and
- *     verified stable (`CaracteristicaConfig::read_through()`); when the flag is
- *     off it returns FALSE and changes no schema.
+ *     (WU-7). The feature path is the default, so it runs by default; it
+ *     refuses only while the legacy read path was **explicitly** selected
+ *     (`CaracteristicaConfig::legacy_read_explicitly_enabled()`, the emergency
+ *     opt-out), in which case it returns FALSE and changes no schema.
  *
  * Reversibility: the feature value tables are the source of truth and are
  * **never** touched. Re-adding the dropped columns as nullable and re-deriving
@@ -137,14 +138,20 @@ class CaracteristicaColumnDropMigration
     /**
      * Clause 2 — DROP the legacy article/family visibility flags (post-soak).
      *
-     * Refuses (returns FALSE, no schema change) while the read-through flag is
-     * disabled. `tarif_familia_ext` may already lack the columns (divergence 1:
-     * the retired table has only `codfamilia`/`capitulo`/`nivel`) ⇒ the
+     * The feature path is the default, so this runs by default. It refuses
+     * (returns FALSE, no schema change) only while the legacy read path was
+     * **explicitly** selected — the emergency opt-out
+     * (`CaracteristicaConfig::legacy_read_explicitly_enabled()`). The refusal is
+     * load-bearing: in that state the legacy columns are authoritative, so
+     * dropping them would break the catalog.
+     *
+     * `tarif_familia_ext` may already lack the columns (divergence 1: the
+     * retired table has only `codfamilia`/`capitulo`/`nivel`) ⇒ the
      * `hasColumn()` guard makes it a no-op for that table.
      */
     public static function dropLegacyArticleFamilyColumns(\fs_db2 $db): bool
     {
-        if (!static::read_through()) {
+        if (static::legacy_read_explicitly_enabled()) {
             return false;
         }
 
@@ -153,7 +160,7 @@ class CaracteristicaColumnDropMigration
 
     /**
      * Dead-column cleanup — DROP the unused `catalogo_opcionales` visibility
-     * columns (idempotent, gated on the same post-soak switch as clause 2).
+     * columns (idempotent, gated on the same legacy opt-out as clause 2).
      *
      * The columns are present in deployed databases but no model declares them
      * and nothing reads or writes them: they are leftovers of the pre-D12
@@ -165,7 +172,7 @@ class CaracteristicaColumnDropMigration
      */
     public static function dropDeadOpcionalColumns(\fs_db2 $db): bool
     {
-        if (!static::read_through()) {
+        if (static::legacy_read_explicitly_enabled()) {
             return false;
         }
 
@@ -173,13 +180,13 @@ class CaracteristicaColumnDropMigration
     }
 
     /**
-     * Read-through gate seam. Overridable so the gate is unit-testable without
+     * Legacy opt-out gate seam. Overridable so the gate is unit-testable without
      * defining a process-wide constant (a defined constant cannot be unset and
      * would leak into any non-isolated test process).
      */
-    protected static function read_through(): bool
+    protected static function legacy_read_explicitly_enabled(): bool
     {
-        return CaracteristicaConfig::read_through();
+        return CaracteristicaConfig::legacy_read_explicitly_enabled();
     }
 
     /**
@@ -202,9 +209,11 @@ class CaracteristicaColumnDropMigration
      * Two preconditions gate the whole loop, and it refuses atomically — a
      * refusal runs **no** step and changes no schema:
      *
-     *  1. the read-through soak gate (`CaracteristicaConfig::read_through()`,
-     *     i.e. `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH`) must be ON and
-     *     verified stable;
+     *  1. the legacy read path must NOT be explicitly selected. The feature path
+     *     is the default, so this holds while
+     *     `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` is undefined or TRUE;
+     *     defining it as FALSE (the emergency opt-out) refuses the loop, because
+     *     the legacy columns are then authoritative;
      *  2. the DEV-17 closure must be attested by the caller
      *     (`$dev17MembershipFiltersRewritten`). The tarifario catalog membership
      *     filters still read `tarif_tarifa_articulo.en_catalogo` /
@@ -225,7 +234,7 @@ class CaracteristicaColumnDropMigration
      *
      * @return array{
      *     status: 'refused'|'applied'|'failed',
-     *     read_through: bool,
+     *     legacy_read_explicitly_enabled: bool,
      *     dev17_membership_filters_rewritten: bool,
      *     reason: string,
      *     steps: array<string, bool>,
@@ -237,13 +246,13 @@ class CaracteristicaColumnDropMigration
     {
         $before = self::pendingVisibilityColumns($db);
 
-        if (!static::read_through()) {
+        if (static::legacy_read_explicitly_enabled()) {
             return self::postSoakReport(
                 'refused',
-                false,
+                true,
                 $dev17MembershipFiltersRewritten,
-                'the read-through soak gate is closed: ' . CaracteristicaConfig::READ_THROUGH_FLAG
-                    . ' is OFF, so the legacy columns are still authoritative',
+                'the legacy read path is explicitly selected: ' . CaracteristicaConfig::READ_THROUGH_FLAG
+                    . ' is FALSE, so the legacy columns remain authoritative',
                 [],
                 $before,
                 $db
@@ -253,7 +262,7 @@ class CaracteristicaColumnDropMigration
         if (!$dev17MembershipFiltersRewritten) {
             return self::postSoakReport(
                 'refused',
-                true,
+                false,
                 false,
                 'DEV-17 is not attested: the legacy catalog membership filters must be rewritten to the'
                     . ' feature tables before clause 2 drops the columns they filter on',
@@ -276,7 +285,7 @@ class CaracteristicaColumnDropMigration
 
         return self::postSoakReport(
             $failed === [] ? 'applied' : 'failed',
-            true,
+            false,
             true,
             $failed === []
                 ? 'all post-soak clauses applied'
@@ -383,7 +392,7 @@ class CaracteristicaColumnDropMigration
      * @param list<string>        $before
      * @return array{
      *     status: 'refused'|'applied'|'failed',
-     *     read_through: bool,
+     *     legacy_read_explicitly_enabled: bool,
      *     dev17_membership_filters_rewritten: bool,
      *     reason: string,
      *     steps: array<string, bool>,
@@ -393,7 +402,7 @@ class CaracteristicaColumnDropMigration
      */
     private static function postSoakReport(
         string $status,
-        bool $readThrough,
+        bool $legacyReadExplicitlyEnabled,
         bool $dev17MembershipFiltersRewritten,
         string $reason,
         array $steps,
@@ -404,7 +413,7 @@ class CaracteristicaColumnDropMigration
 
         return [
             'status' => $status,
-            'read_through' => $readThrough,
+            'legacy_read_explicitly_enabled' => $legacyReadExplicitlyEnabled,
             'dev17_membership_filters_rewritten' => $dev17MembershipFiltersRewritten,
             'reason' => $reason,
             'steps' => $steps,

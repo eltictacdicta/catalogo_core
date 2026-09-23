@@ -86,9 +86,12 @@ re-litigate them.
    (predefined, `custom = FALSE`) or `valor` (custom, `custom = TRUE`); a row
    with neither is invalid and MUST be rejected by `test()`.
 5. **Read-through flag name.** A single boolean config constant gates legacy
-   columns vs. the resolver (default `FALSE` until the backfill is verified).
-   Specs reference it as "the read-through flag"; the literal constant name is
-   fixed at design. Behavior is what is spec-locked, not the constant name.
+   columns vs. the resolver. **The resolver is the default**: an undefined
+   constant selects the feature path, and only an explicit `FALSE` opts out to
+   the legacy columns (an emergency rollback switch — production must need no
+   flag at all). Specs reference it as "the read-through flag"; the literal
+   constant name is fixed at design. Behavior is what is spec-locked, not the
+   constant name.
 6. **`listable` column position.** Inside the existing
    `{% if fsc.tarifa_seleccionada %}` block of `View/ventas_articulos.html.twig`,
    **after** the `Catálogo` column and **before** the `Stock` column, ordered by

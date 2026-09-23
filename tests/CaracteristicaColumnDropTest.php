@@ -19,9 +19,11 @@ use PHPUnit\Framework\TestCase;
  * parity test (`OpcionalVisibilityParityTest`), needs no soak, and MUST be
  * idempotent (one `hasColumn()` guard per `ALTER`).
  *
- * Clause 2 (article/family columns, WU-7) MUST refuse to run while the
- * read-through flag is disabled and MUST change no schema. Its reversibility
- * rests on the feature tables, which no clause may touch.
+ * Clause 2 (article/family columns, WU-7) MUST refuse to run while the legacy
+ * read path was **explicitly** selected (the emergency opt-out) and MUST change
+ * no schema. The feature path is the default, so an undefined constant lets the
+ * drop run. Its reversibility rests on the feature tables, which no clause may
+ * touch.
  */
 final class CaracteristicaColumnDropSpyDb extends \fs_db2
 {
@@ -232,29 +234,42 @@ final class CaracteristicaColumnDropTest extends TestCase
     // Clause 2 — gated post-soak drop (WU-7 stub)
     // =====================================================================
 
-    public function test_legacy_drop_refuses_to_run_while_the_read_through_flag_is_disabled(): void
+    public function test_legacy_drop_refuses_to_run_while_the_legacy_path_is_explicitly_selected(): void
     {
-        $this->assertFalse(
-            CaracteristicaConfig::read_through(),
-            'the read-through flag must be disabled by default in the test environment'
-        );
-
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(false);
+        $migration = $this->migrationWithLegacyReadExplicit(true);
 
         $this->assertFalse($migration::dropLegacyArticleFamilyColumns($db));
         $this->assertSame([], $db->execStatements, 'a refused gate must change no schema');
         $this->assertSame(
             $this->fullSchema()['tarif_articulo_precios'],
             $db->schema['tarif_articulo_precios'],
-            'the legacy visibility columns must be untouched while the gate is closed'
+            'the legacy visibility columns must be untouched while the opt-out is set'
         );
     }
 
-    public function test_legacy_drop_drops_the_article_and_family_columns_once_the_flag_is_enabled(): void
+    public function test_legacy_drop_runs_by_default_because_undefined_selects_the_feature_path(): void
+    {
+        // The real gate (no seam override): the test environment leaves the
+        // constant undefined, which is the production default.
+        $this->assertTrue(
+            CaracteristicaConfig::read_through(),
+            'the feature path is the default'
+        );
+        $this->assertFalse(
+            CaracteristicaConfig::legacy_read_explicitly_enabled(),
+            'an undefined constant is not an explicit opt-out'
+        );
+
+        $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
+
+        $this->assertTrue(CaracteristicaColumnDropMigration::dropLegacyArticleFamilyColumns($db));
+    }
+
+    public function test_legacy_drop_drops_the_article_and_family_columns_once_the_opt_out_is_not_set(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $this->assertTrue($migration::dropLegacyArticleFamilyColumns($db));
 
@@ -268,10 +283,10 @@ final class CaracteristicaColumnDropTest extends TestCase
         $this->assertStringNotContainsString('tarif_familia_ext', $sql);
     }
 
-    public function test_legacy_drop_is_idempotent_when_the_flag_is_enabled(): void
+    public function test_legacy_drop_is_idempotent_by_default(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropLegacyArticleFamilyColumns($db);
         $before = count($db->execStatements);
@@ -281,18 +296,18 @@ final class CaracteristicaColumnDropTest extends TestCase
     }
 
     /**
-     * The read-through gate is exercised through the service's overridable
+     * The legacy opt-out gate is exercised through the service's overridable
      * seam. Defining `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` in a test would
      * be process-wide and cannot be unset, so it would leak into every later
      * test of a non-isolated run (root Plugins suite).
      *
      * @return class-string<CaracteristicaColumnDropMigration>
      */
-    private function migrationWithReadThrough(bool $enabled): string
+    private function migrationWithLegacyReadExplicit(bool $explicit): string
     {
-        if ($enabled) {
+        if ($explicit) {
             return get_class(new class () extends CaracteristicaColumnDropMigration {
-                protected static function read_through(): bool
+                protected static function legacy_read_explicitly_enabled(): bool
                 {
                     return true;
                 }
@@ -300,7 +315,7 @@ final class CaracteristicaColumnDropTest extends TestCase
         }
 
         return get_class(new class () extends CaracteristicaColumnDropMigration {
-            protected static function read_through(): bool
+            protected static function legacy_read_explicitly_enabled(): bool
             {
                 return false;
             }
@@ -311,10 +326,10 @@ final class CaracteristicaColumnDropTest extends TestCase
     // SUGGESTION 2 — dead opcional columns (gated cleanup)
     // =====================================================================
 
-    public function test_dead_opcional_drop_refuses_while_the_read_through_flag_is_disabled(): void
+    public function test_dead_opcional_drop_refuses_while_the_legacy_path_is_explicitly_selected(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(false);
+        $migration = $this->migrationWithLegacyReadExplicit(true);
 
         self::assertFalse($migration::dropDeadOpcionalColumns($db));
         self::assertSame([], $db->execStatements, 'a refused gate must change no schema');
@@ -322,10 +337,10 @@ final class CaracteristicaColumnDropTest extends TestCase
         self::assertContains('en_tarifa', $db->schema['catalogo_opcionales']);
     }
 
-    public function test_dead_opcional_drop_removes_the_unused_catalogo_opcionales_flags_once_enabled(): void
+    public function test_dead_opcional_drop_removes_the_unused_catalogo_opcionales_flags_by_default(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         self::assertTrue($migration::dropDeadOpcionalColumns($db));
 
@@ -340,7 +355,7 @@ final class CaracteristicaColumnDropTest extends TestCase
     public function test_dead_opcional_drop_never_touches_the_per_lista_price_flag(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropDeadOpcionalColumns($db);
 
@@ -352,7 +367,7 @@ final class CaracteristicaColumnDropTest extends TestCase
     public function test_dead_opcional_drop_is_idempotent(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $migration::dropDeadOpcionalColumns($db);
         $before = count($db->execStatements);
@@ -399,7 +414,7 @@ final class CaracteristicaColumnDropTest extends TestCase
             'catalogo_caracteristica_familia' => ['codtarifa', 'codfamilia', 'id_caracteristica', 'id_valor', 'valor', 'custom'],
             'catalogo_caracteristica_global' => ['codtarifa', 'id_caracteristica', 'id_valor', 'valor', 'custom'],
         ]);
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         CaracteristicaColumnDropMigration::dropD12OpcionalColumns($db);
         $migration::dropLegacyArticleFamilyColumns($db);
@@ -417,30 +432,33 @@ final class CaracteristicaColumnDropTest extends TestCase
     // WU-7 7.3 — closed-loop operator entry point
     // =====================================================================
 
-    public function test_post_soak_entry_point_refuses_while_the_read_through_flag_is_off(): void
+    public function test_post_soak_entry_point_refuses_while_the_legacy_path_is_explicitly_selected(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(false);
+        $migration = $this->migrationWithLegacyReadExplicit(true);
 
         $report = $migration::runPostSoak($db, true);
 
         self::assertSame('refused', $report['status']);
-        self::assertFalse($report['read_through'], 'the soak gate is the first precondition');
+        self::assertTrue(
+            $report['legacy_read_explicitly_enabled'],
+            'the explicit opt-out is the first precondition'
+        );
         self::assertSame([], $report['steps'], 'a refused gate must run no step');
         self::assertSame([], $db->execStatements, 'a refused gate must change no schema');
-        self::assertStringContainsString('read-through', $report['reason']);
+        self::assertStringContainsString('legacy', $report['reason']);
         self::assertStringContainsString('FS_CATALOGO_CARACTERISTICAS_READ_THROUGH', $report['reason']);
     }
 
     public function test_post_soak_entry_point_refuses_without_the_dev17_attestation(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $report = $migration::runPostSoak($db, false);
 
         self::assertSame('refused', $report['status']);
-        self::assertTrue($report['read_through']);
+        self::assertFalse($report['legacy_read_explicitly_enabled']);
         self::assertFalse($report['dev17_membership_filters_rewritten']);
         self::assertSame([], $report['steps'], 'clause 2 must not run before the DEV-17 rewrite is attested');
         self::assertSame([], $db->execStatements, 'the DEV-17 guard refuses the whole loop, not just clause 2');
@@ -455,7 +473,7 @@ final class CaracteristicaColumnDropTest extends TestCase
     public function test_post_soak_entry_point_runs_the_three_clauses_in_the_declared_order(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $report = $migration::runPostSoak($db, true);
 
@@ -492,7 +510,7 @@ final class CaracteristicaColumnDropTest extends TestCase
     public function test_post_soak_entry_point_is_idempotent(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $first = $migration::runPostSoak($db, true);
         $before = count($db->execStatements);
@@ -509,7 +527,7 @@ final class CaracteristicaColumnDropTest extends TestCase
     public function test_post_soak_entry_point_reports_the_schema_result_introspectively(): void
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $expectedPending = [];
         foreach (CaracteristicaColumnDropMigration::D12_TABLES as $table) {
@@ -545,7 +563,7 @@ final class CaracteristicaColumnDropTest extends TestCase
     {
         $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
         $db->execResult = false;
-        $migration = $this->migrationWithReadThrough(true);
+        $migration = $this->migrationWithLegacyReadExplicit(false);
 
         $report = $migration::runPostSoak($db, true);
 

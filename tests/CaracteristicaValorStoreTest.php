@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace Tests\CatalogoCore;
 
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -176,19 +178,57 @@ final class CaracteristicaValorStoreTest extends TestCase
     }
 
     // =====================================================================
-    // Read-through flag helper
+    // Read-through flag helper — the feature path is the DEFAULT
     // =====================================================================
 
-    public function test_read_through_defaults_to_false_and_reads_the_constant(): void
+    public function test_read_through_defaults_to_the_feature_path_when_the_constant_is_undefined(): void
     {
         $config = \FSFramework\Plugins\catalogo_core\Services\CaracteristicaConfig::class;
 
         $this->assertSame('FS_CATALOGO_CARACTERISTICAS_READ_THROUGH', $config::READ_THROUGH_FLAG);
 
         if (defined($config::READ_THROUGH_FLAG)) {
-            $this->assertSame((bool) constant($config::READ_THROUGH_FLAG), $config::read_through());
+            // An explicit value: only FALSE opts out to the legacy path.
+            $legacy = constant($config::READ_THROUGH_FLAG) === false;
+            $this->assertSame($legacy, $config::legacy_read_explicitly_enabled());
+            $this->assertSame(!$legacy, $config::read_through());
         } else {
-            $this->assertFalse($config::read_through(), 'undefined constant resolves to FALSE');
+            $this->assertTrue($config::read_through(), 'an undefined constant selects the feature path');
+            $this->assertFalse(
+                $config::legacy_read_explicitly_enabled(),
+                'an undefined constant is not an explicit opt-out'
+            );
         }
+    }
+
+    /**
+     * Defining the constant is process-wide and cannot be unset, so the explicit
+     * branches run in their own process and never leak into the root Plugins suite.
+     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function test_an_explicit_true_constant_keeps_the_feature_path(): void
+    {
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaConfig.php';
+        define('FS_CATALOGO_CARACTERISTICAS_READ_THROUGH', true);
+        $config = \FSFramework\Plugins\catalogo_core\Services\CaracteristicaConfig::class;
+
+        $this->assertTrue($config::read_through(), 'an explicit TRUE keeps the feature path');
+        $this->assertFalse($config::legacy_read_explicitly_enabled(), 'an explicit TRUE is not an opt-out');
+    }
+
+    /**
+     * The emergency opt-out: only an explicit FALSE selects the legacy path.
+     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function test_an_explicit_false_constant_opts_out_to_the_legacy_path(): void
+    {
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaConfig.php';
+        define('FS_CATALOGO_CARACTERISTICAS_READ_THROUGH', false);
+        $config = \FSFramework\Plugins\catalogo_core\Services\CaracteristicaConfig::class;
+
+        $this->assertFalse($config::read_through(), 'an explicit FALSE selects the legacy path');
+        $this->assertTrue($config::legacy_read_explicitly_enabled(), 'an explicit FALSE is the opt-out');
     }
 }

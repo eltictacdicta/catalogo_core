@@ -24,7 +24,9 @@ declare(strict_types=1);
  *
  * Before `--apply`:
  *   1. keep a pre-drop dump (operator-level safety net; not automated);
- *   2. enable `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` and let the soak run;
+ *   2. confirm the catalog is on the feature path. It is the DEFAULT: leave
+ *      `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` undefined (or TRUE). Defining
+ *      it as FALSE is the emergency legacy opt-out and refuses this drop;
  *   3. rewrite the DEV-17 legacy catalog membership filters to the feature
  *      tables — clause 2 drops the columns those filters read, so running it
  *      first leaves the membership queries invalid. `--dev17-rewritten` is the
@@ -68,7 +70,13 @@ try {
 }
 
 $flagName = CaracteristicaConfig::READ_THROUGH_FLAG;
-printf("read-through flag (%s): %s\n", $flagName, CaracteristicaConfig::read_through() ? 'ON' : 'OFF');
+printf(
+    "read path (%s): %s\n",
+    $flagName,
+    CaracteristicaConfig::legacy_read_explicitly_enabled()
+        ? 'LEGACY (explicit opt-out)'
+        : 'FEATURE (default; feature reads, legacy only on an explicit opt-out)'
+);
 printf("DEV-17 attestation (--dev17-rewritten): %s\n", $dev17Attested ? 'given' : 'not given');
 printf("gated columns still present: %d\n", count($pending));
 foreach ($pending as $column) {

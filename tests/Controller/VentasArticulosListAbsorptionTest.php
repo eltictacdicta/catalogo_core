@@ -63,6 +63,12 @@ final class VentasArticulosListAbsorptionTest extends TestCase
     public $trackedArticulo;
     public bool $csrfValid = true;
     public bool $guardAllowed = true;
+    /**
+     * The trait's read-path seam. This fixture pins the LEGACY path so the
+     * ALC-02 assertions exercise the batch-map getters; the feature path is the
+     * production default and is covered by CaracteristicaConfig/ColumnDrop tests.
+     */
+    public bool $readThrough = false;
     public bool $useRealGate = false;
     public int $guardCalls = 0;
     public string $guardCodtarifa = '';
@@ -126,6 +132,7 @@ final class VentasArticulosListAbsorptionTest extends TestCase
         $this->batchCodtarifa = '';
         $this->csrfValid = true;
         $this->guardAllowed = true;
+        $this->readThrough = false;
         $this->useRealGate = false;
         $this->guardCalls = 0;
         $this->guardCodtarifa = '';
@@ -325,6 +332,11 @@ final class VentasArticulosListAbsorptionTest extends TestCase
                 $this->outer->articuloFactoryCalls++;
 
                 return $this->outer->trackedArticulo;
+            }
+
+            protected function caracteristica_read_through(): bool
+            {
+                return $this->outer->readThrough;
             }
 
             protected function puedeCrearArticulo(string $referencia, string $codtarifa): bool

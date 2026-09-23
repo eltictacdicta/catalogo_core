@@ -16,14 +16,42 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  * Single place that resolves the read-through switch (CAR-14).
  *
  * The literal constant name appears only here; every consumer calls
- * `read_through()`. Defaults to FALSE when the constant is undefined.
+ * `read_through()`.
+ *
+ * **The feature path is the DEFAULT.** Production must need no flag at all:
+ * the legacy boolean columns are only read when the opt-out constant is
+ * defined and explicitly FALSE. That opt-out is an emergency rollback switch,
+ * not a production requirement — with it unset (or TRUE) the resolver-backed
+ * feature tables are authoritative.
+ *
+ * This is required for the gated column drop (CAR-15 clause 2): once the
+ * legacy columns are dropped, an undefined constant must still select the
+ * feature path, or the catalog would read columns that no longer exist.
  */
 final class CaracteristicaConfig
 {
     public const READ_THROUGH_FLAG = 'FS_CATALOGO_CARACTERISTICAS_READ_THROUGH';
 
+    /**
+     * TRUE selects the feature path (the resolver + the feature tables).
+     *
+     * An undefined constant resolves to the feature path. Only an explicit
+     * FALSE opts out to the legacy columns.
+     */
     public static function read_through(): bool
     {
-        return defined(self::READ_THROUGH_FLAG) && (bool) constant(self::READ_THROUGH_FLAG);
+        return !self::legacy_read_explicitly_enabled();
+    }
+
+    /**
+     * TRUE only when the emergency opt-out is defined and explicitly FALSE.
+     *
+     * Undefined (the production default) and an explicit TRUE both select the
+     * feature path. The drop gate uses this to refuse while the legacy path was
+     * deliberately selected.
+     */
+    public static function legacy_read_explicitly_enabled(): bool
+    {
+        return defined(self::READ_THROUGH_FLAG) && constant(self::READ_THROUGH_FLAG) === false;
     }
 }
