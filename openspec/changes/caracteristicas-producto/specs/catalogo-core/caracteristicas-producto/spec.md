@@ -496,8 +496,10 @@ pre-change data set exercised by the parity fixture.
 
 The consumers that still have a legacy visibility surface (the article list
 `ALC-02`, export/import and `tarif_catalogo_view`) MUST read visibility through the
-resolver when the read-through flag is enabled, and through the legacy columns when
-it is disabled (default).
+resolver by default: `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` selects the feature
+path whenever it is undefined or explicitly `TRUE`. The legacy columns are read only
+when the emergency opt-out is explicitly selected — the constant defined as `FALSE`
+(`CaracteristicaConfig::legacy_read_explicitly_enabled()`).
 
 The remaining consumers are **feature-backed in both flag states and MUST NOT be
 folded into that legacy/resolver branch**: the D12 opcional indicator
@@ -512,17 +514,17 @@ toggle, which writes a feature value in both states.
 During the soak window the legacy columns MUST keep being written (dual-write) so
 both paths stay consistent, and the two paths MUST agree for the same database state.
 
-#### Scenario: Flag off keeps legacy behavior
+#### Scenario: Legacy opt-out keeps legacy behavior
 
-- GIVEN the read-through flag disabled and legacy columns populated
+- GIVEN the emergency legacy opt-out explicitly selected and legacy columns populated
 - WHEN the list and export consumers run
 - THEN each returns exactly the legacy-driven result
 - AND the D12 opcional indicator and the detail tab still read the feature-backed values
 - Test: `plugins/catalogo_core/tests/CaracteristicaReadThroughTest.php`
 
-#### Scenario: Flag on switches to the resolver
+#### Scenario: Feature path (the default) switches to the resolver
 
-- GIVEN the read-through flag enabled and backfilled feature values
+- GIVEN the feature path selected — the default, with the constant undefined or `TRUE` — and backfilled feature values
 - WHEN the list and export consumers run
 - THEN each returns the resolver-driven result
 - Test: `plugins/catalogo_core/tests/CaracteristicaReadThroughTest.php`
@@ -560,8 +562,8 @@ operator-level restore path):
 2. **Legacy article/family drop (post-soak, gated — STAGED for a later release).**
    `en_catalogo`/`en_tarifa` MUST be dropped from `tarif_articulo_precios`,
    `tarif_tarifa_articulo`, `tarif_tarifa_familia` and `tarif_familia_ext` (the
-   latter when it carries them) **only after** the read-through flag has been
-   enabled and verified stable, and after the DEV-17 membership-filter rewrite
+   latter when it carries them) **only after** the feature path (the default) has
+   been soaked and verified stable, and after the DEV-17 membership-filter rewrite
    (design §8.4/§8.5). It is **not** delivered in the clause-1 release: it keeps
    its soak prerequisite and stays the operator path until a later release
    auto-wires it exactly as clause 1 is now.
@@ -570,10 +572,10 @@ Both drops MUST be idempotent and MUST NOT run before their gate.
 
 #### Scenario: Post-soak drop is gated
 
-- GIVEN the read-through flag disabled
+- GIVEN the emergency legacy opt-out explicitly selected
 - WHEN the legacy article/family drop migration runs
 - THEN it refuses to run and changes no schema
-- AND once the flag is enabled and verified, running it twice leaves the columns dropped
+- AND once the feature path is selected (the default) and verified stable, running it twice leaves the columns dropped
 - Test: `plugins/catalogo_core/tests/CaracteristicaColumnDropTest.php`
 
 #### Scenario: D12 drop is gated on parity, not on soak
