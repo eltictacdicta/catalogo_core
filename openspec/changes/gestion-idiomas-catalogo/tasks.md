@@ -380,15 +380,32 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 
 ### Slice 5 — `tarifario` consumer migration
 
-- [ ] 5.1 **RED** — Author `plugins/tarifario/tests/Model/TarifGrupoArticuloIdiomaTest.php` with the "group-article reads use the configured default" scenario. `[R-TAR-HOOK-013; D-10]`
-- [ ] 5.2 **GREEN** — In `plugins/tarifario/model/tarif_grupo_articulo.php` add the join + `COALESCE` at `:150` and make `:401-405` run `LOWER(...) LIKE` over the resolved description value. `[R-TAR-HOOK-013; D-10]`
-- [ ] 5.3 **RED** — Author `plugins/tarifario/tests/Controller/TarifHistorialPreciosIdiomaTest.php` with the "price-history export uses the configured default" scenario. `[R-TAR-HOOK-013; D-10]`
-- [ ] 5.4 **GREEN** — In `plugins/tarifario/controller/tarif_historial_precios.php:366` resolve through the language API with the configured default; in `controller/tarif_roles.php:718` replace `$a->descripcion` with the language API; in `controller/tarif_actualizar_precios.php:228` add the join + `COALESCE`. `[R-TAR-HOOK-013; D-10]`
-- [ ] 5.5 **RED** — Author `plugins/tarifario/tests/Controller/TarifControllerLanguageCallsTest.php`: a grep gate asserting neither `descripcion($this->codidioma, 50)` nor `get_descripcion($this->codidioma)` remains in `plugins/tarifario/extras/tarif_controller.php`, plus a load assertion that `tarif_catalogo_view`, `tarif_historial_precios`, `tarif_roles` and `tarif_actualizar_precios` instantiate without a fatal. `[R-TAR-HOOK-013, GDI-10 defect a]`
-- [ ] 5.6 **GREEN** — In `plugins/tarifario/extras/tarif_controller.php` change `:240` to `$art->descripcion_idioma($this->codidioma, 50)` and `:243` to `$art->get_descripcion_idioma($this->codidioma)` (or remove the dead method without breaking the four subclasses); change the `:104` resolution to `get_effective_default_code()`. `[R-TAR-HOOK-013, GDI-10 defect a; D-02, D-10]`
-- [ ] 5.7 **RED → GREEN** — Author `plugins/tarifario/tests/Integration/TarifIdiomaLegacyAliasTest.php`: `tarif_idioma` and `tarif_descripcion` resolve and extend `catalogo_idioma` / `articulo_descripcion`. `[R-TAR-HOOK-013]`
-- [ ] 5.8 **VERIFY** — "Already-correct readers are unchanged" (`test scope: plugin-suite`): `git diff` is empty for `plugins/tarifario/Services/ExcelRowUpdater.php:234-290`, `Services/ArticuloListActionHandler.php`, `controller/tarif_catalogo_view.php`, `controller/tarif_configurador_opcionales.php` and `model/tarif_articulo.php:234-329` (`search_tarifario`). `[R-TAR-HOOK-013; D-10]`
-- [ ] 5.9 **VERIFY** — `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml` green, then `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root) green. `[R-TAR-HOOK-013]`
+- [x] 5.1 **RED** — Author `plugins/tarifario/tests/Model/TarifGrupoArticuloIdiomaTest.php` with the "group-article reads use the configured default" scenario. `[R-TAR-HOOK-013; D-10]`
+- [x] 5.2 **GREEN** — In `plugins/tarifario/model/tarif_grupo_articulo.php` add the join + `COALESCE` at `:150` and make `:401-405` run `LOWER(...) LIKE` over the resolved description value. `[R-TAR-HOOK-013; D-10]`
+- [x] 5.3 **RED** — Author `plugins/tarifario/tests/Controller/TarifHistorialPreciosIdiomaTest.php` with the "price-history export uses the configured default" scenario. `[R-TAR-HOOK-013; D-10]`
+- [x] 5.4 **GREEN** — In `plugins/tarifario/controller/tarif_historial_precios.php:366` resolve through the language API with the configured default; in `controller/tarif_roles.php:718` replace `$a->descripcion` with the language API; in `controller/tarif_actualizar_precios.php:228` add the join + `COALESCE`. `[R-TAR-HOOK-013; D-10]`
+- [x] 5.5 **RED** — Author `plugins/tarifario/tests/Controller/TarifControllerLanguageCallsTest.php`: a grep gate asserting neither `descripcion($this->codidioma, 50)` nor `get_descripcion($this->codidioma)` remains in `plugins/tarifario/extras/tarif_controller.php`, plus a load assertion that `tarif_catalogo_view`, `tarif_historial_precios`, `tarif_roles` and `tarif_actualizar_precios` instantiate without a fatal. `[R-TAR-HOOK-013, GDI-10 defect a]`
+- [x] 5.6 **GREEN** — In `plugins/tarifario/extras/tarif_controller.php` change `:240` to `$art->descripcion_idioma($this->codidioma, 50)` and `:243` to `$art->get_descripcion_idioma($this->codidioma)` (or remove the dead method without breaking the four subclasses); change the `:104` resolution to `get_effective_default_code()`. `[R-TAR-HOOK-013, GDI-10 defect a; D-02, D-10]`
+- [x] 5.7 **RED → GREEN** — Author `plugins/tarifario/tests/Integration/TarifIdiomaLegacyAliasTest.php`: `tarif_idioma` and `tarif_descripcion` resolve and extend `catalogo_idioma` / `articulo_descripcion`. `[R-TAR-HOOK-013]`
+- [x] 5.8 **VERIFY** — "Already-correct readers are unchanged" (`test scope: plugin-suite`): `git diff` is empty for `plugins/tarifario/Services/ExcelRowUpdater.php:234-290`, `Services/ArticuloListActionHandler.php`, `controller/tarif_catalogo_view.php`, `controller/tarif_configurador_opcionales.php` and `model/tarif_articulo.php:234-329` (`search_tarifario`). `[R-TAR-HOOK-013; D-10]`
+- [x] 5.9 **VERIFY** — `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml` green, then `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root) green. `[R-TAR-HOOK-013]`
+
+> **Annotated (slice 5, applied).** All nine tasks are delivered. The `tarif_roles.php:718`
+> reader is resolved at the **model boundary** (task 5.2's join + `COALESCE`), not by a
+> direct call at `:718`: `$a` is a `tarif_grupo_articulo` (not an `articulo`), so it has no
+> language accessor, and a per-row `tarif_articulo` lookup would be an N+1. `tarif_roles.php`
+> is therefore byte-unchanged and the scenario is covered by 5.1/5.2 (see the coverage
+> matrix row for `R-TAR-HOOK-013` "Group-article reads use the configured default").
+> `model/tarif_articulo.php` is **not** edited either: design.md's File-by-File map marks it
+> "Verify only | no edit (D-10)", the delta's "Already-correct readers are unchanged"
+> scenario names its description reads as unchanged, and task 5.8 scopes the empty-diff
+> requirement to `:234-329` (`search_tarifario`). Its `articulo_to_array()` base copy
+> (`:196`) and its import-create base write (`:669`, the D-13 legacy-shim seeding path) are
+> therefore left intact. `tarif_catalogo_view.php`'s explicit `es`/`en` literals are also
+> left intact: the delta lists that controller as an already-correct reader to verify
+> unchanged, and those literals are its fixed two-language export/import shape, not a
+> default-resolution bug. See `apply-progress.md` → "Slice-5 task status" and deviations 30–32.
+> `[R-TAR-HOOK-013; D-10]`
 
 ---
 

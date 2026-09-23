@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through) + slice 4b-mapping complete (server `field_options` in the mapping dropdown) + slice 4c complete (4c.1–4c.4 + 4c.6) + slice 4c5 complete (trait `codidioma` resolution; the previously deferred 4c.5)** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through) + slice 4b-mapping complete (server `field_options` in the mapping dropdown) + slice 4c complete (4c.1–4c.4 + 4c.6) + slice 4c5 complete (trait `codidioma` resolution; the previously deferred 4c.5) + slice 5 complete (the `tarifario` consumer migration, the last slice)** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
-| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. **Slice 4b used the pre-declared `4b₁`/`4b₂` boundary** — the whole slice measured 853 authored lines (> 800), so the export unit (`4b₁`, 144) and the import unit (`4b₂`, 709) landed as two review units, each ≤ 800. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). **No cut for slice 4c** — 511 authored lines ≤ 800, landed whole as one review unit. |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b, 4b-wiring, 4b-mapping, 4c and 4c5 complete and green; every task in `tasks.md` for the delivered slices is `[x]`, including `4c.5`, which the earlier launch prompt deferred and the `slice-4c5` follow-up has now closed (annotated in `tasks.md`). Slice `5` remains for a later batch |
+| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. **Slice 4b used the pre-declared `4b₁`/`4b₂` boundary** — the whole slice measured 853 authored lines (> 800), so the export unit (`4b₁`, 144) and the import unit (`4b₂`, 709) landed as two review units, each ≤ 800. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). **No cut for slice 4c** — 511 authored lines ≤ 800, landed whole as one review unit. **No cut for slice 4c5** — 118 authored lines ≤ 800, landed whole. **No cut for slice 5** — 491 authored lines ≤ 800, landed whole as four review units (one per work unit). |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b, 4b-wiring, 4b-mapping, 4c, 4c5 and **5** complete and green; every task in `tasks.md` is `[x]` (including `4c.5`, closed by the `slice-4c5` follow-up, and the nine slice-5 tasks). **All apply slices are delivered; the change is ready for `verify`.** |
 
 ---
 
@@ -509,6 +509,58 @@ actual behaviour change rather than only on the method's existence.
 
 ---
 
+## Slice-5 task status — `tarifario` consumer migration
+
+Delivered whole (tasks 5.1–5.9 all `[x]` in `tasks.md`). Every `tarifario` reader
+that had no language context now resolves the configured default through the
+language API or a joined `COALESCE` (R-TAR-HOOK-013 / GDI-10), the two dead calls
+in the base controller are corrected, and the four `tarif_controller` subclasses
+still load and instantiate. **All four code commits live in the `plugins/tarifario`
+repository** (separate from `catalogo_core` and the repo root); the SDD artifacts
+stay under `plugins/catalogo_core/openspec/`.
+
+| Task | Tag(s) | State | Evidence |
+|---|---|---|---|
+| 5.1 RED — `tests/Model/TarifGrupoArticuloIdiomaTest.php` (2 R-TAR-HOOK-013 scenarios) | `[R-TAR-HOOK-013; D-10]` | [x] | 2 tests; RED first (2 failures: no description join, the bare base column still selected) |
+| 5.2 GREEN — `tarif_grupo_articulo.php`: `default_codidioma()` seam + join + `COALESCE` in `get_articulos_grupo()` and `buscar_articulos_disponibles()` | `[R-TAR-HOOK-013; D-10]` | [x] | `model/tarif_grupo_articulo.php`; the `LOWER(...) LIKE` now runs over `COALESCE(d.descripcion, a.descripcion)` |
+| 5.3 RED — `tests/Controller/TarifHistorialPreciosIdiomaTest.php` (price-history export scenario) | `[R-TAR-HOOK-013; D-10]` | [x] | 2 tests; RED first (1 error: `get_descripcion_articulo()` undefined, 1 source-gate failure) |
+| 5.4 GREEN — `tarif_historial_precios.php` (`get_descripcion_articulo()` through the language API); `tarif_actualizar_precios.php` (`default_codidioma()` seam + join + `COALESCE`); `tarif_roles.php` verified | `[R-TAR-HOOK-013; D-10]` | [x] | the export resolves through `get_descripcion_idioma($this->codidioma)`; the preview joins the configured default |
+| 5.5 RED — `tests/Controller/TarifControllerLanguageCallsTest.php` (grep gate + load/instantiate assertion) | `[R-TAR-HOOK-013, GDI-10 defect a]` | [x] | 3 tests; RED first (2 source-gate failures: the dead calls present, `get_effective_default_code()` absent) |
+| 5.6 GREEN — `extras/tarif_controller.php`: `:240`/`:243` corrected to the language API; the `:104` resolution now `get_effective_default_code()` | `[R-TAR-HOOK-013, GDI-10 defect a; D-02, D-10]` | [x] | `tarif_buscar_articulo()` uses `descripcion_idioma($this->codidioma, 50)` / `get_descripcion_idioma($this->codidioma)`; the `'es'` seed is gone |
+| 5.7 RED→GREEN — `tests/Integration/TarifIdiomaLegacyAliasTest.php` | `[R-TAR-HOOK-013]` | [x] | 2 tests; characterization guard (green before and after — the aliases already resolved; the test freezes it) |
+| 5.8 VERIFY — already-correct readers unchanged | `[R-TAR-HOOK-013; D-10]` | [x] | `git diff --quiet` is empty for `Services/ExcelRowUpdater.php`, `Services/ArticuloListActionHandler.php`, `controller/tarif_catalogo_view.php`, `controller/tarif_configurador_opcionales.php` **and** `model/tarif_articulo.php` (incl. `:234-329` `search_tarifario`) |
+| 5.9 VERIFY — suites green | `[R-TAR-HOOK-013]` | [x] | `-c plugins/tarifario/phpunit.xml` → **266 tests, 1093 assertions, 2 skipped, OK**; `--testsuite Plugins` (root) → **2155 tests, 7 failures, all pre-existing `OidcProvider`** |
+
+### Non-tautology proof (RED first)
+
+The nine cases were written first and failed **1 error + 5 failures** against the
+pre-change bytes (`Tests: 9, Assertions: 19, Errors: 1, Failures: 5`): the model
+scenarios saw no description join and the bare base column; `get_descripcion_articulo()`
+was undefined; the base controller still carried both dead calls and the `'es'` seed.
+The two legacy-alias cases and the load/instantiate case were green before and after
+— deliberate characterization/regression guards, not counted as RED. After the change:
+**9 tests, 35 assertions, OK**.
+
+The three grep/source gates have teeth: they fail on the pre-change source and would
+fail again if a dead call or the `'es'` seed returned. The `TarifHistorialPreciosIdiomaTest`
+behavioural case runs the real `get_descripcion_articulo()` body through a stub article
+that answers per language, so a base-column read or a hard-coded `es` fails it.
+
+### Files
+
+| File | Action | What Was Done |
+|---|---|---|
+| `model/tarif_grupo_articulo.php` | Modified | `require_once` of `catalogo_idioma`; `default_codidioma()` seam; description join + `COALESCE` in `get_articulos_grupo()` and `buscar_articulos_disponibles()` (+25 / −3) |
+| `controller/tarif_historial_precios.php` | Modified | `get_descripcion_articulo()` through the language API; `export_excel()` uses it (+24 / −2) |
+| `controller/tarif_actualizar_precios.php` | Modified | `default_codidioma()` seam; description join + `COALESCE` in `load_preview_articulos()` (+18 / −1) |
+| `extras/tarif_controller.php` | Modified | Both dead calls corrected to the language API; `get_effective_default_code()` replaces the `'es'` seed + `get_default()` fallback (+4 / −7) |
+| `tests/Model/TarifGrupoArticuloIdiomaTest.php` | Created | 2 R-TAR-HOOK-013 group-article SQL scenarios (+132) |
+| `tests/Controller/TarifHistorialPreciosIdiomaTest.php` | Created | 2 price-history export scenarios (+116) |
+| `tests/Controller/TarifControllerLanguageCallsTest.php` | Created | grep gate + total-resolution gate + load/instantiate assertion (+100) |
+| `tests/Integration/TarifIdiomaLegacyAliasTest.php` | Created | legacy-alias characterization guard (+62) |
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -535,6 +587,7 @@ actual behaviour change rather than only on the method's existence.
 | 4c.1–4c.4 + 4c.6 (slice-4c) | `--filter ConsumidoresIdiomaDefaultTest` → **8 tests, 9 assertions, 3 errors + 3 failures** (`Class "articulo" not found` because the real `articulo::search()` ran before the seam existed; `buscarSugerencias()` undefined; both SQL readers emitted `SELECT ... a.descripcion ...` with no description join) | same filter → **8 tests, 48 assertions, OK** | Two testability seams extracted (`articulo_model()` on `CatalogoApiService` and `VentasOpcional`, `default_codidioma()` on the two tarif models) plus the `buscarSugerencias()` extraction out of the `exit`-ing response; re-ran green |
 
 | 4c.5 (slice-4c5) | `--filter TarifarioOpcionalStateTraitTest` → **23 tests, 30 assertions, 3 errors** (`Call to undefined method class@anonymous::resolve_codidioma()`; the 20 pre-existing cases green) | same filter → **23 tests, 33 assertions, OK** | None — the `resolve_codidioma()` extraction is behavior-preserving; the 20 pre-existing trait cases (transaction/price) stayed green throughout |
+| 5.1–5.7 (slice 5) | focused run over the four new files → **9 tests, 19 assertions, 1 error + 5 failures** (`get_descripcion_articulo()` undefined; no description join and the bare base column in both model readers; the dead calls and the `'es'` seed still present). The two alias cases + the load/instantiate case were green (characterization guards). | same focused run → **9 tests, 35 assertions, OK**; full `-c plugins/tarifario/phpunit.xml` → **266 tests, 1093 assertions, 2 skipped, OK** | None — the readers are isolated substitutions; the only extraction was `get_descripcion_articulo()` (the export's description resolution), made so the path is testable without the spreadsheet writer |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -676,6 +729,42 @@ No task was completed without a test-first step. No silent fallback to Standard 
 
 ---
 
+## Work Unit Evidence (slice 5 — `tarifario`, all four commits in the `plugins/tarifario` repo)
+
+### Work unit `5-group` — group-article readers resolve the configured default (R-TAR-HOOK-013)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml plugins/tarifario/tests/Model/TarifGrupoArticuloIdiomaTest.php` → **OK (2 tests, 12 assertions)**; RED first was **2 failures** (no description join; the bare base column still selected) |
+| **Runtime harness command/scenario and exact result** | `N/A` — raw-SQL model readers with no routing/HTTP boundary. The emitted statement is exercised DB-free through a recording engine that captures the SQL and returns no row; a real-DB composed-SQL smoke remains for `verify`. |
+| **Rollback boundary** | Revert commit `74e58f2`: `model/tarif_grupo_articulo.php` + `tests/Model/TarifGrupoArticuloIdiomaTest.php`. The `default_codidioma()` seam is additive and the readers fall back to the base column; nothing else depends on it. |
+
+### Work unit `5-price` — price readers resolve the configured default (R-TAR-HOOK-013)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml plugins/tarifario/tests/Controller/TarifHistorialPreciosIdiomaTest.php` → **OK (2 tests, 4 assertions)**; RED first was **1 error + 1 failure** (`get_descripcion_articulo()` undefined; the source still read `$articulo->descripcion`) |
+| **Runtime harness command/scenario and exact result** | `N/A` — the export's description resolution is exercised DB-free by running the real `get_descripcion_articulo()` body through a stub article that answers per language (the spreadsheet writer and the `exit` are not on the tested path); a real-DB export smoke remains for `verify`. |
+| **Rollback boundary** | Revert commit `7b0ca9a`: `controller/tarif_historial_precios.php`, `controller/tarif_actualizar_precios.php` + `tests/Controller/TarifHistorialPreciosIdiomaTest.php`. Each reader is an isolated substitution; reverting restores the base-column reads and removes the `default_codidioma()` seam. |
+
+### Work unit `5-controller` — dead calls corrected + total default (R-TAR-HOOK-013, defect a)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml plugins/tarifario/tests/Controller/TarifControllerLanguageCallsTest.php` → **OK (3 tests, 12 assertions)**; RED first was **2 failures** (both dead calls present; `get_effective_default_code()` absent and the `'es'` seed present) |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml` → **OK — 266 tests, 1093 assertions, 2 skipped** (baseline before slice 5: 257 tests, 1058 assertions, 2 skipped; +9 tests, no regressions). The load assertion requires the four real controller files and instantiates each with `newInstanceWithoutConstructor()`, so a fatal in the corrected class hierarchy would fail it. A real-browser dispatch of `tarif_buscar_articulo()` (dead in-repo) is not required by any scenario. |
+| **Rollback boundary** | Revert commit `d6e837f`: `extras/tarif_controller.php` + `tests/Controller/TarifControllerLanguageCallsTest.php`. Reverting restores the dead calls and the `'es'` seed; the four subclasses keep loading either way (the buggy method is dead in-repo). |
+
+### Work unit `5-aliases` — legacy language aliases stay loadable (R-TAR-HOOK-013)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml plugins/tarifario/tests/Integration/TarifIdiomaLegacyAliasTest.php` → **OK (2 tests, 7 assertions)**; **green before and after** — a characterization guard (the aliases already extended the catalogo_core models), not a RED case |
+| **Runtime harness command/scenario and exact result** | `N/A` — a class-hierarchy contract (`class_exists` + `is_subclass_of` + `method_exists`); no routing, HTTP or process boundary. |
+| **Rollback boundary** | Revert commit `b58d40f`: `tests/Integration/TarifIdiomaLegacyAliasTest.php` only. No production file is touched; the guard is the only artifact. |
+
+---
+
 ## Test commands and results (exact)
 
 | Command | Result |
@@ -731,6 +820,13 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4c5) | **OK** — **911 tests, 3973 assertions, 2 warnings, 1 skipped** (baseline before: 908 tests, 3970 assertions; +3 tests, no regressions). |
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4c5) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4c5) | **FAILED (pre-existing, unrelated)** — 2146 tests, 8528 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the full failure output returns **0**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml plugins/tarifario/tests/Model/TarifGrupoArticuloIdiomaTest.php plugins/tarifario/tests/Controller/TarifHistorialPreciosIdiomaTest.php plugins/tarifario/tests/Controller/TarifControllerLanguageCallsTest.php plugins/tarifario/tests/Integration/TarifIdiomaLegacyAliasTest.php` (RED, slice 5) | **RED** — 9 tests, 19 assertions, **1 error + 5 failures** (`get_descripcion_articulo()` undefined; no description join and the bare base column in both model readers; both dead calls and the `'es'` seed still present). The two alias cases + the load/instantiate case were green (characterization guards). |
+| `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml plugins/tarifario/tests/Model/TarifGrupoArticuloIdiomaTest.php plugins/tarifario/tests/Controller/TarifHistorialPreciosIdiomaTest.php plugins/tarifario/tests/Controller/TarifControllerLanguageCallsTest.php plugins/tarifario/tests/Integration/TarifIdiomaLegacyAliasTest.php` (GREEN, slice 5) | **OK — 9 tests, 35 assertions**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml` (after slice 5) | **OK** — **266 tests, 1093 assertions, 2 skipped** (baseline before slice 5: 257 tests, 1058 assertions, 2 skipped; +9 tests, no regressions). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 5) | **OK** — **911 tests, 3973 assertions, 2 warnings, 1 skipped** — identical to the slice-4c5 baseline; no `catalogo_core` file is touched by slice 5. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 5) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 5) | **FAILED (pre-existing, unrelated)** — 2155 tests, 8561 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×2, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a `grep -E "^[0-9]+\) Tests"` over the failure output lists **only** `Tests\OidcProvider\...`. No `catalogo_core` or `tarifario` test failed. |
+| `ddev exec composer phpstan` (after slice 5) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` (`return.type`) error; phpstan paths are `src` and root `tests` only, so no `plugins/tarifario` file is analysed by this config. |
 
 ---
 
@@ -764,6 +860,8 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | Cut used for slice 4c? | **No** — 511 ≤ 800, landed whole as one review unit. The measured size sits above the `tasks.md` 240–330 estimate because the single new test file carries the two GDI-10 scenarios plus the three SQL-emission gates and the two verify gates (392 lines including the licence header, docblocks and the DB-free recording engine). No code, comment, blank line, doc or test was cut or compressed to fit. |
 | Slice 4c5 authored changed lines (additions + deletions) | **118** — `extras/TarifarioOpcionalStateTrait.php` +18/−9, `tests/TarifarioOpcionalStateTraitTest.php` +91 |
 | Cut used for slice 4c5? | **No** — 118 ≤ 800, landed whole as one review unit. No code, comment, blank line, doc or test was cut or compressed to fit. |
+| Slice 5 authored changed lines (additions + deletions) | **491** (`git diff --numstat 20b4053 HEAD` in `plugins/tarifario`: 476 insertions + 15 deletions). Production: `model/tarif_grupo_articulo.php` +25/−3, `controller/tarif_historial_precios.php` +24/−2, `controller/tarif_actualizar_precios.php` +18/−1, `extras/tarif_controller.php` +4/−7. Tests: `tests/Model/TarifGrupoArticuloIdiomaTest.php` +132, `tests/Controller/TarifHistorialPreciosIdiomaTest.php` +116, `tests/Controller/TarifControllerLanguageCallsTest.php` +100, `tests/Integration/TarifIdiomaLegacyAliasTest.php` +62 |
+| Cut used for slice 5? | **No** — 491 ≤ 800 and inside the `tasks.md` 420–560 estimate, landed whole as four review units (one per work unit). No code, comment, blank line, doc or test was cut or compressed to fit. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -847,6 +945,11 @@ gap that slice 4b-wiring reported (deviation 26b) and is one cohesive work unit 
 consumption of the server payload plus its tests, committed together). No `size:exception`
 is requested, and no code, comment, blank line, doc or test was cut or compressed to fit.
 
+**Slice 5 fits.** 491 authored lines ≤ 800 and inside the 420–560 `tasks.md` estimate. The
+four work units landed as four reviewable commits in the `plugins/tarifario` repository
+(`74e58f2`, `7b0ca9a`, `d6e837f`, `b58d40f`), each with its own tests. No `size:exception`
+is requested, and no code, comment, blank line, doc or test was cut or compressed to fit.
+
 ---
 
 
@@ -868,6 +971,15 @@ is requested, and no code, comment, blank line, doc or test was cut or compresse
 | `ed340ef9` | `feat(catalogo_core): offer the server field options in the Excel import mapping dropdown` | 2 | +272 / −10 |
 | `8fd0eb1a` | `feat(catalogo_core): resolve the configured default description in no-context readers` | 5 | +491 / −20 |
 | `1e86a4e6` | `fix(catalogo_core): resolve the opcional trait language through the effective default` | 2 | +109 / −9 |
+| `74e58f2` | `feat(tarifario): resolve the configured default language in the group-article readers` | 2 | +157 / −3 |
+| `7b0ca9a` | `feat(tarifario): resolve the configured default language in the price readers` | 3 | +158 / −3 |
+| `d6e837f` | `fix(tarifario): correct the dead language calls in tarif_controller` | 2 | +104 / −7 |
+| `b58d40f` | `test(tarifario): guard the legacy language aliases stay loadable` | 1 | +62 |
+
+> **Repository note.** The four slice-5 commits live in the **`plugins/tarifario`** git
+> repository (its own repo, `master` branch), not in `catalogo_core` or the repo root. The
+> SDD artifacts stay under `plugins/catalogo_core/openspec/`. No push, no PR, no tag, no
+> release in either repo — local commits only.
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -934,6 +1046,14 @@ and this artifact) is committed separately.
 Slice-4c5 files (commit `1e86a4e6`): `extras/TarifarioOpcionalStateTrait.php`,
 `tests/TarifarioOpcionalStateTraitTest.php`.
 The slice-4c5 SDD bookkeeping (`tasks.md` checkbox 4c.5 + this artifact) is committed separately.
+
+Slice-5 files (**in the `plugins/tarifario` repo**), commit `74e58f2`: `model/tarif_grupo_articulo.php`,
+`tests/Model/TarifGrupoArticuloIdiomaTest.php`. Commit `7b0ca9a`: `controller/tarif_historial_precios.php`,
+`controller/tarif_actualizar_precios.php`, `tests/Controller/TarifHistorialPreciosIdiomaTest.php`.
+Commit `d6e837f`: `extras/tarif_controller.php`, `tests/Controller/TarifControllerLanguageCallsTest.php`.
+Commit `b58d40f`: `tests/Integration/TarifIdiomaLegacyAliasTest.php`.
+The slice-5 SDD bookkeeping (`tasks.md` checkboxes 5.1–5.9 + this artifact) is committed
+separately in `catalogo_core`.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -1170,6 +1290,38 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     three new behavioral cases prove the total resolution. The description accessors
     remain byte-unchanged. See "Slice-4c5 task status".
 
+### Slice-5 deviations (scope interpretations + local decisions, no design change)
+
+30. **`controller/tarif_roles.php:718` is resolved at the model boundary, not by a direct call
+    at `:718`.** Task 5.4 and the design's File-by-File map say "`:718` → language API", but
+    `$a` there is a `tarif_grupo_articulo` hydrated by `tarif_grupo_articulo::get_articulos_grupo()`,
+    **not** an `articulo`: it has no language accessor, and loading a `tarif_articulo` per row to
+    call `get_descripcion_idioma()` would be an N+1. Task 5.2's change makes that reader return
+    `COALESCE(d.descripcion, a.descripcion)` for the configured default, so the value at `:718`
+    *is* the language-API result and the controller is byte-unchanged. The requirement's letter
+    ("resolve descriptions through the language API … instead of reading the raw
+    `articulos.descripcion` column") is satisfied; the coverage matrix maps the group-article
+    scenario to 5.1/5.2 only. `verify` should read `:718` as compliant, not as a missed migration.
+31. **`model/tarif_articulo.php` is NOT edited.** The launch prompt's "Migrate (no-context
+    readers)" list named its `articulo_to_array()` base copy (`:196`) and its import-create base
+    write (`:669`), but the authoritative artifacts say otherwise: design.md's File-by-File map
+    marks the whole file "**Verify only** | no edit (D-10)"; the delta's "Already-correct readers
+    are unchanged" scenario names `model/tarif_articulo.php`'s description reads as unchanged;
+    and task 5.8 scopes the empty-diff requirement to `:234-329` (`search_tarifario`). Editing
+    `:669` would also violate D-13 (the create path keeps seeding the frozen base column, exactly
+    like `VentasArticulos::nuevoArticulo()`), and editing `:196` would change `get()`'s behaviour
+    with no scenario requiring it. The file is byte-unchanged and its description reads stay as
+    the artifacts prescribe. Recorded because the prompt and the artifacts conflict here; the
+    artifacts win per the prompt's own authority rule.
+32. **`controller/tarif_catalogo_view.php`'s explicit `es`/`en` literals are left intact.** The
+    delta lists that controller as an **already-correct reader to verify unchanged** (its
+    description reads already go through `get_descripcion_idioma($this->codidioma)`), and the
+    `es`/`en` literals at `:2153-2154,2983-2986,3548-3549,3828-3829` are its fixed two-language
+    export/import column shape — a per-language mapping, not a default-resolution bug. The
+    design/tasks prescribe no change to them, so none was made; changing them would contradict
+    the "already-correct readers are unchanged" scenario. Recorded so `verify` reads it as a
+    deliberate non-change rather than an oversight.
+
 ---
 
 ## No-drift statements
@@ -1247,6 +1399,15 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   model, schema, view, controller, search, Excel, API, consumer or `tarifario` file was touched.
   The trait's description accessors are byte-unchanged. `tests/Integration/CatalogoCoreHookMarkersTest.php`
   is **unmodified** and green (12 tests). No new Composer dependency was added.
+- **Slice-5 no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty (no
+  delta merged) and the repository-root `openspec/` still has no entry for this change. All four
+  slice-5 commits live in the **`plugins/tarifario`** repo and contain only the explicit paths
+  listed in "Commits created"; the already-correct readers (`Services/ExcelRowUpdater.php`,
+  `Services/ArticuloListActionHandler.php`, `controller/tarif_catalogo_view.php`,
+  `controller/tarif_configurador_opcionales.php`, `model/tarif_articulo.php`) are **byte-unchanged**
+  (`git diff --quiet` is empty). No `catalogo_core` file, schema, view, model or consumer outside
+  `plugins/tarifario` was touched; `tarifario`'s own `openspec/specs/**` is untouched (the
+  `R-TAR-HOOK-013` delta merges only at archive). No new Composer dependency was added.
 
 ---
 
@@ -1290,5 +1451,23 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
    maintainer, as recorded in "Budget measurement and cut decision".
 6. **`size:exception` disposition for slice 4a** (861 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
-7. **Slice 5** (`tarifario` consumer migration) is next after 4c and is the last slice. It depends
-   on 4a + 4b + 4c.
+7. **Slice 5 (`tarifario` consumer migration) is done** — the last slice. Tasks 5.1–5.9 are
+   `[x]`; the four work units are committed in the `plugins/tarifario` repo (`74e58f2`, `7b0ca9a`,
+   `d6e837f`, `b58d40f`). The `tarifario` suite is green (266 tests) and the root Plugins suite
+   carries only the pre-existing `OidcProvider` failures. **All apply slices are delivered; the
+   change is ready for `verify`.**
+
+## Hand-off to `verify`
+
+- Every task in `tasks.md` is `[x]`; the four delta specs are unmerged (archive-time only); the
+  core `openspec/` has no entry.
+- The real-DB / real-browser smokes listed in item 4 above remain for `verify`, plus for slice 5:
+  a **real-DB composed-SQL smoke** of the new `COALESCE(d.descripcion, a.descripcion)` join in
+  `tarif_grupo_articulo::get_articulos_grupo()` / `buscar_articulos_disponibles()` and in
+  `tarif_actualizar_precios::load_preview_articulos()` on MySQL **and** PostgreSQL (the
+  `articulo_descripciones` left join must not multiply rows and must fall back to the base column
+  when the configured default has no row), and a **real-browser export smoke** of
+  `tarif_historial_precios`'s Excel with a configured default different from `es`.
+- `verify` must read deviations 30–32 as deliberate, artifact-backed non-changes: the
+  `tarif_roles.php:718` pass-through (resolved at the model boundary), the untouched
+  `model/tarif_articulo.php`, and `tarif_catalogo_view.php`'s `es`/`en` literals.
