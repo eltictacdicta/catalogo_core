@@ -9,6 +9,9 @@ namespace Tests\CatalogoCore\Services;
 
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PHPUnit\Framework\TestCase;
 
 require_once FS_FOLDER . '/base/fs_model.php';
@@ -27,6 +30,32 @@ require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloExcelImportWiz
  */
 final class ArticuloExcelCaracteristicaTest extends TestCase
 {
+    private const SHEET_NAME = 'Artículos';
+
+    /** @var list<string> */
+    private array $tempFixtures = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (!class_exists(\FSFramework\model\articulo::class, false)) {
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->tempFixtures as $path) {
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+        $this->tempFixtures = [];
+
+        parent::tearDown();
+    }
+
     private function exportService(): ArticuloExcelExportService
     {
         return new class() extends ArticuloExcelExportService {
@@ -195,6 +224,143 @@ final class ArticuloExcelCaracteristicaTest extends TestCase
 
         $mapped = ['referencia' => 'REF-1', 'en_catalogo' => ''];
         $this->assertSame([], $service->persist_feature_values($mapped, 'REF-1', 'T1'), 'an empty feature value is a no-op');
+    }
+
+    /**
+     * Scenario: "Legacy workbook without feature columns imports unchanged".
+     *
+     * End-to-end along the real import path: a legacy workbook carrying exactly
+     * the seven base headers goes through `apply()` with the base-only mapping,
+     * and each row runs the wizard's real per-row workflow (`persist_feature_values()`
+     * then `createArticuloFromRow()` + save). Even with an `importable` definition
+     * registered, the base fields persist exactly as before and the feature store
+     * is never written — a genuine no-op, not a short-circuit on an empty definition
+     * list. Only the store (recording double) and `articulo::save()` are doubled.
+     */
+    public function test_legacy_workbook_without_feature_columns_imports_unchanged(): void
+    {
+        $store = new class () {
+            /** @var list<array<mixed>> */
+            public array $calls = [];
+
+            public function assign_with_dual_write(string $scope, string $codtarifa, array $key, string $codigo, bool $valor): bool
+            {
+                $this->calls[] = [$scope, $codtarifa, $key, $codigo, $valor];
+
+                return true;
+            }
+
+            public function assign_custom(string $scope, string $codtarifa, array $key, string $codigo, string $valor): bool
+            {
+                $this->calls[] = [$scope, $codtarifa, $key, $codigo, $valor];
+
+                return true;
+            }
+        };
+
+        $service = new class ([['codigo' => 'en_catalogo', 'nombre' => 'En Catálogo', 'tipo' => 'bool']], $store) extends ArticuloExcelImportWizardService {
+            private object $probeStore;
+
+            public function __construct(array $importable, object $store)
+            {
+                parent::__construct($importable);
+                $this->probeStore = $store;
+            }
+
+            protected function valor_store()
+            {
+                return $this->probeStore;
+            }
+        };
+
+        $headers = ['Referencia', 'Descripción', 'Precio', 'Cód. Familia', 'Cód. Fabricante', 'Impuesto', 'Bloqueado'];
+        $path = $this->writeLegacyWorkbook($headers, ['REF-1', 'Producto legado', '10,5', 'F1', '', 'IVA21', 'No']);
+
+        $mapping = ArticuloExcelImportWizardService::suggestMapping($headers, []);
+        $this->assertNotContains('en_catalogo', $mapping, 'no legacy header may map to a feature field');
+
+        $baseSaves = [];
+        $rowHook = function (array $mappedRow, int $rowIdx) use ($service, &$baseSaves): void {
+            $referencia = trim((string) ($mappedRow['referencia'] ?? ''));
+            $service->persist_feature_values($mappedRow, $referencia, 'T1');
+
+            $articulo = $this->baseArticleSpy($mappedRow);
+            $articulo->save();
+            $baseSaves[] = $articulo;
+        };
+
+        $result = $service->apply($path, self::SHEET_NAME, $mapping, $rowHook, static function (): void {
+        });
+
+        $this->assertSame(1, $result['processed'], 'the legacy row must reach the row workflow');
+        $this->assertSame(0, $result['skipped']);
+        $this->assertCount(1, $baseSaves, 'the base article must persist through the legacy path');
+        $this->assertSame('REF-1', $baseSaves[0]->referencia);
+        $this->assertSame('Producto legado', $baseSaves[0]->descripcion);
+        $this->assertSame('F1', $baseSaves[0]->codfamilia);
+        $this->assertSame('IVA21', $baseSaves[0]->codimpuesto);
+        $this->assertSame(10.5, $baseSaves[0]->pvp);
+        $this->assertSame([], $store->calls, 'a legacy workbook must write no feature value');
+
+        // Control: the very same service DOES write when a feature column is
+        // mapped, so the empty call log above is a real no-op — not a dead seam.
+        $service->persist_feature_values(['en_catalogo' => '1'], 'REF-1', 'T1');
+        $this->assertNotSame([], $store->calls, 'the store seam must be live: a mapped feature value writes');
+    }
+
+    /**
+     * Writes a one-row workbook for `apply()` and tracks it for tearDown.
+     *
+     * @param list<string> $headers
+     * @param list<string> $row
+     */
+    private function writeLegacyWorkbook(array $headers, array $row): string
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle(self::SHEET_NAME);
+
+        foreach ($headers as $index => $header) {
+            $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . '1', $header);
+        }
+        foreach ($row as $index => $value) {
+            $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . '2', $value);
+        }
+
+        $path = sys_get_temp_dir() . '/catalogo_core_legacy_' . bin2hex(random_bytes(8)) . '.xlsx';
+        (new Xlsx($spreadsheet))->save($path);
+        $this->tempFixtures[] = $path;
+
+        return $path;
+    }
+
+    /**
+     * Base article double: the row still comes from the real
+     * `createArticuloFromRow()` factory and only `save()` is replaced, so the
+     * import path stays DB-free while still counting the base persist.
+     *
+     * @param array<string, string> $mappedRow
+     */
+    private function baseArticleSpy(array $mappedRow): object
+    {
+        return new class (ArticuloExcelImportWizardService::createArticuloFromRow($mappedRow, false, 'IVA21')) extends \FSFramework\model\articulo {
+            public int $saveCalls = 0;
+
+            public function __construct(\FSFramework\model\articulo $source)
+            {
+                // Skip the fs_model DB constructor: only the mapped row matters.
+                foreach (get_object_vars($source) as $property => $value) {
+                    $this->$property = $value;
+                }
+            }
+
+            public function save(): bool
+            {
+                $this->saveCalls++;
+
+                return true;
+            }
+        };
     }
 
     /**
