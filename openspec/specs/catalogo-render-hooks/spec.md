@@ -146,19 +146,40 @@ never persisting. The four base keys and their values MUST remain byte-identical
 
 ### Requirement: Article hook pair registration owned by catalogo_core
 
-`catalogo_core` MUST register `ventas_articulo_tabs_after` and
-`ventas_articulo_tab_pane_after` during the Twig build behind its static
-idempotency guard, resolving templates from `@catalogo_core/Hooks/`. `tarifario`
-MUST register neither article hook after this change.
+`catalogo_core` MUST NOT register `ventas_articulo_tabs_after` or
+`ventas_articulo_tab_pane_after` during the Twig build. It MUST remove the
+`ARTICULO_HOOK_TEMPLATES` mapping and the article entries of `registerHooks()`,
+and MUST delete both `@catalogo_core/Hooks/ventas_articulo_tabs_after.html.twig`
+and `@catalogo_core/Hooks/ventas_articulo_tab_pane_after.html.twig`. The two
+markers MUST remain declared in `ventas_articulo.html.twig` at their frozen names
+and positions as inert insertion points that render the empty string when no
+registrant exists. The opcional pair MUST remain registered by `catalogo_core`,
+and `tarifario` MUST still register neither article hook.
+(Previously: catalogo_core registered the article pair from `@catalogo_core/Hooks/`
+behind its static idempotency guard.)
 
-_Strength: MUST._
+_Strength: MUST / MUST NOT._
 
-#### Scenario: catalogo_core registers the article pair exactly once
+#### Scenario: catalogo_core registers zero article hooks across rebuilds
 
 - GIVEN catalogo_core's Init and two consecutive simulated Twig builds
-- WHEN the hook registry is inspected
-- THEN both article hooks are registered once with their `@catalogo_core/Hooks/` templates and a rebuild duplicates none
-- Test: `plugins/catalogo_core/tests/Integration/CatalogoArticuloHookOwnershipTest.php`
+- WHEN the hook registry is inspected for the article pair
+- THEN neither hook is registered and no rebuild registers it
+- Test: `plugins/catalogo_core/tests/Integration/CatalogoArticuloHookOwnershipTest.php` (flipped)
+
+#### Scenario: Article markers render empty with no registrant
+
+- GIVEN the two frozen article markers and no registrant
+- WHEN `ventas_articulo.html.twig` renders
+- THEN each marker contributes the empty string and the page renders without fatal error
+- Test: `plugins/catalogo_core/tests/Integration/CatalogoCoreHookMarkersTest.php`
+
+#### Scenario: Opcional pair stays registered
+
+- GIVEN catalogo_core's Init and a simulated Twig build
+- WHEN the hook registry is inspected for the opcional pair
+- THEN both opcional hooks are registered once from `@catalogo_core/Hooks/`
+- Test: `plugins/catalogo_core/tests/Integration/CatalogoCoreHookMarkersTest.php`
 
 #### Scenario: tarifario registers zero article hooks
 
@@ -167,25 +188,3 @@ _Strength: MUST._
 - THEN neither is registered by tarifario
 - Test: `plugins/tarifario/tests/Integration/HookRegistrationTest.php`
 
-### Requirement: Article hook tab renders derived feature values
-
-The catalogo_core-owned `ventas_articulo_tabs_after` /
-`ventas_articulo_tab_pane_after` templates MUST render the per-tarifa
-`en_tarifa`/`en_catalogo` visibility from the resolved `caracteristicas` context
-as a read-only indicator, MUST NOT read the dropped legacy columns, and MUST NOT
-persist anything while rendering. The four frozen marker names and their
-positions, and the hook-pair ownership, MUST NOT change.
-
-#### Scenario: Tab renders resolver-driven visibility
-
-- GIVEN an article whose effective feature values differ from any historical column value
-- WHEN `ventas_articulo` renders with the article tab registered
-- THEN the tab shows the resolver-derived visibility
-- Test: `plugins/catalogo_core/tests/Integration/CatalogoArticuloHookOwnershipTest.php`
-
-#### Scenario: Rendering writes nothing
-
-- GIVEN a rendered article tab
-- WHEN the feature value tables are inspected before and after the render
-- THEN they are byte-identical
-- Test: `plugins/catalogo_core/tests/Integration/CatalogoArticuloHookOwnershipTest.php`

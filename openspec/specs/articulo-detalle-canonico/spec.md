@@ -25,12 +25,15 @@ visibility as articulo-scope feature values through the feature store — etique
 persistence through `tarif_tarifa_articulo_etiqueta`, and the images entry point
 (list, upload, delete, feature) for the loaded article. Saving MUST remain guarded
 so a failure in the per-tarifa or etiquetas step does not silently drop the basic
-article save. The current `VentasArticuloControllerTest` contracts (public
-`idiomas` / `articulo_opcionales` arrays, `saveMultiidiomaDescriptions`,
+article save. With a tarifa selected, `editarArticulo()` MUST NOT write
+`articulos.pvp`; it MUST write `articulos.pvp` from the form ONLY when no active
+tarifa is selected, keeping the base-price edit path reachable. The current
+`VentasArticuloControllerTest` contracts (public `idiomas` /
+`articulo_opcionales` arrays, `saveMultiidiomaDescriptions`,
 `addOpcionalArticulo`, `#multiidioma` / `#opcionales` partial includes, `ref`
 acceptance, `articulo::get()`) MUST stay green.
-(Previously: the per-tarifa sync persisted `en_tarifa`/`en_catalogo` on the
-absorbed per-tarifa table.)
+(Previously: the canonical save wrote `articulos.pvp` from the form on every save,
+regardless of the selected tarifa.)
 
 _Strength: MUST._
 
@@ -56,6 +59,20 @@ _Strength: MUST._
 - WHEN the canonical detail handles it
 - THEN the image set for that reference is uploaded, deleted or flagged accordingly
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
+
+#### Scenario: With a tarifa selected the base price is not written
+
+- GIVEN an active tarifa selected and a POST that carries `spvp`
+- WHEN `editarArticulo()` saves the article
+- THEN the article's other fields persist and `articulos.pvp` is left unchanged
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloPerTarifaPaneTest.php` (RED-first, new)
+
+#### Scenario: With no active tarifas the base price is written
+
+- GIVEN zero active tarifas and a POST that carries `spvp`
+- WHEN `editarArticulo()` saves the article
+- THEN `articulos.pvp` is written from the submitted base price
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloTarifaSelectionTest.php` (RED-first, new)
 
 ### Requirement: ART-02 — Canonical detail absorbs per-tarifa price/state and article-opcional editing
 
@@ -124,20 +141,44 @@ _Strength: MUST._
 
 ### Requirement: ART-05 — Canonical detail preserves tabs and frozen hook markers
 
-The migrated view MUST preserve the existing tabs (`#datos`, `#precios`,
-`#stock`, `#multiidioma`, `#opcionales`) and the exact four frozen host hook
-markers, including `ventas_articulo_tabs_after` and
-`ventas_articulo_tab_pane_after`, at their current names and positions, so the
-WU-1 tab injection and `CatalogoCoreHookMarkersTest` remain valid.
+The migrated view MUST present a single unified `#datos` pane (the active tab
+pane) containing the Datos, Stock, Idiomas (multi-idioma), Imágenes and
+per-tarifa Precios sections, each scoped to the selected tarifa (ART-09..ART-11).
+The `#precios` and `#stock` entries MUST NOT remain as separate tabs; `#opcionales`
+MUST remain the only secondary tab, and the multi-idioma and opcional partial
+includes MUST stay. The exact four frozen host hook markers, including
+`ventas_articulo_tabs_after` and `ventas_articulo_tab_pane_after`, MUST keep their
+current names, call shape and positions, rendering empty with no registrant (D4).
+The locked literals `#multiidioma`, `#opcionales`, `tab_multiidioma.html.twig`,
+`tab_opcionales.html.twig` and `fsc.articulo.pvp` MUST survive so ART-08's
+`VentasArticuloControllerTest` stays green with no test edits.
+(Previously: the view preserved five separate tabs `#datos`, `#precios`,
+`#stock`, `#multiidioma`, `#opcionales` and injected the Tarifas tab at the
+frozen markers.)
 
 _Strength: MUST._
 
-#### Scenario: Tabs and markers survive the migration
+#### Scenario: Unified pane carries the article-scoped sections
 
-- GIVEN the WU-1 hook registrations and the migrated view
-- WHEN `CatalogoCoreHookMarkersTest` and the detail view assertions run
-- THEN the four frozen markers keep their names and positions and the existing tabs render
-- AND the article Tarifas tab still injects at the frozen markers
+- GIVEN a saved article and a selected tarifa
+- WHEN `ventas_articulo.html.twig` renders
+- THEN one `#datos` pane contains the Datos, Stock, Idiomas, Imágenes and per-tarifa Precios sections
+- AND `#opcionales` remains the only secondary tab and the four frozen markers keep their names and positions
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
+
+#### Scenario: Locked literals survive for ART-08
+
+- GIVEN the unified view source
+- WHEN `VentasArticuloControllerTest` runs
+- THEN `#multiidioma`, `#opcionales`, `tab_multiidioma.html.twig`, `tab_opcionales.html.twig` and `fsc.articulo.pvp` are present
+- AND no existing assertion in that test was edited
+- Test: `plugins/catalogo_core/tests/VentasArticuloControllerTest.php`
+
+#### Scenario: Frozen markers stay at their positions
+
+- GIVEN the migrated view
+- WHEN `CatalogoCoreHookMarkersTest` inspects the source
+- THEN the four frozen marker calls keep their exact names, context shape and positions
 - Test: `plugins/catalogo_core/tests/Integration/CatalogoCoreHookMarkersTest.php`
 
 ### Requirement: ART-06 — Duplicate edit surfaces retired with links repointed
@@ -221,3 +262,91 @@ _Strength: MUST._
 - THEN the absorbed behaviors are covered by the new catalogo_core tests and no tarifario test asserts a retired slug
 - AND the catalogo_core suite is at or above 554 tests / 1972 assertions
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
+
+### Requirement: ART-09 — Tarifa selector with validated default
+
+The detail MUST render a tarifa selector, reusing the ratified
+`tarif_opcional_edit` selector pattern (`hx-get page=ventas_articulo&codtarifa=…`,
+change trigger, full-body select/swap, push-url), ONLY when at least one active
+tarifa exists, with the default tarifa (`tarif_tarifa::get_default()`) preselected.
+A supplied `codtarifa` MUST be validated against the active set: an unknown or
+inactive code MUST fall back to the default tarifa, then to the first active
+tarifa, and the resolved tarifa MUST be exposed to the view as
+`$tarifa_seleccionada`, mirroring
+`tarif_opcional_edit::resolver_tarifa_seleccionada()`. The pane MUST NOT be scoped
+to a nonexistent tarifa.
+
+_Strength: MUST._
+
+#### Scenario: Default tarifa is preselected on first load
+
+- GIVEN active tarifas with a default marked and no `codtarifa` in the request
+- WHEN the detail renders
+- THEN the default tarifa is the selected one and the selector marks it
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloTarifaSelectionTest.php` (RED-first, new)
+
+#### Scenario: Stale or unknown codtarifa falls back safely
+
+- GIVEN a `codtarifa` that is not in the active set
+- WHEN the detail resolves the selection
+- THEN the default tarifa is selected, or the first active tarifa when no default is marked
+- AND no nonexistent tarifa ever scopes the pane
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloTarifaSelectionTest.php` (RED-first, new)
+
+### Requirement: ART-10 — Per-tarifa read path for price, state and visibility
+
+With a tarifa selected, the pane MUST render the per-tarifa `precio` and `activo`
+read from `tarif_articulo_precio` for `(referencia, codtarifa)`, and the effective
+visibility `en_tarifa` / `en_catalogo` read through
+`CaracteristicaResolver::resolve_bool()` at articulo scope for that tarifa.
+Rendering MUST NOT persist any value. Mutations of `precio` / `activo` / visibility
+MUST keep flowing through the unchanged `page=tarif_tab_precios` endpoint, which
+remains the ONLY writer; the article form MUST NOT duplicate the per-tarifa
+row/save logic (ART-02 unchanged). Rendering the price rows follows the same
+`page=tarif_tab_precios` path so the host never needs a currency helper.
+
+_Strength: MUST / MUST NOT._
+
+#### Scenario: Per-tarifa price and state render for the selected tarifa
+
+- GIVEN an article with a `tarif_articulo_precio` row for the selected tarifa
+- WHEN the unified pane renders
+- THEN the row's `precio` and `activo` are shown while other tarifas' values are not
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloPerTarifaPaneTest.php` (RED-first, new)
+
+#### Scenario: Visibility is resolved without persisting
+
+- GIVEN an article with articulo-scope feature values for `en_tarifa` / `en_catalogo`
+- WHEN the pane renders for the selected tarifa
+- THEN the resolved visibility is shown and no feature value row is written
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloPerTarifaPaneTest.php` (RED-first, new)
+
+#### Scenario: Price editing still routes through the WU-1 endpoint
+
+- GIVEN the unified pane source
+- WHEN the controller and rows partial are inspected
+- THEN the controller does not contain `guardar_precio_tab` and the rows partial posts to `page=tarif_tab_precios`
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
+
+### Requirement: ART-11 — No-active-tarifas degradation branch
+
+When no active tarifa exists, the selector MUST NOT render, the unified pane MUST
+render the base article fields with the `pvp` input reachable and editable, and
+the per-tarifa price rows surface MUST degrade without fatal error or blank
+content. `articulos.pvp` MUST be writable in this branch (ART-01).
+
+_Strength: MUST / MUST NOT._
+
+#### Scenario: No tarifas hides the selector and keeps the base price
+
+- GIVEN zero active tarifas
+- WHEN the detail renders
+- THEN no selector is emitted and the `pvp` input is present and editable
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloTarifaSelectionTest.php` (RED-first, new)
+
+#### Scenario: Empty rows surface degrades gracefully
+
+- GIVEN zero active tarifas
+- WHEN the per-tarifa surface renders
+- THEN it reports no active tarifas without fatal error and the page stays complete
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticuloTarifaSelectionTest.php` (RED-first, new)
