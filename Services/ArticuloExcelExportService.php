@@ -43,12 +43,17 @@ class ArticuloExcelExportService
     /**
      * @param \FSFramework\model\articulo[] $articulos
      * @param array<int, array<string, mixed>> $exportable
+     * @param array<int, object|array<string, mixed>> $idiomas active languages
+     *        (`all_activos()`); a deactivated language is never handed in
+     * @param string $codidioma_defecto configured default language code
      */
     public function buildSpreadsheet(
         array $articulos,
         bool $includeExampleRow = false,
         string $codtarifa = '',
-        array $exportable = []
+        array $exportable = [],
+        array $idiomas = [],
+        string $codidioma_defecto = ''
     ): Spreadsheet {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -58,7 +63,14 @@ class ArticuloExcelExportService
         // it must not depend on the order the caller hands the definitions in.
         $exportable = $this->ordered_exportable($exportable);
 
+        // Additive locale columns (D-07): base 7 -> locale pairs -> features.
+        $localeHeaders = self::descriptionHeaders($idiomas, $codidioma_defecto);
+        $localeCodes = self::orderedCodes($idiomas, $codidioma_defecto);
+
         $headers = self::EXPORT_HEADERS;
+        foreach ($localeHeaders as $localeHeader) {
+            $headers[] = $localeHeader;
+        }
         foreach ($exportable as $definition) {
             $headers[] = (string) ($definition['nombre'] ?? '');
         }
@@ -92,14 +104,16 @@ class ArticuloExcelExportService
                 'bloqueado' => false,
             ];
             $this->writeRow($sheet, $row, $example);
-            $this->writeFeatureCells($sheet, $row, (string) $example['referencia'], $exportable, $featureValues);
+            $this->writeLocaleCells($sheet, $row, $example, $localeCodes);
+            $this->writeFeatureCells($sheet, $row, (string) $example['referencia'], $exportable, $featureValues, count($localeHeaders));
             $row++;
         }
 
         foreach ($articulos as $art) {
             $this->writeRow($sheet, $row, $art);
+            $this->writeLocaleCells($sheet, $row, $art, $localeCodes);
             $referencia = is_array($art) ? (string) ($art['referencia'] ?? '') : (string) $art->referencia;
-            $this->writeFeatureCells($sheet, $row, $referencia, $exportable, $featureValues);
+            $this->writeFeatureCells($sheet, $row, $referencia, $exportable, $featureValues, count($localeHeaders));
             $row++;
         }
 
@@ -153,6 +167,91 @@ class ArticuloExcelExportService
     }
 
     /**
+     * The additive locale header list (D-07): for every supplied (active)
+     * language, one `descripcion_<codidioma>` then one
+     * `descripcion_corta_<codidioma>`, ordered default language first, then the
+     * remaining languages by `codidioma` (deterministic).
+     *
+     * @param array<int, object|array<string, mixed>> $idiomas
+     * @return list<string>
+     */
+    public static function descriptionHeaders(array $idiomas, string $codidioma_defecto): array
+    {
+        $headers = [];
+        foreach (self::orderedCodes($idiomas, $codidioma_defecto) as $codigo) {
+            $headers[] = 'descripcion_' . $codigo;
+            $headers[] = 'descripcion_corta_' . $codigo;
+        }
+
+        return $headers;
+    }
+
+    /**
+     * Normalizes and orders the language codes: the configured default first,
+     * then the remaining languages by `codidioma`.
+     *
+     * @param array<int, object|array<string, mixed>> $idiomas
+     * @return list<string>
+     */
+    private static function orderedCodes(array $idiomas, string $codidioma_defecto): array
+    {
+        $codes = [];
+        foreach ($idiomas as $idioma) {
+            $codigo = is_array($idioma)
+                ? (string) ($idioma['codidioma'] ?? '')
+                : (string) ($idioma->codidioma ?? '');
+            if ($codigo !== '') {
+                $codes[$codigo] = $codigo;
+            }
+        }
+
+        ksort($codes, SORT_STRING);
+        $codes = array_values($codes);
+
+        if ($codidioma_defecto !== '' && in_array($codidioma_defecto, $codes, true)) {
+            $codes = array_values(array_diff($codes, [$codidioma_defecto]));
+            array_unshift($codes, $codidioma_defecto);
+        }
+
+        return $codes;
+    }
+
+    /**
+     * Writes the locale pair cells between the base columns and the feature
+     * columns. An `articulo` row resolves each language through the language
+     * API; an array row (the example row) reads the `descripcion_<cod>` keys.
+     *
+     * @param \FSFramework\model\articulo|array<string,mixed> $art
+     * @param list<string> $localeCodes
+     */
+    private function writeLocaleCells(
+        \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
+        int $row,
+        $art,
+        array $localeCodes
+    ): void {
+        $offset = count(self::EXPORT_HEADERS);
+        $index = 0;
+        foreach ($localeCodes as $codigo) {
+            if ($art instanceof \FSFramework\model\articulo) {
+                $descripcion = (string) $art->get_descripcion_idioma($codigo);
+                $descripcionCorta = (string) $art->get_descripcion_corta_idioma($codigo);
+            } else {
+                $descripcion = (string) ($art['descripcion_' . $codigo] ?? '');
+                $descripcionCorta = (string) ($art['descripcion_corta_' . $codigo] ?? '');
+            }
+
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + $index + 1) . $row;
+            $sheet->setCellValue($cell, $descripcion);
+            $index++;
+
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + $index + 1) . $row;
+            $sheet->setCellValue($cell, $descripcionCorta);
+            $index++;
+        }
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $exportable
      * @param array<string, array<string, ?string>> $featureValues
      */
@@ -161,9 +260,10 @@ class ArticuloExcelExportService
         int $row,
         string $referencia,
         array $exportable,
-        array $featureValues
+        array $featureValues,
+        int $localeColumnCount = 0
     ): void {
-        $offset = count(self::EXPORT_HEADERS);
+        $offset = count(self::EXPORT_HEADERS) + $localeColumnCount;
         foreach ($exportable as $index => $definition) {
             $codigo = (string) ($definition['codigo'] ?? '');
             $value = $featureValues[$referencia][$codigo] ?? null;
@@ -217,7 +317,9 @@ class ArticuloExcelExportService
         if ($art instanceof \FSFramework\model\articulo) {
             $values = [
                 (string) $art->referencia,
-                (string) $art->descripcion,
+                // GDI-10: the base `Descripción` cell resolves the configured
+                // default language, never the raw frozen base column.
+                (string) $art->get_descripcion_idioma(null),
                 (float) $art->pvp,
                 (string) ($art->codfamilia ?? ''),
                 (string) ($art->codfabricante ?? ''),

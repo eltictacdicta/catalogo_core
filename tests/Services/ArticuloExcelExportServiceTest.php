@@ -27,4 +27,34 @@ final class ArticuloExcelExportServiceTest extends TestCase
         $this->assertSame('EJEMPLO-001', $sheet->getCell('A2')->getValue());
         $this->assertSame('Artículo de ejemplo', $sheet->getCell('B2')->getValue());
     }
+
+    public function testLocaleColumnsAreAdditiveAndLeaveTheBaseHeadersByteIdentical(): void
+    {
+        $idiomas = [
+            ['codidioma' => 'es', 'nombre' => 'Español'],
+            ['codidioma' => 'en', 'nombre' => 'English'],
+        ];
+        $rows = [[
+            'referencia' => 'ART1',
+            'descripcion' => 'Base',
+            'descripcion_en' => 'Text EN',
+            'pvp' => 1.0,
+            'codfamilia' => '',
+            'codfabricante' => '',
+            'codimpuesto' => 'IVA21',
+            'bloqueado' => false,
+        ]];
+
+        $sheet = (new ArticuloExcelExportService())
+            ->buildSpreadsheet($rows, false, '', [], $idiomas, 'es')
+            ->getActiveSheet();
+
+        $base = [];
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $column) {
+            $base[] = $sheet->getCell($column . '1')->getValue();
+        }
+        $this->assertSame(ArticuloExcelExportService::EXPORT_HEADERS, $base, 'the base headers stay byte-identical');
+        $this->assertSame('descripcion_en', $sheet->getCell('J1')->getValue(), 'the locale columns are additive');
+        $this->assertSame('Text EN', $sheet->getCell('J2')->getValue());
+    }
 }
