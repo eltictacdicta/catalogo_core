@@ -728,17 +728,35 @@ no-op"). Operator edits survive because the guard is `NOT EXISTS`, never an `UPD
 methods:
 
 ```php
+public static function migrateIfNeeded(\fs_db2 $db): bool;             // clause 1 deploy-time entry (auto-wired)
 public static function dropD12OpcionalColumns(\fs_db2 $db): bool;      // clause 1, gated on CAR-12 parity
 public static function dropLegacyArticleFamilyColumns(\fs_db2 $db): bool; // clause 2, gated on the soak
 public static function dropDeadOpcionalColumns(\fs_db2 $db): bool;     // dead-column cleanup, same soak gate
 public static function hasColumn(\fs_db2 $db, string $table, string $column): bool;
 ```
 
+**[DECISION] Two-release delivery (2026-09-23).** CAR-15's two clauses ship in two releases,
+because clause 2 needs a real soak window and clause 1 does not:
+
+- **Clause 1 is delivered now and auto-wired.** Its gate is *only* the `CAR-12`
+  behavior-preservation parity test, which is live, and the derived read-only indicator
+  already replaces the opcional flags. `Init::upgrade()` — the version-change path run by
+  `PluginSchemaSynchronizer`, never `Init::init()` — calls `migrateIfNeeded()`, so
+  production needs no console and no flag. This mirrors the sibling boot migrations
+  (`CatalogLegacyTableMigration` / `CaracteristicaBackfillMigration` /
+  `TarifOpcionalExtMigration`).
+- **Clause 2 is staged for a later release.** It needs the soak first; the drop stays the
+  operator path (`runPostSoak()` / `tools/run_caracteristica_column_drop.php`) and will be
+  auto-wired in the release that follows the soak, exactly as clause 1 is now.
+
 - Clause 1 (D12, not soaked): `ALTER TABLE tarif_opcional_ext DROP COLUMN en_catalogo`,
   `... en_tarifa`, `ALTER TABLE tarif_tarifa_opcional DROP COLUMN en_catalogo`, `...
-  en_tarifa`. Gate: `CAR-12` behavior-preservation parity test green. Idempotent via
-  `hasColumn()` before each `ALTER`. `DROP COLUMN IF EXISTS` is used where the driver
-  supports it, behind the `hasColumn()` guard.
+  en_tarifa`. Gate: `CAR-12` behavior-preservation parity test green. Delivered
+  automatically through `migrateIfNeeded()` from `Init::upgrade()`. It refuses (returns
+  `false`, no schema change) while the legacy read path was explicitly selected — the same
+  emergency opt-out clause 2 honours, because the legacy columns are authoritative in that
+  state. Idempotent via `hasColumn()` before each `ALTER`. `DROP COLUMN IF EXISTS` is used
+  where the driver supports it, behind the `hasColumn()` guard.
 - Clause 2 (post-soak): drops `en_catalogo`/`en_tarifa` from `tarif_articulo_precios`,
   `tarif_tarifa_articulo`, `tarif_tarifa_familia` and `tarif_familia_ext` **only when
   the legacy read path was NOT explicitly selected**. The feature path is the default, so
@@ -774,8 +792,13 @@ public static function hasColumn(\fs_db2 $db, string $table, string $column): bo
   soak (backfill, dual-write, models), so a source scan could not discriminate them.
   Operator runner: `plugins/catalogo_core/tools/run_caracteristica_column_drop.php`
   (dry-run by default; `--apply --dev17-rewritten` runs the loop).
-- The drop migration is **not** called from `Init::init()`; it runs only from the
-  gated WU-7 migration entry point `runPostSoak()` (or the operator runner above).
+- **Boot wiring**: clause 1 runs from `Init::upgrade()` (the version-change path) via
+  `migrateIfNeeded()`, and **never** from `Init::init()` — a schema DROP belongs to a deploy,
+  not to every request. Clause 2 and the dead-column cleanup remain operator-only: they run
+  from the gated WU-7 entry point `runPostSoak()` (or the operator runner above) and are
+  never boot-wired. `test_upgrade_wires_the_clause_1_drop_and_init_does_not()` pins the
+  clause-1 wiring, and `test_the_entry_point_is_never_wired_into_a_boot_or_request_path()`
+  pins that `runPostSoak()` stays out of every boot/request path.
 
 ### 8.6 Divergences found against the live tree (must be carried forward)
 

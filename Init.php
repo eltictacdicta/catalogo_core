@@ -11,6 +11,7 @@ use FSFramework\Event\TwigInitEvent;
 use FSFramework\Event\TwigLoaderEvent;
 use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaBackfillMigration;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaColumnDropMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaRegistry;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 use FSFramework\View\ViewHookRegistry;
@@ -130,6 +131,18 @@ final class Init
                 }
             } catch (\Throwable $e) {
                 error_log('[catalogo_core] caracteristicas backfill failed: ' . $e->getMessage());
+            }
+            try {
+                // CAR-15 clause 1 (D12 opcional flags): parity-gated, no soak,
+                // idempotent, refuses under the explicit legacy opt-out. It runs
+                // only here — the version-change path — never in init().
+                require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaColumnDropMigration.php';
+                $db = self::plugin_db();
+                if ($db instanceof \fs_db2) {
+                    CaracteristicaColumnDropMigration::migrateIfNeeded($db);
+                }
+            } catch (\Throwable $e) {
+                error_log('[catalogo_core] caracteristica column drop (clause 1) failed: ' . $e->getMessage());
             }
             foreach (self::DEFAULT_SEED_MODELS as $modelName) {
                 self::seedNamespacedModel($modelName);

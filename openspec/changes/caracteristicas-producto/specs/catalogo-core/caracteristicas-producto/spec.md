@@ -536,21 +536,35 @@ both paths stay consistent, and the two paths MUST agree for the same database s
 
 ### Requirement: CAR-15 — Gated reversible post-soak column drop
 
+> **DELIVERY STAGING (amended 2026-09-23).** Both clauses exist and keep their
+> gates; only the *delivery* is split across two releases. Clause 1 ships now and
+> runs automatically at deploy time through `Init::upgrade()` (no console, no
+> flag); clause 2 is explicitly staged for a later release because it needs a real
+> soak window. The requirement's substance is unchanged: both drops exist, both are
+> idempotent, both are reversible, and neither runs before its gate.
+
 Two idempotent drops MUST exist and MUST be reversible (feature values stay the
 source of truth, so re-adding nullable columns and re-deriving from the resolver
 restores the legacy representation; a pre-drop dump MUST be kept as the
 operator-level restore path):
 
-1. **D12 drop (not soaked).** `en_catalogo`/`en_tarifa` MUST be dropped from
-   `tarif_opcional_ext` and `tarif_tarifa_opcional` together with the D12
-   derivation work unit, gated only on the `CAR-12` behavior-preservation parity
-   test passing — no article/family soak is required because the derived
-   indicator replaces the flags immediately.
-2. **Legacy article/family drop (post-soak, gated).** `en_catalogo`/`en_tarifa`
-   MUST be dropped from `tarif_articulo_precios`, `tarif_tarifa_articulo`,
-   `tarif_tarifa_familia` and `tarif_familia_ext` (the latter when it carries
-   them) **only after** the read-through flag has been enabled and verified stable,
-   and after the DEV-17 membership-filter rewrite (design §8.4/§8.5).
+1. **D12 drop (not soaked, delivered automatically).** `en_catalogo`/`en_tarifa`
+   MUST be dropped from `tarif_opcional_ext` and `tarif_tarifa_opcional` together
+   with the D12 derivation work unit, gated only on the `CAR-12`
+   behavior-preservation parity test passing — no article/family soak is required
+   because the derived indicator replaces the flags immediately. It MUST run
+   automatically at deploy time through `Init::upgrade()` (the version-change
+   path), MUST be idempotent, and MUST refuse to run while the legacy read path
+   was explicitly selected (the emergency opt-out) — the same safety property
+   clause 2 honours.
+2. **Legacy article/family drop (post-soak, gated — STAGED for a later release).**
+   `en_catalogo`/`en_tarifa` MUST be dropped from `tarif_articulo_precios`,
+   `tarif_tarifa_articulo`, `tarif_tarifa_familia` and `tarif_familia_ext` (the
+   latter when it carries them) **only after** the read-through flag has been
+   enabled and verified stable, and after the DEV-17 membership-filter rewrite
+   (design §8.4/§8.5). It is **not** delivered in the clause-1 release: it keeps
+   its soak prerequisite and stays the operator path until a later release
+   auto-wires it exactly as clause 1 is now.
 
 Both drops MUST be idempotent and MUST NOT run before their gate.
 

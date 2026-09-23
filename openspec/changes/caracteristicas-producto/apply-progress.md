@@ -11,9 +11,9 @@
 
 ## Cumulative task envelope
 
-- Done: WU-1 … WU-6, WU-8, plus WU-7 7.1/7.1b/7.2/7.3 and **7.7 (this work unit)**.
+- Done: WU-1 … WU-6, WU-8, plus WU-7 7.1/7.1b/7.2/7.3, 7.7, and **7.8 (this work unit — CAR-15 clause 1 auto-wired)**.
 - Partial: 7.4 (reversibility evidence landed; the `verify-report.md` refresh is verify-owned).
-- Open: 7.5 (soak), 7.6 (gated drop on a pre-drop dump).
+- Deferred: 7.5 (soak) and 7.6 (clause-2 gated drop) — **staged for a later release, not done** (clause 2 needs a real soak window).
 
 ---
 
@@ -78,3 +78,69 @@ branches and the spec deltas (which describe both modes) are untouched.
 - No `--apply` was run; no DDL emitted; the 12 gated columns remain in the live schema.
 - Tests never define the constant in-process except inside `#[RunInSeparateProcess]` +
   `#[PreserveGlobalState(false)]` cases, so the root Plugins suite cannot be polluted.
+
+---
+
+## WU-7.8 — deliver CAR-15 clause 1 automatically (no console, no flag)
+
+**Work unit**: `wu7-clause1-auto-drop`.
+
+**Objective**: make the clause-1 D12 drop run automatically at deploy time — production must
+need no console and no flag — while clause 2 stays staged for a later release because it needs
+a real soak window.
+
+**Scope**: reuse the existing clause-1 engine. No new drop engine, no schema change in this
+environment, no `--apply`, no `fsframework.ini` version bump.
+
+### Files changed
+
+| File | Action | What was done |
+|------|--------|---------------|
+| `plugins/catalogo_core/Services/CaracteristicaColumnDropMigration.php` | Modified | `dropD12OpcionalColumns()` now refuses (returns `false`, no DDL) while `legacy_read_explicitly_enabled()` — the same emergency opt-out clause 2 honours. Added `migrateIfNeeded(\fs_db2 $db): bool`, the deploy-time clause-1 entry point delegating to `dropD12OpcionalColumns()` (idempotent via `hasColumn()`). Class docblock, clause-1 docblock and the runbook updated. |
+| `plugins/catalogo_core/Init.php` | Modified | `Init::upgrade()` calls `CaracteristicaColumnDropMigration::migrateIfNeeded($db)` in the sibling `try/catch` + `error_log` convention, after the backfill. `Init::init()` untouched. |
+| `plugins/catalogo_core/tests/CaracteristicaColumnDropTest.php` | Modified | +5 tests: clause-1 opt-out refusal; boot entry drops the four opcional columns and is idempotent; boot entry refusal; boot entry leaves the clause-2 columns untouched; `Init::upgrade()` wiring with `Init::init()` excluded. |
+| `plugins/catalogo_core/tests/CaracteristicaReversibilityTest.php` | Modified | Reconciled `test_the_legacy_opt_out_blocks_clause_2_and_the_dead_cleanup_but_not_clause_1` → `test_the_legacy_opt_out_blocks_every_gated_clause` (clause 1 now refuses too). |
+| `.../tasks.md` | Modified | 7.5/7.6 marked **DEFERRED to a later release** (unchecked, with rationale); new 7.8 `[x]`; STAGED block; inventory rows updated; finding 2 amended. |
+| `.../specs/catalogo-core/caracteristicas-producto/spec.md` | Modified | CAR-15 amended with the two-release delivery staging; both clauses' substance preserved and all three scenarios kept verbatim. |
+| `.../design.md` | Modified | §8.5 gains the `[DECISION] Two-release delivery` block, the clause-1 auto-wiring, the opt-out refusal and the corrected boot-wiring bullet. |
+
+### Which existing method clause 1 maps to, and why
+
+Clause 1's spec tables (`tarif_opcional_ext`, `tarif_tarifa_opcional`) are exactly
+`CaracteristicaColumnDropMigration::D12_TABLES`. The existing engine is
+`dropD12OpcionalColumns()`, so the deliverable reuses it — `migrateIfNeeded()` is a thin
+deploy-time gate over it, not a new drop engine.
+
+### TDD cycle evidence (strict TDD — RED first)
+
+| Task | RED (test written first) | GREEN (implementation passes) | REFACTOR |
+|------|--------------------------|-------------------------------|----------|
+| 7.8 | `--filter CaracteristicaColumnDropTest` → **3 errors + 2 failures** (`migrateIfNeeded()` missing; `Init::upgrade()` not wired); `--filter CaracteristicaReversibilityTest` → **1 failure** (clause 1 still dropped under the opt-out) | `--filter CaracteristicaColumnDropTest` → **OK, 31 tests / 170 assertions**; `--filter CaracteristicaReversibilityTest` → **OK, 10 tests / 125 assertions** | Docblocks/runbook aligned; no comments or tests deleted to fit budget |
+
+### Work unit evidence
+
+| Evidence | Required value |
+|---|---|
+| Focused test command and exact result | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CaracteristicaColumnDropTest` → **OK, 31 tests / 170 assertions** |
+| Runtime harness command/scenario and exact result | `ddev exec php plugins/catalogo_core/tools/run_caracteristica_column_drop.php` (dry run only) → `FEATURE (default)`, **12 gated columns still present**, `DRY RUN — no DDL was emitted` |
+| Rollback boundary | Revert the `Init::upgrade()` wiring block and the clause-1 refusal in `CaracteristicaColumnDropMigration.php`; the columns are re-addable as nullable and re-derivable (`CaracteristicaReversibilityTest`). No schema was changed in this environment. |
+
+### Commands and results (exact)
+
+| Command | Result |
+|---|---|
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` | **OK, 919 tests / 4002 assertions / 2 warnings / 1 skipped, 0 failures** (baseline 914/0; +5 tests) |
+| `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml` | **OK, 266 tests / 1093 assertions / 2 skipped, 0 failures** (baseline 266/0) |
+| `ddev exec php plugins/catalogo_core/tools/run_caracteristica_column_drop.php` | Dry run: `FEATURE (default)`, 12 gated columns, no DDL |
+
+### Constraints re-verified
+
+- **No destructive DDL was executed**: no `--apply`, no `fsframework.ini` version bump; the dry
+  run reports 12 gated columns and emits no DDL, so the live schema is untouched.
+- Core `openspec/` untouched; no repository-root SDD entry for this change.
+- Clause 2 stays staged: `runPostSoak()` is still never boot-wired
+  (`test_the_entry_point_is_never_wired_into_a_boot_or_request_path` green).
+- The CAR-15 delta has no MODIFIED block (new capability, all ADDED, unarchived), so the
+  requirement was amended **in place** in the ADDED block; no scenario was added or removed
+  (48 requirements / 153 scenarios unchanged).
+- The constant name `FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` is unchanged (pinned contract).

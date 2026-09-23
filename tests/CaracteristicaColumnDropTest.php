@@ -230,6 +230,83 @@ final class CaracteristicaColumnDropTest extends TestCase
         $this->assertStringContainsString('dropLegacyArticleFamilyColumns', $source, 'clause 2 must exist (WU-7)');
     }
 
+    public function test_d12_drop_refuses_while_the_legacy_path_is_explicitly_selected(): void
+    {
+        $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
+        $migration = $this->migrationWithLegacyReadExplicit(true);
+
+        self::assertFalse(
+            $migration::dropD12OpcionalColumns($db),
+            'the emergency legacy opt-out must refuse clause 1 too'
+        );
+        self::assertSame([], $db->execStatements, 'a refused clause 1 must change no schema');
+        self::assertContains('en_catalogo', $db->schema['tarif_opcional_ext']);
+        self::assertContains('en_tarifa', $db->schema['tarif_tarifa_opcional']);
+    }
+
+    public function test_boot_entry_point_drops_the_four_opcional_columns_and_is_idempotent(): void
+    {
+        $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
+
+        self::assertTrue(CaracteristicaColumnDropMigration::migrateIfNeeded($db));
+        self::assertCount(
+            4,
+            $this->alterations($db->execStatements),
+            'the deploy-time entry point drops exactly the four opcional visibility columns'
+        );
+        self::assertNotContains('en_catalogo', $db->schema['tarif_opcional_ext']);
+        self::assertNotContains('en_tarifa', $db->schema['tarif_tarifa_opcional']);
+
+        $before = count($db->execStatements);
+        self::assertTrue(CaracteristicaColumnDropMigration::migrateIfNeeded($db));
+        self::assertSame($before, count($db->execStatements), 'a second deploy run must be a clean no-op');
+    }
+
+    public function test_boot_entry_point_refuses_while_the_legacy_path_is_explicitly_selected(): void
+    {
+        $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
+        $migration = $this->migrationWithLegacyReadExplicit(true);
+
+        self::assertFalse($migration::migrateIfNeeded($db));
+        self::assertSame([], $db->execStatements, 'the opt-out must refuse the deploy-time drop');
+    }
+
+    public function test_boot_entry_point_leaves_the_staged_clause_2_columns_untouched(): void
+    {
+        $db = new CaracteristicaColumnDropSpyDb($this->fullSchema());
+
+        CaracteristicaColumnDropMigration::migrateIfNeeded($db);
+
+        $sql = implode("\n", $db->execStatements);
+        foreach (['tarif_articulo_precios', 'tarif_tarifa_articulo', 'tarif_tarifa_familia', 'tarif_familia_ext', 'catalogo_opcionales'] as $table) {
+            self::assertStringNotContainsString(
+                $table,
+                $sql,
+                'clause 1 must leave ' . $table . ' to the staged clause 2 drop'
+            );
+        }
+        self::assertContains('en_catalogo', $db->schema['tarif_articulo_precios']);
+        self::assertContains('en_catalogo', $db->schema['catalogo_opcionales']);
+    }
+
+    public function test_upgrade_wires_the_clause_1_drop_and_init_does_not(): void
+    {
+        $src = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Init.php');
+        $init = $this->methodSource($src, 'public function init(): void');
+        $upgrade = $this->methodSource($src, 'public static function upgrade(): void');
+
+        self::assertStringNotContainsString(
+            'CaracteristicaColumnDropMigration',
+            $init,
+            'a schema DROP must not run on every request (init())'
+        );
+        self::assertStringContainsString(
+            'CaracteristicaColumnDropMigration::migrateIfNeeded(',
+            $upgrade,
+            'the version-change path (upgrade()) must auto-run the clause-1 drop'
+        );
+    }
+
     // =====================================================================
     // Clause 2 — gated post-soak drop (WU-7 stub)
     // =====================================================================
@@ -623,6 +700,32 @@ final class CaracteristicaColumnDropTest extends TestCase
         }
 
         return $tables;
+    }
+
+    /**
+     * Extracts one method body from a PHP source string, so the boot-wiring
+     * contract is asserted on the real `Init` code without booting the plugin.
+     */
+    private function methodSource(string $src, string $signature): string
+    {
+        $start = strpos($src, $signature);
+        self::assertNotFalse($start, 'missing method: ' . $signature);
+
+        $open = (int) strpos($src, '{', (int) $start);
+        $depth = 0;
+        $len = strlen($src);
+        for ($i = $open; $i < $len; $i++) {
+            if ($src[$i] === '{') {
+                $depth++;
+            } elseif ($src[$i] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($src, (int) $start, $i - $start + 1);
+                }
+            }
+        }
+
+        self::fail('method body is not terminated: ' . $signature);
     }
 
     /** @param list<string> $tables */

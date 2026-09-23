@@ -693,23 +693,23 @@ final class CaracteristicaReversibilityTest extends TestCase
         self::assertTrue($this->featureTablesSurvive($db), 'the source of truth was never dropped');
     }
 
-    public function test_the_legacy_opt_out_blocks_clause_2_and_the_dead_cleanup_but_not_clause_1(): void
+    public function test_the_legacy_opt_out_blocks_every_gated_clause(): void
     {
         $snapshot = $this->snapshotMap();
         $db = new ReversibilitySpyDb($this->preDropSchema);
         $migration = $this->migrationWithLegacyReadExplicit(true);
 
-        // CAR-15: clause 1 is gated on the CAR-12 parity test only — no soak.
-        self::assertTrue($migration::dropD12OpcionalColumns($db));
-
-        // The opt-out-gated clauses refuse and change no schema.
+        // The opt-out is the emergency rollback to the legacy reads: while it is
+        // set, every gated clause refuses and changes no schema — clause 1
+        // included, because the opcional flags are still part of that legacy
+        // representation.
+        self::assertFalse($migration::dropD12OpcionalColumns($db));
         self::assertFalse($migration::dropLegacyArticleFamilyColumns($db));
         self::assertFalse($migration::dropDeadOpcionalColumns($db));
 
-        $sql = implode("\n", $db->execStatements);
-        foreach (['tarif_articulo_precios', 'tarif_tarifa_articulo', 'tarif_tarifa_familia', 'catalogo_opcionales'] as $table) {
-            self::assertStringNotContainsString($table, $sql, $table . ' must be untouched while the opt-out is set');
-        }
+        self::assertSame([], $db->execStatements, 'a refused clause must change no schema');
+        self::assertContains('en_catalogo', $db->schema['tarif_opcional_ext']);
+        self::assertContains('en_tarifa', $db->schema['tarif_tarifa_opcional']);
         self::assertContains('en_catalogo', $db->schema['tarif_articulo_precios']);
         self::assertContains('en_tarifa', $db->schema['tarif_tarifa_familia']);
         self::assertContains('en_catalogo', $db->schema['catalogo_opcionales']);

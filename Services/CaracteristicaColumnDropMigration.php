@@ -22,7 +22,9 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  *     on the CAR-12 behaviour-preservation parity test
  *     (`plugins/catalogo_core/tests/OpcionalVisibilityParityTest.php`): the
  *     derived read-only indicator replaces the flags immediately, so no
- *     article/family soak is required.
+ *     article/family soak is required. It is delivered automatically through
+ *     {@see migrateIfNeeded()} from `Init::upgrade()`, and refuses under the
+ *     explicit legacy opt-out (the same emergency rollback clause 2 honours).
  *  2. `dropLegacyArticleFamilyColumns()` — the legacy article/family columns
  *     (WU-7). The feature path is the default, so it runs by default; it
  *     refuses only while the legacy read path was **explicitly** selected
@@ -36,22 +38,26 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  * and `CaracteristicaBackfillTest`. A pre-drop dump is the operator-level
  * safety net (documented, not automated).
  *
- * The migration is deliberately NOT called from `Init::init()`: dropping
- * schema is an explicit, operator-gated deploy step.
+ * Clause 1 is auto-wired into `Init::upgrade()` (the version-change path) via
+ * {@see migrateIfNeeded()}: production needs no console and no flag. Clause 2
+ * stays an explicit, operator-gated post-soak deploy step and is NEVER called
+ * from `Init::init()`, `Init::upgrade()` or any request path.
  *
- * Operator runbook — clause 1 (D12 opcional flags):
+ * Operator runbook — clause 1 (D12 opcional flags, delivered automatically):
  *   1. Keep a pre-drop dump of `tarif_opcional_ext` and `tarif_tarifa_opcional`
  *      (operator-level safety net; not automated).
  *   2. Confirm `tests/OpcionalVisibilityParityTest.php` is green (CAR-12
  *      behaviour-preservation parity — the gate).
- *   3. Run `CaracteristicaColumnDropMigration::dropD12OpcionalColumns($db)`
- *      once (idempotent: a second run finds no columns and does nothing).
+ *   3. Deploy the plugin version bump: `Init::upgrade()` calls
+ *      {@see migrateIfNeeded()} once on the version change (idempotent: a second
+ *      run finds no columns and does nothing). The manual equivalent remains
+ *      `dropD12OpcionalColumns($db)`.
  *   4. Clear the Twig cache (the opcional views render the derived indicator).
  *   Schema parity is only complete after step 3: until the columns are dropped
  *   the plugin still tolerates them, but `hasColumn()` reports them present.
  *   Because the columns still exist in a not-yet-dropped database while the
  *   model/XML no longer declare them, `fs_schema` will not recreate them — the
- *   only supported path is this explicit, gated call.
+ *   deploy-time clause-1 entry point is the supported path.
  *
  * Clause 2 (legacy article/family flags) stays closed until WU-7 ships with the
  * read-through soak.
@@ -127,12 +133,42 @@ class CaracteristicaColumnDropMigration
      *
      * Gate: the CAR-12 behavior-preservation parity test must be green. That
      * gate is a repository/test-level precondition, not a runtime flag: the
-     * caller is the D12 work unit (or the operator running the documented
-     * deploy step), and `OpcionalVisibilityParityTest` is the executable proof.
+     * caller is the deploy-time {@see migrateIfNeeded()} (or the operator
+     * running the documented deploy step), and `OpcionalVisibilityParityTest`
+     * is the executable proof. No article/family soak is required: the derived
+     * read-only indicator replaces the flags immediately.
+     *
+     * It refuses (returns FALSE, no schema change) while the legacy read path
+     * was **explicitly** selected — the same emergency opt-out clause 2 honours.
+     * In that state the legacy columns are authoritative, so dropping them
+     * would break the rollback.
      */
     public static function dropD12OpcionalColumns(\fs_db2 $db): bool
     {
+        if (static::legacy_read_explicitly_enabled()) {
+            return false;
+        }
+
         return self::dropFlags($db, self::D12_TABLES);
+    }
+
+    /**
+     * Deploy-time clause-1 entry point (CAR-15 clause 1, auto-wired).
+     *
+     * Runs the parity-gated D12 drop automatically from `Init::upgrade()` — the
+     * version-change path (`PluginSchemaSynchronizer`) — and never from
+     * `Init::init()`: a schema DROP belongs to a deploy, not to every request.
+     * It mirrors the sibling boot migrations (`CatalogLegacyTableMigration`,
+     * `CaracteristicaBackfillMigration`, `TarifOpcionalExtMigration`) and
+     * inherits their idempotency: a second run probes `hasColumn()` per table
+     * and emits no DDL.
+     *
+     * Clause 2 stays staged: it needs a real soak window and remains the
+     * operator path ({@see runPostSoak()} / the `tools/` runner).
+     */
+    public static function migrateIfNeeded(\fs_db2 $db): bool
+    {
+        return self::dropD12OpcionalColumns($db);
     }
 
     /**
