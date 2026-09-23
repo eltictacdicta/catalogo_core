@@ -199,9 +199,10 @@ class ArticuloExcelImportWizardService
     }
 
     /**
+     * @param array<int, object|array<string, mixed>> $idiomas active languages
      * @return array<int,array{value:string,label:string}>
      */
-    public function fieldOptions(array $importable = []): array
+    public function fieldOptions(array $importable = [], array $idiomas = []): array
     {
         $options = [
             ['value' => self::IGNORE_SENTINEL, 'label' => 'Ignorar esta columna'],
@@ -218,8 +219,154 @@ class ArticuloExcelImportWizardService
                 'label' => (string) ($definition['nombre'] ?? $definition['codigo']),
             ];
         }
+        foreach (self::languageFieldCatalog($idiomas) as $fieldName => $info) {
+            $options[] = ['value' => $fieldName, 'label' => $info['label']];
+        }
 
         return $options;
+    }
+
+    /**
+     * The additive locale field catalog (D-07): one `descripcion_<codidioma>`
+     * and one `descripcion_corta_<codidioma>` entry per supplied (active)
+     * language. With no languages it returns an empty catalog, so the wizard
+     * behaves exactly as before (legacy workbook scenario).
+     *
+     * @param array<int, object|array<string, mixed>> $idiomas
+     * @return array<string, array<string, mixed>>
+     */
+    public static function languageFieldCatalog(array $idiomas): array
+    {
+        $catalog = [];
+        foreach (self::orderedLanguages($idiomas, '') as $language) {
+            $codigo = $language['codidioma'];
+            $nombre = $language['nombre'];
+
+            $catalog['descripcion_' . $codigo] = [
+                'label' => 'Descripción (' . $nombre . ')',
+                'column' => 'descripcion_' . $codigo,
+                'type' => 'text',
+                'req_create' => false,
+                'aliases' => ['descripcion_' . $codigo],
+            ];
+            $catalog['descripcion_corta_' . $codigo] = [
+                'label' => 'Descripción corta (' . $nombre . ')',
+                'column' => 'descripcion_corta_' . $codigo,
+                'type' => 'text',
+                'req_create' => false,
+                'aliases' => ['descripcion_corta_' . $codigo],
+            ];
+        }
+
+        return $catalog;
+    }
+
+    /**
+     * Resolves the single destination language for the mapped locale columns
+     * (D-07 / R5): an explicit target that names an active language wins,
+     * otherwise the configured default. It never creates or mutates a language
+     * row; an unknown or inactive target simply falls back.
+     *
+     * @param array<int, object|array<string, mixed>> $idiomas active languages
+     */
+    public static function resolveTargetCodidioma(string $requested, array $idiomas, string $codidiomaDefecto): string
+    {
+        $requested = trim($requested);
+        if ($requested !== '') {
+            foreach ($idiomas as $idioma) {
+                $codigo = is_array($idioma)
+                    ? (string) ($idioma['codidioma'] ?? '')
+                    : (string) ($idioma->codidioma ?? '');
+                if ($codigo === $requested) {
+                    return $requested;
+                }
+            }
+        }
+
+        return $codidiomaDefecto;
+    }
+
+    /**
+     * Resolves the locale pair to write on the target language's row (D-07).
+     *
+     * The suffix qualifies importability, not destination: every mapped locale
+     * column whose suffix is an active language is applied to the single target
+     * language. With several mapped columns the source is deterministic — the
+     * column whose suffix equals the target wins, otherwise the first mapped
+     * locale column in default-first-then-`codidioma` order. Unknown or
+     * deactivated suffixes are ignored.
+     *
+     * `null` means "no locale column is mapped for the target" (no write). A
+     * `null` component means "not mapped": the current value is preserved. A
+     * mapped but empty component is present with an empty value and drives the
+     * clearing path (`articulo_descripcion::save()`).
+     *
+     * @param array<string,string> $mappedRow a locale field mapped but empty is
+     *        present with an empty value
+     * @param array<int, object|array<string, mixed>> $idiomas active languages
+     * @return array{descripcion: ?string, descripcion_corta: ?string}|null
+     */
+    public static function resolveLocalePair(array $mappedRow, array $idiomas, string $targetCodidioma): ?array
+    {
+        $descripcion = null;
+        $descripcionCorta = null;
+
+        foreach (self::orderedLanguages($idiomas, $targetCodidioma) as $language) {
+            $codigo = $language['codidioma'];
+
+            $field = 'descripcion_' . $codigo;
+            if ($descripcion === null && array_key_exists($field, $mappedRow)) {
+                $descripcion = (string) $mappedRow[$field];
+            }
+
+            $shortField = 'descripcion_corta_' . $codigo;
+            if ($descripcionCorta === null && array_key_exists($shortField, $mappedRow)) {
+                $descripcionCorta = (string) $mappedRow[$shortField];
+            }
+        }
+
+        if ($descripcion === null && $descripcionCorta === null) {
+            return null;
+        }
+
+        return ['descripcion' => $descripcion, 'descripcion_corta' => $descripcionCorta];
+    }
+
+    /**
+     * Normalizes and orders the languages: `$firstCodidioma` first when it is
+     * present, then the remaining languages by `codidioma`.
+     *
+     * @param array<int, object|array<string, mixed>> $idiomas
+     * @return list<array{codidioma: string, nombre: string}>
+     */
+    private static function orderedLanguages(array $idiomas, string $firstCodidioma): array
+    {
+        $byCode = [];
+        foreach ($idiomas as $idioma) {
+            $codigo = is_array($idioma)
+                ? (string) ($idioma['codidioma'] ?? '')
+                : (string) ($idioma->codidioma ?? '');
+            if ($codigo === '') {
+                continue;
+            }
+            $nombre = is_array($idioma)
+                ? (string) ($idioma['nombre'] ?? $codigo)
+                : (string) ($idioma->nombre ?? $codigo);
+            $byCode[$codigo] = ['codidioma' => $codigo, 'nombre' => $nombre];
+        }
+
+        ksort($byCode, SORT_STRING);
+        $ordered = array_values($byCode);
+
+        if ($firstCodidioma !== '' && isset($byCode[$firstCodidioma])) {
+            $ordered = array_values(array_filter(
+                $ordered,
+                static fn (array $language): bool => $language['codidioma'] !== $firstCodidioma
+            ));
+            array_unshift($ordered, $byCode[$firstCodidioma]);
+        }
+
+        return $ordered;
     }
 
     /**
@@ -335,9 +482,11 @@ class ArticuloExcelImportWizardService
     }
 
     /**
+     * @param array<int, object|array<string, mixed>> $idiomas active languages;
+     *        `[]` reproduces the pre-change behaviour exactly
      * @return array{headers:string[],rows:array<int,array<int,string>>,suggested_mapping:array<int,string>,field_options:array<int,array{value:string,label:string}>}
      */
-    public function preview(string $filePath, string $sheetName, int $maxRows = 10): array
+    public function preview(string $filePath, string $sheetName, int $maxRows = 10, array $idiomas = []): array
     {
         $spreadsheet = IOFactory::load($filePath);
         $sheet = $spreadsheet->getSheetByName($sheetName);
@@ -356,15 +505,16 @@ class ArticuloExcelImportWizardService
         return [
             'headers' => $headers,
             'rows' => $rows,
-            'suggested_mapping' => self::suggestMapping($headers, $this->extra_field_aliases()),
-            'field_options' => $this->fieldOptions($this->importable()),
+            'suggested_mapping' => self::suggestMapping($headers, $this->extra_field_aliases($idiomas)),
+            'field_options' => $this->fieldOptions($this->importable(), $idiomas),
         ];
     }
 
     /**
+     * @param array<int, object|array<string, mixed>> $idiomas active languages
      * @return array<string, array<string, mixed>>
      */
-    private function extra_field_aliases(): array
+    private function extra_field_aliases(array $idiomas = []): array
     {
         $extra = [];
         foreach ($this->importable() as $definition) {
@@ -374,6 +524,9 @@ class ArticuloExcelImportWizardService
             $codigo = (string) $definition['codigo'];
             $nombre = (string) ($definition['nombre'] ?? $codigo);
             $extra[$codigo] = ['aliases' => [mb_strtolower($nombre), $codigo]];
+        }
+        foreach (self::languageFieldCatalog($idiomas) as $fieldName => $info) {
+            $extra[$fieldName] = ['aliases' => $info['aliases']];
         }
 
         return $extra;

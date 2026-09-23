@@ -77,6 +77,61 @@ final class ArticuloExcelRowUpdater
         return true;
     }
 
+    /**
+     * Applies a mapped locale pair to the target language's description row
+     * (D-07 / R5). The write goes through `articulo::set_descripcion_idioma()`,
+     * so the clearing semantics (`articulo_descripcion::save()`) and the
+     * search-cache invalidation stay owned by the model and the frozen base
+     * column is never touched (GDI-06).
+     *
+     * A `null` component means "not mapped": the current value is preserved.
+     * A mapped but empty pair clears the language's row.
+     *
+     * @return bool True when the target language's row actually changed.
+     */
+    public static function applyDescripcionIdioma(
+        string $codidioma,
+        ?string $descripcion,
+        ?string $descripcionCorta,
+        \FSFramework\model\articulo $art
+    ): bool {
+        $codidioma = trim($codidioma);
+        if ($codidioma === '') {
+            return false;
+        }
+
+        [$currentDescripcion, $currentCorta] = self::currentLanguagePair($art, $codidioma);
+        $nextDescripcion = $descripcion === null ? $currentDescripcion : trim($descripcion);
+        $nextCorta = $descripcionCorta === null ? $currentCorta : trim($descripcionCorta);
+
+        if ($nextDescripcion === $currentDescripcion && $nextCorta === $currentCorta) {
+            return false;
+        }
+
+        return (bool) $art->set_descripcion_idioma($codidioma, $nextDescripcion, $nextCorta);
+    }
+
+    /**
+     * The target language's own pair, read from the article's cached description
+     * list. Same-language only: no fallback chain is inherited, so "absent" is
+     * observable as an empty pair (R2).
+     *
+     * @return array{0: string, 1: string}
+     */
+    private static function currentLanguagePair(\FSFramework\model\articulo $art, string $codidioma): array
+    {
+        foreach ($art->get_descripciones() as $description) {
+            if ((string) $description->codidioma === $codidioma) {
+                return [
+                    (string) ($description->descripcion ?? ''),
+                    (string) ($description->descripcion_corta ?? ''),
+                ];
+            }
+        }
+
+        return ['', ''];
+    }
+
     public static function applyPvp(string $value, \FSFramework\model\articulo $art, bool $roundPrice = false): bool
     {
         if ($roundPrice) {

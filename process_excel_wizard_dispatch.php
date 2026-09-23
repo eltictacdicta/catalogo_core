@@ -202,6 +202,28 @@ function handleCatalogoStart(string $progressFile): void
         $mapping[$k] = is_string($v) ? $v : '';
     }
 
+    // Target language (D-07 / R5): an explicit active target wins, otherwise the
+    // configured default. The registry is only READ here: a locale suffix never
+    // creates or mutates a `catalogo_idiomas` row.
+    $idiomaModel = new \FSFramework\model\catalogo_idioma();
+    $idiomaModel->ensure_defaults();
+    $idiomasActivos = (array) $idiomaModel->all_activos();
+    $targetCodidioma = \FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService::resolveTargetCodidioma(
+        (string) ($_GET['target_codidioma'] ?? ''),
+        $idiomasActivos,
+        $idiomaModel->get_effective_default_code()
+    );
+
+    // Mapped locale fields, including a mapped-but-empty one (`apply()` drops
+    // empty cells, so presence must be recovered from the mapping to drive the
+    // clearing path).
+    $mappedLocaleFields = [];
+    foreach ($mapping as $fieldName) {
+        if (preg_match('/^descripcion(_corta)?_.+$/', (string) $fieldName) === 1) {
+            $mappedLocaleFields[(string) $fieldName] = true;
+        }
+    }
+
     $hasNonIgnore = false;
     foreach ($mapping as $fieldName) {
         if ($fieldName !== '__ignorar__' && $fieldName !== '') {
@@ -264,7 +286,10 @@ function handleCatalogoStart(string $progressFile): void
         $defaultAction,
         $articuloModel,
         $roundPrice,
-        $defaultCodimpuesto
+        $defaultCodimpuesto,
+        $targetCodidioma,
+        $idiomasActivos,
+        $mappedLocaleFields
     ): void {
         $referencia = trim((string) ($mappedRow['referencia'] ?? ''));
         $rowSig = ['motivo_descarte' => '', 'referencia' => $referencia, 'detalle' => ''];
@@ -273,7 +298,7 @@ function handleCatalogoStart(string $progressFile): void
             if ($referencia !== '') {
                 $existing = $articuloModel->get($referencia);
                 if ($existing) {
-                    catalogoApplyWizardFields($mappedRow, $existing, $stats, $rowIdx, true, $roundPrice);
+                    catalogoApplyWizardFields($mappedRow, $existing, $stats, $rowIdx, true, $roundPrice, $targetCodidioma, $idiomasActivos, $mappedLocaleFields);
                     return;
                 }
             }
@@ -301,6 +326,7 @@ function handleCatalogoStart(string $progressFile): void
 
             if ($newArt->save()) {
                 $stats['creados']++;
+                catalogoApplyLocaleFields($mappedRow, $newArt, $targetCodidioma, $idiomasActivos, $mappedLocaleFields);
             } else {
                 $rowSig['motivo_descarte'] = 'create_failed';
                 catalogoFputcsvSafe($hDesc, array_values($rowSig), ';');
@@ -328,7 +354,7 @@ function handleCatalogoStart(string $progressFile): void
             return;
         }
 
-        catalogoApplyWizardFields($mappedRow, $art, $stats, $rowIdx, false, $roundPrice);
+        catalogoApplyWizardFields($mappedRow, $art, $stats, $rowIdx, false, $roundPrice, $targetCodidioma, $idiomasActivos, $mappedLocaleFields);
     };
 
     \FSFramework\Core\ProgressStream::sendEvent('start', [
@@ -380,7 +406,10 @@ function catalogoApplyWizardFields(
     array &$stats,
     int $rowIdx,
     bool $isCreatePathUpdate,
-    bool $roundPrice = false
+    bool $roundPrice = false,
+    ?string $targetCodidioma = null,
+    array $idiomasActivos = [],
+    array $mappedLocaleFields = []
 ): void {
     unset($rowIdx, $isCreatePathUpdate);
     $updateRow = $mappedRow;
@@ -394,6 +423,53 @@ function catalogoApplyWizardFields(
     } else {
         $stats['sin_cambios']++;
     }
+
+    catalogoApplyLocaleFields($mappedRow, $art, $targetCodidioma, $idiomasActivos, $mappedLocaleFields);
+}
+
+/**
+ * Applies the mapped locale columns to the single target language's row
+ * (D-07). `$mappedLocaleFields` preserves a mapped-but-empty column so the
+ * clearing path can run; an unknown or deactivated suffix is ignored by
+ * `resolveLocalePair()` and never creates a language row.
+ *
+ * @param array<string,string> $mappedRow
+ * @param array<int, object|array<string,mixed>> $idiomasActivos
+ * @param array<string,bool> $mappedLocaleFields
+ */
+function catalogoApplyLocaleFields(
+    array $mappedRow,
+    \FSFramework\model\articulo $art,
+    ?string $targetCodidioma,
+    array $idiomasActivos,
+    array $mappedLocaleFields
+): void {
+    if ($targetCodidioma === null || $targetCodidioma === '') {
+        return;
+    }
+
+    $localeRow = $mappedRow;
+    foreach ($mappedLocaleFields as $fieldName => $unused) {
+        if (!array_key_exists($fieldName, $localeRow)) {
+            $localeRow[$fieldName] = '';
+        }
+    }
+
+    $pair = \FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService::resolveLocalePair(
+        $localeRow,
+        $idiomasActivos,
+        $targetCodidioma
+    );
+    if ($pair === null) {
+        return;
+    }
+
+    \FSFramework\Plugins\catalogo_core\Services\ArticuloExcelRowUpdater::applyDescripcionIdioma(
+        $targetCodidioma,
+        $pair['descripcion'],
+        $pair['descripcion_corta'],
+        $art
+    );
 }
 
 function handleCatalogoProgress(string $progressFile): void
