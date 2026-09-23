@@ -66,6 +66,13 @@ trait VentasArticulosListTrait
     public array $idiomas = [];
 
     /**
+     * Resolved configured default language code (D-07). The export uses it to
+     * order the additive locale columns default-first; it is read from the same
+     * registry load that populates `$idiomas`.
+     */
+    public string $codidioma_defecto = '';
+
+    /**
      * Every registry row (active or not) for the `#idiomas` management table
      * (GDI-01/D-06). The active subset above keeps serving the Excel actions.
      *
@@ -265,6 +272,7 @@ trait VentasArticulosListTrait
         $idioma->ensure_defaults();
         $this->idiomas = (array) $idioma->all_activos();
         $this->idiomas_todos = (array) $idioma->all();
+        $this->codidioma_defecto = (string) $idioma->get_effective_default_code();
     }
 
     // =====================================================================

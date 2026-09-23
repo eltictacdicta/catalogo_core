@@ -43,6 +43,23 @@
                             <p class="help-block text-muted">{{ 'excel-import-default-tax-help'|trans }}</p>
                         </div>
                         <div class="form-group">
+                            <label for="articulos-wizard-target-idioma">{{ 'excel-import-target-language'|trans }}</label>
+                            <select id="articulos-wizard-target-idioma" name="target_codidioma" class="form-control">
+                                {# D-07: the configured default leads and is preselected. #}
+                                {% for idioma in fsc.idiomas %}
+                                {% if idioma.por_defecto %}
+                                <option value="{{ idioma.codidioma }}" selected>{{ idioma.nombre }} ({{ idioma.codidioma }})</option>
+                                {% endif %}
+                                {% endfor %}
+                                {% for idioma in fsc.idiomas %}
+                                {% if not idioma.por_defecto %}
+                                <option value="{{ idioma.codidioma }}">{{ idioma.nombre }} ({{ idioma.codidioma }})</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                            <p class="help-block text-muted">{{ 'excel-import-target-language-help'|trans }}</p>
+                        </div>
+                        <div class="form-group">
                             <label for="articulos-wizard-file">{{ 'excel-import-select-file'|trans }}</label>
                             <input type="file" id="articulos-wizard-file" name="file" accept=".xlsx,.xls" class="form-control" required>
                         </div>

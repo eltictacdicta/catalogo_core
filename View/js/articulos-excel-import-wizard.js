@@ -345,6 +345,14 @@
         return this.config.defaultCodimpuesto || 'IVA21';
     };
 
+    ArticulosExcelWizard.prototype.getTargetCodidioma = function () {
+        var sel = $('articulos-wizard-target-idioma');
+        if (sel && sel.value) {
+            return sel.value;
+        }
+        return '';
+    };
+
     ArticulosExcelWizard.prototype.hasMappedTaxColumn = function () {
         for (var k in this.userMapping) {
             if (this.userMapping[k] === 'codimpuesto') {
@@ -534,6 +542,7 @@
         params.push('default_action=' + encodeURIComponent(mode ? mode.value : 'create_if_missing'));
         params.push('round_price=' + (this.isRoundPriceEnabled() ? '1' : '0'));
         params.push('default_codimpuesto=' + encodeURIComponent(this.getDefaultCodimpuesto()));
+        params.push('target_codidioma=' + encodeURIComponent(this.getTargetCodidioma()));
         for (var i = 0; i < this.headers.length; i++) {
             params.push('mapping[' + i + ']=' + encodeURIComponent(this.userMapping[i] || '__ignorar__'));
         }

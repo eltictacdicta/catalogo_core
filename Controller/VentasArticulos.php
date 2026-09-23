@@ -366,7 +366,7 @@ class VentasArticulos extends PageController
         }
 
         $service = new ArticuloExcelImportWizardService();
-        $preview = $service->preview($filePath, $sheet, $n);
+        $preview = $service->preview($filePath, $sheet, $n, $this->idiomas);
 
         return [
             'success' => true,
@@ -383,7 +383,13 @@ class VentasArticulos extends PageController
         $articulos = $filtered ? $this->loadArticulosForExportFiltered() : $this->loadArticulosForExportAll();
 
         $service = new ArticuloExcelExportService();
-        $spreadsheet = $service->buildSpreadsheet($articulos);
+        // D-07: the additive locale columns follow the page's active languages,
+        // ordered default-first through the resolved configured default.
+        $spreadsheet = $service->buildSpreadsheet(
+            $articulos,
+            idiomas: $this->idiomas,
+            codidioma_defecto: $this->codidioma_defecto
+        );
         $filename = $filtered ? 'articulos_filtrado_' . date('Y-m-d') . '.xlsx' : 'articulos_' . date('Y-m-d') . '.xlsx';
         $service->sendDownload($spreadsheet, $filename);
     }
@@ -392,7 +398,14 @@ class VentasArticulos extends PageController
     {
         $this->template = false;
         $service = new ArticuloExcelExportService();
-        $spreadsheet = $service->buildSpreadsheet([], true);
+        // The template/empty export is a call site too: it must carry the same
+        // locale layout so the downloaded plantilla matches a real export.
+        $spreadsheet = $service->buildSpreadsheet(
+            [],
+            true,
+            idiomas: $this->idiomas,
+            codidioma_defecto: $this->codidioma_defecto
+        );
         $service->sendDownload($spreadsheet, 'plantilla_articulos.xlsx');
     }
 
