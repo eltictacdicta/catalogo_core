@@ -104,15 +104,7 @@ trait TarifarioOpcionalStateTrait
         $this->idiomas = $idioma->all_activos();
 
         // Idioma por defecto
-        $this->codidioma = 'es';
-        if (isset($_REQUEST['codidioma'])) {
-            $this->codidioma = $_REQUEST['codidioma'];
-        } else {
-            $default = $idioma->get_default();
-            if ($default) {
-                $this->codidioma = $default->codidioma;
-            }
-        }
+        $this->codidioma = $this->resolve_codidioma($idioma);
 
         // Cargar tarifas
         $tarifa = new tarif_tarifa();
@@ -127,6 +119,23 @@ trait TarifarioOpcionalStateTrait
         } elseif ($this->tarifa_defecto) {
             $this->codtarifa = $this->tarifa_defecto->codtarifa;
         }
+    }
+
+    /**
+     * Resolves the active language used to show descriptions (GDI-10, D-02/D-10).
+     *
+     * An explicit request value keeps its existing precedence; otherwise the
+     * resolution delegates to the same total resolver every other consumer uses,
+     * `catalogo_idioma::get_effective_default_code()`, instead of seeding `'es'`
+     * and reading `get_default()`.
+     */
+    protected function resolve_codidioma(catalogo_idioma $idioma): string
+    {
+        if (isset($_REQUEST['codidioma'])) {
+            return (string) $_REQUEST['codidioma'];
+        }
+
+        return $idioma->get_effective_default_code();
     }
 
     /**

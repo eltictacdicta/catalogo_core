@@ -22,6 +22,8 @@ namespace Tests\CatalogoCore;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Tests\CatalogoCore\Support\FakeCatalogoIdioma;
+use Tests\CatalogoCore\Support\IdiomaRegistryFake;
 
 /**
  * Spy DB for the shared opcional controller trait. Records the explicit
@@ -108,7 +110,21 @@ final class TarifarioOpcionalStateTraitTest extends TestCase
         require_once FS_FOLDER . '/base/fs_core_log.php';
         require_once FS_FOLDER . '/base/fs_controller.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/extras/TarifarioOpcionalStateTrait.php';
+        require_once __DIR__ . '/Support/FakeCatalogoIdioma.php';
+        require_once __DIR__ . '/Support/IdiomaRegistryFake.php';
         self::$traitLoaded = true;
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        unset($_REQUEST['codidioma']);
+    }
+
+    protected function tearDown(): void
+    {
+        unset($_REQUEST['codidioma']);
+        parent::tearDown();
     }
 
     private function buildSubject(TarifarioStateTraitSpyDb $db): object
@@ -132,6 +148,11 @@ final class TarifarioOpcionalStateTraitTest extends TestCase
             public function parse($raw)
             {
                 return $this->parse_price_input($raw);
+            }
+
+            public function resolve(\FSFramework\model\catalogo_idioma $idioma): string
+            {
+                return $this->resolve_codidioma($idioma);
             }
         };
     }
@@ -297,5 +318,75 @@ final class TarifarioOpcionalStateTraitTest extends TestCase
             'repeated comma' => ['1,2,3'],
             'inner spaces' => ['1 000'],
         ];
+    }
+
+    // =====================================================================
+    // resolve_codidioma — GDI-10 (task 4c.5)
+    // =====================================================================
+
+    /**
+     * Active-language registry double. The configured default is deliberately
+     * `en` (never `es`) so a hard-coded `es` seed fails the assertion.
+     *
+     * @param list<array{codidioma: string, nombre?: string, activo?: bool, por_defecto?: bool}> $idiomas
+     */
+    private function idiomaModel(array $idiomas): FakeCatalogoIdioma
+    {
+        return (new FakeCatalogoIdioma())->useFakeDb(new IdiomaRegistryFake($idiomas));
+    }
+
+    /**
+     * The trait derives its active language from the same total resolver every
+     * other consumer uses (`catalogo_idioma::get_effective_default_code()`), not
+     * from a hard-coded `'es'`.
+     */
+    public function test_codidioma_resolution_follows_the_configured_default(): void
+    {
+        $idioma = $this->idiomaModel([
+            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => false],
+        ]);
+
+        self::assertSame(
+            'en',
+            $this->buildSubject(new TarifarioStateTraitSpyDb())->resolve($idioma),
+            'the trait must resolve the configured default, never a hard-coded es'
+        );
+    }
+
+    /**
+     * With no `por_defecto` flag the old code stayed on its `'es'` seed;
+     * `get_effective_default_code()` is total and returns the lowest active code.
+     */
+    public function test_codidioma_resolution_is_total_without_a_configured_default(): void
+    {
+        $idioma = $this->idiomaModel([
+            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => false],
+        ]);
+
+        self::assertSame(
+            'en',
+            $this->buildSubject(new TarifarioStateTraitSpyDb())->resolve($idioma),
+            'the resolution must stay total, not fall back to a hard-coded es'
+        );
+    }
+
+    /**
+     * An explicit request value keeps its existing precedence over the resolver.
+     */
+    public function test_explicit_request_language_wins_over_the_resolver(): void
+    {
+        $_REQUEST['codidioma'] = 'es';
+        $idioma = $this->idiomaModel([
+            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => false],
+        ]);
+
+        self::assertSame(
+            'es',
+            $this->buildSubject(new TarifarioStateTraitSpyDb())->resolve($idioma),
+            'an explicit request language must keep winning over the configured default'
+        );
     }
 }
