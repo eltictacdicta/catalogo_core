@@ -288,6 +288,16 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 - [x] 4a.7 **RED → GREEN** — Update `plugins/catalogo_core/tests/Services/ArticuloSearchQueryBuilderTest.php`: expected strings become `a.`-qualified, plus assertions for the `ORDER BY a.referencia ASC` form and the single language predicate. `[GDI-09; D-04]`
 - [x] 4a.8 **VERIFY** — Grep gate for the D-03 invariant: no `INSERT`/`UPDATE`/`DELETE` against `articulo_descripciones` outside `model/core/articulo_descripcion.php` (the activation-time copy in `CatalogLegacyTableMigration` is the only allowed reader/writer elsewhere). `[GDI-08; D-03]`
 
+> **Annotated (slice 4a-fix, `slice-4a-fix-writer-gate`).** The gate's original single allowlist
+> silently **permitted** `model/core/catalogo_idioma.php` — the slice-1a language-delete cleanup,
+> added for GDI-03 — to write `articulo_descripciones` without invalidating the search cache. That
+> was a real GDI-08 gap and the reason D-03's proof ("the only remaining writer is
+> `CatalogLegacyTableMigration`", design.md:169) was incomplete: it assumed a single writer file.
+> Task 4a.8 is now satisfied by (a) the fix that makes `catalogo_idioma::delete()` invalidate the
+> search cache after a successful commit, and (b) a gate that splits `$invalidating` writers (must
+> call `articulo::invalidate_search_cache()`) from the explicitly exempt activation migration,
+> instead of one permissive list. See `apply-progress.md` → "Slice-4a-fix task status". `[GDI-08; D-03]`
+
 ### Slice 4b — Excel export/import with per-language columns
 
 - [ ] 4b.1 **RED** — Author `plugins/catalogo_core/tests/Services/ArticuloExcelIdiomasTest.php` with the three **Export Excel** scenarios (base seven headers byte-identical; locale columns appended in deterministic order with a deactivated language omitted; a non-default language's text exported under its suffix). `[Export Excel; D-07]`

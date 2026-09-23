@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
-| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3 and 4a complete and green |
+| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a and 4a-fix complete and green |
 
 ---
 
@@ -136,6 +136,86 @@ matches every language through one isolated predicate.
 
 ---
 
+## Slice-4a-fix task status — Close the `catalogo_idioma::delete()` writer gap (GDI-08)
+
+Follow-up work unit `slice-4a-fix-writer-gate`, applied on top of slice 4a after the gap
+reported in deviation 16 was reviewed. The interrupted first run left the change written
+but unverified; this run inspected the pending diff, verbatim, **without rewriting it**,
+proved it with tests, closed the gate and committed it. Task `4a.8` is annotated in
+`tasks.md`; the gate is now honest instead of permissive.
+
+### The gap (restated)
+
+Requirement **GDI-08** says *every* write that creates, updates or deletes an
+`articulo_descripciones` row MUST invalidate the `articulos_search_*` cache family.
+Slice 4a closed the description-model writers (`articulo_descripcion::save()` /
+`delete()`) but `catalogo_idioma::delete()` (shipped in slice 1a for GDI-03) deletes
+the language's description rows with raw SQL and never invalidated the cache. A stale
+`articulos_search_<tag>` entry could therefore keep returning a match for a language
+that no longer existed.
+
+### Design root cause (D-03)
+
+D-03's proof was *"the only remaining writer is the legacy→canonical copy in
+`CatalogLegacyTableMigration`"* (design.md:169). That claim assumed a **single writer
+file** — `articulo_descripcion` — and never accounted for slice 1a's raw-SQL cleanup.
+The design decision is sound for its named callers; its **proof** was incomplete. The
+fix therefore does not change D-03's mechanism (still one public static
+`articulo::invalidate_search_cache()` entry point) — it corrects the enumeration of
+writers and makes the gate encode the corrected enumeration. This is a design-defect
+correction, not a mechanism change.
+
+### The fix
+
+`catalogo_idioma::delete()` (`model/core/catalogo_idioma.php`):
+
+- A cheap `SELECT 1 FROM articulo_descripciones WHERE codidioma = <code> LIMIT 1`
+  pre-check runs **before** the transaction and records whether the language owns
+  description rows.
+- After `commit()` succeeds and only when the pre-check saw rows, the method calls
+  `articulo::invalidate_search_cache()` (the slice-4a entry point, commit `1df1a7eb`).
+- The pre-check cannot make a real write skip invalidation: the DELETE and the
+  pre-check use the same `var2str($this->codidioma)` value, and `normalize_default()`
+  only touches `catalogo_idiomas`, never `articulo_descripciones` — so the explicit
+  DELETE is the only description-row write in the method. A rolled-back delete wrote
+  nothing and correctly does not invalidate.
+- `articulo` resolves to `FSFramework\model\articulo` (same namespace as
+  `catalogo_idioma`); `base/fs_model_autoloader.php` maps `FSFramework\model\*` to the
+  plugin's `model/core/` directory. The call is static, so it never constructs
+  `articulo` and never triggers the lazy schema path.
+
+### Tests
+
+| Test | Tag(s) | State | Evidence |
+|---|---|---|---|
+| `ArticuloSearchCacheInvalidationTest::test_language_delete_invalidates_the_cache` | `[GDI-08; D-03]` | [x] | Seeds a cached tag + `en` language owning one description row; asserts the cache key is gone after `delete()`. **RED without the fix**, GREEN with it. |
+| `ArticuloSearchCacheInvalidationTest::test_language_delete_without_descriptions_keeps_the_cache` | `[GDI-08; D-03]` | [x] | Seeds the same language with **no** description rows; asserts the cache survives. **RED with an unconditional invalidate**, GREEN with the guard. |
+| `ArticuloSearchCacheInvalidationTest::test_every_description_writer_invalidates_or_is_explicitly_exempt` (gate) | `[GDI-08; D-03]` | [x] | Split the old single allowlist into `$invalidating` (must call the entry point) and `$exempt` (the activation migration, exempt by explicit reviewed decision). Asserts the call exists in every `$invalidating` file. **RED if a request-path writer loses the call.** |
+| `CatalogoIdiomaDeleteCleanupTest::setUp` | `[GDI-03]` | [x] | Loads `articulo.php` so the delete path can reach the invalidator. |
+| `IdiomaRegistryFake::select` | — | [x] | Recognises the new `SELECT 1 ... LIMIT 1` pre-check. |
+
+### Non-tautology proof (mutation checks, all temporary and reverted)
+
+| Mutation | Result |
+|---|---|
+| Remove `if ($hasDescriptions) { articulo::invalidate_search_cache(); }` from `catalogo_idioma::delete()` | `--filter ArticuloSearchCacheInvalidationTest` → **6 tests, 2 failures**: `test_language_delete_invalidates_the_cache` and the gate. Both tests have teeth. |
+| Make the invalidate unconditional (`if (true)`) | **6 tests, 1 failure**: `test_language_delete_without_descriptions_keeps_the_cache`. The guard test has teeth. |
+| Add a new plugin file containing `DELETE FROM articulo_descripciones ...` | **6 tests, 1 failure** — the gate reports `DML against articulo_descripciones escaped the allowlist: model/core/__probe_writer.php`. The offender scan has teeth. |
+
+The three mutations were applied one at a time to the working tree, observed, and
+reverted from a byte-for-byte backup; the committed bytes are the pending diff exactly.
+
+### Files
+
+| File | Action | What Was Done |
+|---|---|---|
+| `model/core/catalogo_idioma.php` | Modified | `LIMIT 1` pre-check + post-commit conditional `articulo::invalidate_search_cache()` (+17) |
+| `tests/ArticuloSearchCacheInvalidationTest.php` | Modified | Two language-delete scenarios + the split invalidating/exempt writer gate (+75 / −4) |
+| `tests/CatalogoIdiomaDeleteCleanupTest.php` | Modified | `require_once` of `articulo.php` on the delete path (+4) |
+| `tests/Support/IdiomaRegistryFake.php` | Modified | Pre-check SQL branch (+13) |
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -154,6 +234,7 @@ matches every language through one isolated predicate.
 | 3.1 / 3.3 / 3.4 | focused run over the three files → **2 failures** (partial had no selector; view still rendered `name="sdescripcion"`) | same run → green | — |
 | 3.2 / 3.5 / 3.6 | focused run → **3 failures** (`descripcion_es` overwritten by `$art->descripcion`; `descripcion_es` injected into the `en` slot; the empty pair left the row) | same run → **48 tests, 200 assertions, OK** | — |
 | 4a.1 / 4a.2 / 4a.3 | focused run over the three new/updated files → **16 tests, 24 assertions, 2 errors + 11 failures**: `languageDescriptionPredicate`/`languageDescriptionJoin` undefined, the cached `articulos_search_*` key survived every description write, the term in the `en` row was unfindable, the writer gate counted 0 invalidations | same run → **16 tests, 65 assertions, OK** | — |
+| 4a-fix (gate) | The interrupted first run left the tests and the fix uncommitted together; RED was re-established by removing the invalidate call from `catalogo_idioma::delete()` → **6 tests, 2 failures** (`test_language_delete_invalidates_the_cache` + the gate) | restored bytes → `--filter ArticuloSearchCacheInvalidationTest` **6 tests, 21 assertions, OK** | None — the pending bytes were kept verbatim; only the gate's allowlist split was already present in the pending diff and was reviewed, not rewritten |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -229,6 +310,14 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | **Runtime harness command/scenario and exact result** | Included in the slice run above: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 866 tests, 3806 assertions, 2 warnings, 1 skipped**. The search boundary is exercised DB-free through `SearchCatalogFake` (records the emitted SQL and evaluates its description predicate against seeded rows), `SearchCacheFake` and the `make_articulo()` seam on `FakeSearchArticulo`. A real-DB composed-SQL smoke remains for `verify`. |
 | **Rollback boundary** | Revert commit `210a80bd`: `Services/ArticuloSearchQueryBuilder.php` (the two helpers + the `a.` qualification), `model/core/articulo.php` (`search()` alias/join/DISTINCT/ORDER BY, `buildSearchWhereClause()` qualification, the `make_articulo()` seam), `tests/ArticuloSearchMultiidiomaTest.php`, `tests/Services/ArticuloSearchQueryBuilderTest.php` and the three `tests/Support/` fakes. The invalidator from `4a-cache` is independent and stays; `ORDER BY lower(referencia)` returns with the revert. No schema, view, Excel, API or consumer file is touched. |
 
+### Work unit `4a-fix` — `catalogo_idioma::delete()` closes the last GDI-08 writer gap (D-03)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter ArticuloSearchCacheInvalidationTest` → **OK (6 tests, 21 assertions)**; RED re-established by removing the invalidate call from `catalogo_idioma::delete()` → **2 failures** (`test_language_delete_invalidates_the_cache`, the writer gate), and by making it unconditional → **1 failure** (`test_language_delete_without_descriptions_keeps_the_cache`) |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 868 tests, 3814 assertions, 2 warnings, 1 skipped** (baseline before this fix: 866 tests, 3806 assertions; +2 tests, no regressions). The cache boundary is exercised against the **real** `fs_cache` adapter (Symfony `CacheManager`); the delete path executes the real `catalogo_idioma::delete()` body through `FakeCatalogoIdioma` + `IdiomaRegistryFake`. Root regression: `ddev exec php vendor/bin/phpunit --testsuite Plugins` → 2102 tests, **8 failures, all pre-existing in the untouched `OidcProvider` plugin; no `catalogo_core` test failed**. |
+| **Rollback boundary** | Revert this fix's commit: `model/core/catalogo_idioma.php` (the `LIMIT 1` pre-check + the post-commit conditional call), `tests/ArticuloSearchCacheInvalidationTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php` and `tests/Support/IdiomaRegistryFake.php`. Reverting only re-introduces the stale `articulos_search_*` entries for a deleted language; search itself keeps working, and no other slice depends on the fix. No schema, view, controller, Excel, API or consumer file is touched. |
+
 ---
 
 ## Test commands and results (exact)
@@ -251,6 +340,10 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4a) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4a) | **FAILED (pre-existing, unrelated)** — 2088 tests, 8288 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4). **No `catalogo_core` test failed.** |
 | `ddev exec composer phpstan` (after slice 4a) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` error; phpstan paths are `src` and root `tests` only, so no slice-4a file is analysed by this config. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4a-fix) | **OK** — **868 tests, 3814 assertions, 2 warnings, 1 skipped**. The fix adds 2 tests to `ArticuloSearchCacheInvalidationTest`. No failures, no regressions. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4a-fix) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4a-fix) | **FAILED (pre-existing, unrelated)** — 2102 tests, 8353 assertions, **8 failures**, 1 warning, 46 skipped. All 8 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×2, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); the count is order/state-sensitive in that plugin (an adjacent run reported 7 with the same failure set). **No `catalogo_core` test failed.** |
+| `ddev exec composer phpstan` (after slice 4a-fix) | **Not re-run** — no `catalogo_core` file is analysed by this config (`src` + root `tests` only); the single pre-existing `tests/Core/PluginEnableAjaxSafetyTest.php:308` error is unchanged and unowned by this work unit. |
 
 ---
 
@@ -270,6 +363,8 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | Cut used for slice 2? | **No** — the slice was complete and green at 862 lines; no code, comment, blank line, doc or test was cut to fit 800. |
 | Cut used for slice 3? | **No** — 386 ≤ 800 and inside the 360–520 estimate, landed whole. |
 | Cut used for slice 4a? | **No** — the slice was complete and green at 861 lines; no code, comment, blank line, doc or test was cut to fit 800. |
+| Slice 4a-fix authored changed lines (additions + deletions) | **113** — `model/core/catalogo_idioma.php` +17, `tests/ArticuloSearchCacheInvalidationTest.php` +75/−4, `tests/CatalogoIdiomaDeleteCleanupTest.php` +4, `tests/Support/IdiomaRegistryFake.php` +13 |
+| Cut used for slice 4a-fix? | **No** — 113 ≤ 800, landed whole. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -321,6 +416,11 @@ cohesive split therefore brings the slice under 800 without deleting test covera
 overage is reported for a `size:exception` (same disposition the maintainer accepted for
 `1a` and that slice 2 requests).
 
+**Slice 4a-fix fits.** 113 authored lines ≤ 800; the follow-up closes the gap that slice 4a
+reported and is one cohesive work unit (production + its tests, committed together). No
+`size:exception` is requested, and no code, comment, blank line, doc or test was cut or
+compressed to fit.
+
 ---
 
 
@@ -335,6 +435,7 @@ overage is reported for a `size:exception` (same disposition the maintainer acce
 | `54f15e5a` | `feat(catalogo_core): drive the article editor descriptions from a language selector` | 8 | +308 / −78 |
 | `1df1a7eb` | `feat(catalogo_core): invalidate the article search cache on every description write` | 3 | +257 / −9 |
 | `210a80bd` | `feat(catalogo_core): search articles across all description languages` | 7 | +560 / −35 |
+| `c1420c36` | `fix(catalogo_core): invalidate the search cache when a language is deleted` | 4 | +109 / −4 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -368,6 +469,11 @@ Slice-4a files (commit `210a80bd`): `Services/ArticuloSearchQueryBuilder.php`,
 `tests/ArticuloSearchMultiidiomaTest.php`, `tests/Support/SearchCatalogFake.php`,
 `tests/Support/SearchCacheFake.php`, `tests/Support/FakeSearchArticulo.php`.
 The slice-4a SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
+
+Slice-4a-fix files (commit `c1420c36`): `model/core/catalogo_idioma.php`,
+`tests/ArticuloSearchCacheInvalidationTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
+`tests/Support/IdiomaRegistryFake.php`.
+The slice-4a-fix SDD bookkeeping (`tasks.md` annotation + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -469,7 +575,8 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     `delete()` both invalidate. The `catalogo_idioma::delete()` write **does not invalidate the
     search cache** — a real gap against GDI-08's letter, out of the declared slice-4a caller list
     (task 4a.3 names only the description model), reported for `verify`/a follow-up rather than
-    silently patched or silently ignored.
+    silently patched or silently ignored. **Closed by slice 4a-fix** — see deviation 19 and the
+    "Slice-4a-fix task status" section.
 17. **The `languageDescriptionPredicate()` `$quote` parameter is accepted but unused.** The
     interface contract fixes the signature `(string $like, callable $quote)`; the LIKE literal is
     quoted by the caller, so the helper only concatenates it. It is documented as intentional
@@ -480,6 +587,32 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     case-sensitive `descripcion LIKE`; on MySQL's default collation `lower()` is a no-op, and on
     PostgreSQL it makes the numeric-query description match case-insensitive like the other two
     paths. This is required to keep exactly one language-agnostic predicate (GDI-09's grep gate).
+
+### Slice-4a-fix deviations (design-defect correction, no mechanism change)
+
+19. **D-03's proof was incomplete; the fix corrects the enumeration, not the mechanism.** D-03
+    claimed `CatalogLegacyTableMigration` was "the only remaining writer" outside
+    `articulo_descripcion` (design.md:169), assuming a **single** writer file and missing slice
+    1a's raw-SQL cleanup in `catalogo_idioma::delete()`. The fix keeps D-03's single public
+    static entry point (`articulo::invalidate_search_cache()`) and adds the missing caller, then
+    makes the durable gate encode the corrected writer enumeration: `$invalidating` (writers that
+    MUST call the entry point) versus `$exempt` (the activation-time migration, exempt by explicit
+    reviewed decision). This is the honest reading of task 4a.8 — the earlier single allowlist
+    silently *permitted* the `catalogo_idioma.php` writer without asserting invalidation.
+20. **The invalidate call is conditional and post-commit.** `delete()` issues a cheap
+    `SELECT 1 ... LIMIT 1` before the transaction and invalidates after a successful `commit()`
+    only when that pre-check saw description rows. The pre-check cannot make a real write skip
+    invalidation: both statements use the same `var2str($this->codidioma)` and
+    `normalize_default()` never touches `articulo_descripciones`. The two dynamic tests pin both
+    branches; a mutation check (unconditional invalidate) fails the "keeps the cache" scenario,
+    proving the guard is real rather than decorative.
+21. **The durable gate is structural, not behavioral — and it is now labelled as such.** The
+    `$invalidating` loop is a source-text assertion (`assertStringContainsString`); the behavioral
+    proof for the two known writers is the dynamic cache tests. It would not detect a call that
+    was commented out while the literal text survived, and `$exempt` remains a deliberate
+    human-reviewed list. Neither gap weakens GDI-08 today: mutation checks confirm the gate fails
+    when the call is removed and when a new writer file is added. This is recorded so the gate is
+    not mistaken for a stronger guarantee than it provides.
 
 ---
 
@@ -517,22 +650,27 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   staged the remaining `articulo.php` hunks with `git add -p` for the first). No schema file
   (`model/table/articulo_descripciones.xml`, `model/table/catalogo_idiomas.xml`) was touched; no
   view, controller, Excel, API or consumer file was touched; no new Composer dependency was added.
+- **Slice-4a-fix no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty (no
+  delta merged) and the repository-root `openspec/` still has no entry for this change. The fix's
+  commit contains only the four explicit paths listed in "Commits created"; no schema, view,
+  controller, search-predicate, Excel, API or consumer file was touched; no new Composer
+  dependency was added.
 
 ---
 
 ## Remaining work / next
 
-1. **Slices `1a`, `1b`, `2`, `3` and `4a` are done** — committed and green.
+1. **Slices `1a`, `1b`, `2`, `3`, `4a` and `4a-fix` are done** — committed and green.
 2. **Slice `4b`** (Excel export/import with per-language columns) is next; it depends on slice 1's
    `set_descripcion_idioma()` and on slice 4a's D-03 for the per-row invalidation claim.
 3. **Slice `4c`** (`catalogo_core` no-context consumers) is independent and can run in parallel with
    4b after slice 1.
-4. **`verify`** must follow this artifact: slices 1, 2, 3 and 4a are delivered in full. The real-DB
+4. **`verify`** must follow this artifact: slices 1, 2, 3, 4a and 4a-fix are delivered in full. The real-DB
    boot smoke, a real-DB composed-SQL smoke of `articulo::search()` (the D-04 join + `DISTINCT` +
    `ORDER BY a.referencia` against MySQL and PostgreSQL), a real-browser POST of the `#idiomas`
    panel and a real-browser selector round trip (`codidioma` GET → edit → POST → reload) remain for
-   `verify`. The `catalogo_idioma::delete()` cache-invalidation gap (deviation 16) is a documented
-   follow-up, not a slice-4a failure.
+   `verify`. The `catalogo_idioma::delete()` cache-invalidation gap (deviation 16) is **closed** by
+   slice 4a-fix (deviation 19); `verify` should confirm it with a real-DB delete-and-search smoke.
 5. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
 6. **`size:exception` disposition for slice 4a** (861 authored lines vs the 800 budget) awaits the
