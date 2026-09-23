@@ -25,8 +25,8 @@ final class ArticuloSearchQueryBuilderTest extends TestCase
         $quote = fn (string $value): string => $this->quote($value);
         $sql = ArticuloSearchQueryBuilder::buildTextSearchCondition('1234567890123', $quote);
 
-        $this->assertStringContainsString("codbarras = '1234567890123'", $sql);
-        $this->assertStringContainsString("referencia = '1234567890123'", $sql);
+        $this->assertStringContainsString("a.codbarras = '1234567890123'", $sql);
+        $this->assertStringContainsString("a.referencia = '1234567890123'", $sql);
     }
 
     public function testSingleWordQueryMatchesDescription(): void
@@ -34,8 +34,9 @@ final class ArticuloSearchQueryBuilderTest extends TestCase
         $quote = fn (string $value): string => $this->quote($value);
         $sql = ArticuloSearchQueryBuilder::buildTextSearchCondition('tornillo', $quote);
 
-        $this->assertStringContainsString("lower(descripcion) LIKE '%tornillo%'", $sql);
-        $this->assertStringContainsString("lower(referencia) LIKE '%tornillo%'", $sql);
+        $this->assertStringContainsString("lower(a.descripcion) LIKE '%tornillo%'", $sql);
+        $this->assertStringContainsString("lower(d.descripcion) LIKE '%tornillo%'", $sql);
+        $this->assertStringContainsString("lower(a.referencia) LIKE '%tornillo%'", $sql);
     }
 
     public function testMultiWordQueryUsesFuzzyReferenceMatch(): void
@@ -43,9 +44,9 @@ final class ArticuloSearchQueryBuilderTest extends TestCase
         $quote = fn (string $value): string => $this->quote($value);
         $sql = ArticuloSearchQueryBuilder::buildTextSearchCondition('foo bar', $quote);
 
-        $this->assertStringContainsString("lower(referencia) LIKE '%foo%bar%'", $sql);
-        $this->assertStringContainsString("lower(descripcion) LIKE '%foo%'", $sql);
-        $this->assertStringContainsString("lower(descripcion) LIKE '%bar%'", $sql);
+        $this->assertStringContainsString("lower(a.referencia) LIKE '%foo%bar%'", $sql);
+        $this->assertStringContainsString("lower(a.descripcion) LIKE '%foo%'", $sql);
+        $this->assertStringContainsString("lower(a.descripcion) LIKE '%bar%'", $sql);
         $this->assertStringContainsString(' AND ', $sql);
     }
 
@@ -62,5 +63,41 @@ final class ArticuloSearchQueryBuilderTest extends TestCase
         ArticuloSearchQueryBuilder::appendTextSearchConditions($sql, ' AND', 'demo', $quote);
 
         $this->assertStringStartsWith('SELECT * FROM articulos AND (', $sql);
+    }
+
+    public function testTheLanguageDescriptionPredicateMatchesBothTheBaseAndTheTranslations(): void
+    {
+        $quote = fn (string $value): string => $this->quote($value);
+        $predicate = ArticuloSearchQueryBuilder::languageDescriptionPredicate("'%tornillo%'", $quote);
+
+        $this->assertSame(
+            "(lower(a.descripcion) LIKE '%tornillo%' ESCAPE '|'"
+            . " OR lower(d.descripcion) LIKE '%tornillo%' ESCAPE '|')",
+            $predicate
+        );
+    }
+
+    public function testTheLanguageDescriptionJoinTargetsTheTranslationsTable(): void
+    {
+        $this->assertSame(
+            ' LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia',
+            ArticuloSearchQueryBuilder::languageDescriptionJoin()
+        );
+    }
+
+    public function testEveryBaseColumnReferenceIsQualifiedWithTheArticleAlias(): void
+    {
+        $quote = fn (string $value): string => $this->quote($value);
+
+        foreach (['1234567890123', 'tornillo', 'foo bar'] as $query) {
+            $sql = ArticuloSearchQueryBuilder::buildTextSearchCondition($query, $quote);
+
+            // An unqualified base reference after the LEFT JOIN is ambiguous.
+            $this->assertDoesNotMatchRegularExpression('/(?<![a-z.])referencia\b/', $sql);
+            $this->assertDoesNotMatchRegularExpression('/(?<![a-z.])partnumber\b/', $sql);
+            $this->assertDoesNotMatchRegularExpression('/(?<![a-z.])equivalencia\b/', $sql);
+            $this->assertDoesNotMatchRegularExpression('/(?<![a-z.])codbarras\b/', $sql);
+            $this->assertDoesNotMatchRegularExpression('/(?<![a-z.])descripcion\b/', $sql);
+        }
     }
 }

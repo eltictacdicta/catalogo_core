@@ -19,12 +19,49 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  * Multi-word queries match tpvmod behaviour:
  * - referencia / partnumber / equivalencia: spaces become wildcards (foo bar → foo%bar)
  * - descripcion: every token must appear (AND)
+ *
+ * Every base-column reference is qualified with the `a.` alias because the
+ * description predicate LEFT JOINs `articulo_descripciones` (alias `d`); an
+ * unqualified base column would be ambiguous once the join is present.
  */
 final class ArticuloSearchQueryBuilder
 {
     public static function escapeForLike(string $value): string
     {
         return str_replace(['|', '%', '_'], ['||', '|%', '|_'], $value);
+    }
+
+    /**
+     * The single language-agnostic description predicate.
+     *
+     * DELIBERATE DEVIATION (GDI-09 / D11) — article search is language-agnostic.
+     * Every retrieved system scopes search to a language or store view
+     * (PrestaShop `id_lang` S6; Akeneo working locale S20; Odoo
+     * `COALESCE(lang, en_US)` S1; Magento store view S28/S29). This fork
+     * intentionally matches across all languages because ~25 legacy readers and
+     * the frozen `articulos.descripcion` column keep text outside the
+     * translation table; a locale-scoped search would silently hide legacy
+     * articles. Do NOT "fix" this into a locale-scoped search (GDI-09).
+     *
+     * The single-word, multi-word and numeric paths all route through this
+     * helper, so exactly one language-agnostic predicate exists.
+     *
+     * @param string $like Already-quoted LIKE literal (see the callers).
+     * @param callable(string): string $quote SQL literal quoter, accepted for
+     *        symmetry with the builder's other condition callbacks.
+     */
+    public static function languageDescriptionPredicate(string $like, callable $quote): string
+    {
+        return '(lower(a.descripcion) LIKE ' . $like . " ESCAPE '|'"
+            . ' OR lower(d.descripcion) LIKE ' . $like . " ESCAPE '|')";
+    }
+
+    /**
+     * The join the language-agnostic predicate depends on.
+     */
+    public static function languageDescriptionJoin(): string
+    {
+        return ' LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia';
     }
 
     /**
@@ -84,12 +121,12 @@ final class ArticuloSearchQueryBuilder
         $like = $quote('%' . $escaped . '%');
 
         return '('
-            . 'referencia = ' . $quote($query)
-            . ' OR referencia LIKE ' . $like . " ESCAPE '|'"
-            . ' OR partnumber LIKE ' . $like . " ESCAPE '|'"
-            . ' OR equivalencia LIKE ' . $like . " ESCAPE '|'"
-            . ' OR descripcion LIKE ' . $like . " ESCAPE '|'"
-            . ' OR codbarras = ' . $quote($query)
+            . 'a.referencia = ' . $quote($query)
+            . ' OR a.referencia LIKE ' . $like . " ESCAPE '|'"
+            . ' OR a.partnumber LIKE ' . $like . " ESCAPE '|'"
+            . ' OR a.equivalencia LIKE ' . $like . " ESCAPE '|'"
+            . ' OR ' . self::languageDescriptionPredicate($like, $quote)
+            . ' OR a.codbarras = ' . $quote($query)
             . ')';
     }
 
@@ -102,12 +139,12 @@ final class ArticuloSearchQueryBuilder
         $like = $quote('%' . $escaped . '%');
 
         return '('
-            . 'lower(referencia) = ' . $quote($query)
-            . ' OR lower(referencia) LIKE ' . $like . " ESCAPE '|'"
-            . ' OR lower(partnumber) LIKE ' . $like . " ESCAPE '|'"
-            . ' OR lower(equivalencia) LIKE ' . $like . " ESCAPE '|'"
-            . ' OR lower(codbarras) = ' . $quote($query)
-            . ' OR lower(descripcion) LIKE ' . $like . " ESCAPE '|'"
+            . 'lower(a.referencia) = ' . $quote($query)
+            . ' OR lower(a.referencia) LIKE ' . $like . " ESCAPE '|'"
+            . ' OR lower(a.partnumber) LIKE ' . $like . " ESCAPE '|'"
+            . ' OR lower(a.equivalencia) LIKE ' . $like . " ESCAPE '|'"
+            . ' OR lower(a.codbarras) = ' . $quote($query)
+            . ' OR ' . self::languageDescriptionPredicate($like, $quote)
             . ')';
     }
 
@@ -124,9 +161,9 @@ final class ArticuloSearchQueryBuilder
         $fuzzyLike = $quote('%' . implode('%', $escapedWords) . '%');
 
         $referenceMatch = '('
-            . 'lower(referencia) LIKE ' . $fuzzyLike . " ESCAPE '|'"
-            . ' OR lower(partnumber) LIKE ' . $fuzzyLike . " ESCAPE '|'"
-            . ' OR lower(equivalencia) LIKE ' . $fuzzyLike . " ESCAPE '|'"
+            . 'lower(a.referencia) LIKE ' . $fuzzyLike . " ESCAPE '|'"
+            . ' OR lower(a.partnumber) LIKE ' . $fuzzyLike . " ESCAPE '|'"
+            . ' OR lower(a.equivalencia) LIKE ' . $fuzzyLike . " ESCAPE '|'"
             . ')';
 
         $descriptionParts = [];
@@ -134,8 +171,10 @@ final class ArticuloSearchQueryBuilder
             if ($word === '') {
                 continue;
             }
-            $descriptionParts[] = 'lower(descripcion) LIKE '
-                . $quote('%' . self::escapeForLike($word) . '%') . " ESCAPE '|'";
+            $descriptionParts[] = self::languageDescriptionPredicate(
+                $quote('%' . self::escapeForLike($word) . '%'),
+                $quote
+            );
         }
 
         if ($descriptionParts === []) {

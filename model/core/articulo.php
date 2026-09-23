@@ -1181,17 +1181,21 @@ class articulo extends \fs_model
             return $artilist;
         }
 
-        $sql = "SELECT " . self::$column_list . " FROM " . $this->table_name;
+        // Language-agnostic search (GDI-09 / D11): the description predicate
+        // joins `articulo_descripciones`, so one row per (article, translation)
+        // is produced and DISTINCT collapses them. `ORDER BY a.referencia` must
+        // stay a plain column: MySQL >= 5.7 and PostgreSQL reject an ORDER BY
+        // expression that is absent from the DISTINCT select list
+        // (`lower(referencia)` would be invalid). MySQL's default collation is
+        // case-insensitive, so the ordering behaviour is preserved in practice.
+        $sql = "SELECT DISTINCT a.* FROM " . $this->table_name . " a";
+        $sql .= ArticuloSearchQueryBuilder::languageDescriptionJoin();
         $separador = ' WHERE';
 
         $this->buildSearchWhereClause($sql, $separador, $codfamilia, $codfabricante, $con_stock, $bloqueados);
         $this->appendTextSearchConditions($sql, $separador, $query);
 
-        if (strtolower(FS_DB_TYPE) == 'mysql') {
-            $sql .= self::ORDER_BY_REF;
-        } else {
-            $sql .= " ORDER BY lower(referencia) ASC";
-        }
+        $sql .= " ORDER BY a.referencia ASC";
 
         return $this->all_from($sql, $offset);
     }
@@ -1215,21 +1219,21 @@ class articulo extends \fs_model
     private function buildSearchWhereClause(string &$sql, string &$separador, string $codfamilia, string $codfabricante, bool $con_stock, bool $bloqueados): void
     {
         if ($codfamilia !== '') {
-            $sql .= $separador . " codfamilia = " . $this->var2str($codfamilia);
+            $sql .= $separador . " a.codfamilia = " . $this->var2str($codfamilia);
             $separador = ' AND';
         }
 
         if ($codfabricante !== '') {
-            $sql .= $separador . " codfabricante = " . $this->var2str($codfabricante);
+            $sql .= $separador . " a.codfabricante = " . $this->var2str($codfabricante);
             $separador = ' AND';
         }
 
         if ($con_stock) {
-            $sql .= $separador . " stockfis > 0";
+            $sql .= $separador . " a.stockfis > 0";
             $separador = ' AND';
         }
 
-        $sql .= $separador . ($bloqueados ? " bloqueado = TRUE" : " bloqueado = FALSE");
+        $sql .= $separador . ($bloqueados ? " a.bloqueado = TRUE" : " a.bloqueado = FALSE");
         $separador = ' AND';
     }
 
@@ -1249,11 +1253,23 @@ class articulo extends \fs_model
         $data = $this->db->select_limit($sql, $limit, $offset);
         if ($data) {
             foreach ($data as $a) {
-                $artilist[] = new \articulo($a);
+                $artilist[] = $this->make_articulo($a);
             }
         }
 
         return $artilist;
+    }
+
+    /**
+     * DB seam: builds an article from a database row. Overridable so the search
+     * path is unit-testable without a live database (same pattern as
+     * `language_registry()` / `description_model()`).
+     *
+     * @return articulo
+     */
+    protected function make_articulo(array $data)
+    {
+        return new \articulo($data);
     }
 
     /**
