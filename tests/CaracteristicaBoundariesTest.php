@@ -80,9 +80,16 @@ final class CaracteristicaBoundariesTest extends TestCase
             FS_FOLDER . '/openspec/changes/caracteristicas-producto',
             'the change must never create an entry in the core openspec tree'
         );
-        $this->assertDirectoryExists(
-            FS_FOLDER . '/plugins/catalogo_core/openspec/changes/caracteristicas-producto',
-            'the change must live in the plugin-local SDD root'
+        // The change may be active or archived, but it MUST live in the
+        // plugin-local SDD root. Pinning the active path would turn this
+        // boundary gate red the moment the change is archived, and the archive
+        // move is a legitimate lifecycle step, not a boundary violation.
+        $pluginChangesRoot = FS_FOLDER . '/plugins/catalogo_core/openspec/changes';
+        $archivedCopies = glob($pluginChangesRoot . '/archive/*-caracteristicas-producto') ?: [];
+
+        $this->assertTrue(
+            is_dir($pluginChangesRoot . '/caracteristicas-producto') || $archivedCopies !== [],
+            'the change must live in the plugin-local SDD root (active or archived)'
         );
     }
 
