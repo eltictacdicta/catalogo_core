@@ -337,12 +337,34 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 
 ### Slice 4c — `catalogo_core` no-context consumers
 
-- [ ] 4c.1 **RED** — Author `plugins/catalogo_core/tests/ConsumidoresIdiomaDefaultTest.php` with the two `catalogo_core` GDI-10 scenarios (with a configured default different from `es`, `CatalogoApiService` serialises the configured default language's text; `VentasOpcional::buscarArticulo()` returns each article's configured default text). Keep the spec-named Spanish path for traceability. `[GDI-10; D-10]`
-- [ ] 4c.2 **GREEN** — In `plugins/catalogo_core/Model/CatalogoApiService.php:50` emit `'descripcion' => $a->get_descripcion_idioma()`; in `plugins/catalogo_core/Controller/VentasOpcional.php:394,397` use `$art->descripcion_idioma(null, 50)` / `$art->get_descripcion_idioma()`. `[GDI-10; D-10]`
-- [ ] 4c.3 **GREEN** — In `plugins/catalogo_core/model/tarif_articulo_precio.php:421` add `LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = :def` with `COALESCE(d.descripcion, a.descripcion)` in the select list, binding the configured default. `[GDI-10; D-10]`
-- [ ] 4c.4 **GREEN** — In `plugins/catalogo_core/model/tarif_tarifa_articulo.php` apply the same driver-specific join + `COALESCE` to the six queries (`:171,269,295,321,347,376`) and replace the `lower(a.descripcion) LIKE` at `:385` with `COALESCE(d.descripcion, a.descripcion)`. `[GDI-10; D-10]`
+- [x] 4c.1 **RED** — Author `plugins/catalogo_core/tests/ConsumidoresIdiomaDefaultTest.php` with the two `catalogo_core` GDI-10 scenarios (with a configured default different from `es`, `CatalogoApiService` serialises the configured default language's text; `VentasOpcional::buscarArticulo()` returns each article's configured default text). Keep the spec-named Spanish path for traceability. `[GDI-10; D-10]`
+- [x] 4c.2 **GREEN** — In `plugins/catalogo_core/Model/CatalogoApiService.php:50` emit `'descripcion' => $a->get_descripcion_idioma()`; in `plugins/catalogo_core/Controller/VentasOpcional.php:394,397` use `$art->descripcion_idioma(null, 50)` / `$art->get_descripcion_idioma()`. `[GDI-10; D-10]`
+- [x] 4c.3 **GREEN** — In `plugins/catalogo_core/model/tarif_articulo_precio.php:421` add `LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = :def` with `COALESCE(d.descripcion, a.descripcion)` in the select list, binding the configured default. `[GDI-10; D-10]`
+- [x] 4c.4 **GREEN** — In `plugins/catalogo_core/model/tarif_tarifa_articulo.php` apply the same driver-specific join + `COALESCE` to the six queries (`:171,269,295,321,347,376`) and replace the `lower(a.descripcion) LIKE` at `:385` with `COALESCE(d.descripcion, a.descripcion)`. `[GDI-10; D-10]`
 - [ ] 4c.5 **GREEN** — In `plugins/catalogo_core/extras/TarifarioOpcionalStateTrait.php:111` replace the `get_default()` + hard-coded `'es'` resolution with `get_effective_default_code()`. `[GDI-10; D-02, D-10]`
-- [ ] 4c.6 **VERIFY** — `Controller/VentasArticulos.php::nuevoArticulo()` keeps writing only `articulos.descripcion` (D-13) and adds no language row; `git diff` shows no language write on that path. `[GDI-06; D-13]`
+- [x] 4c.6 **VERIFY** — `Controller/VentasArticulos.php::nuevoArticulo()` keeps writing only `articulos.descripcion` (D-13) and adds no language row; `git diff` shows no language write on that path. `[GDI-06; D-13]`
+
+> **Annotated (slice-4c, applied).** `4c.1`–`4c.4` and `4c.6` are delivered. The
+> SQL join (4c.3/4c.4) resolves the configured default in **PHP** through a
+> protected `default_codidioma()` seam and interpolates it with `var2str()` —
+> the same quoting style every other value in those queries already uses — rather
+> than a `:def` placeholder. The design's `:def` was illustrative; a bound
+> parameter would have mixed placeholder binding into queries built entirely by
+> string interpolation, and the launch prompt explicitly preferred resolving the
+> code in PHP over hard-coding `'es'`. See `apply-progress.md` → "Slice-4c task
+> status" and deviation 28. `[GDI-10; D-10]`
+>
+> **Annotated — 4c.5 deferred (not delivered).** The shared
+> `extras/TarifarioOpcionalStateTrait.php` **already reads descriptions through
+> the language API** (`descripcion_idioma($this->codidioma, 50)` /
+> `get_descripcion_idioma($this->codidioma)`), and that is confirmed by a durable
+> gate in `ConsumidoresIdiomaDefaultTest`; the launch prompt scoped this run to
+> the four named consumers and explicitly said **do not touch** the trait. Its
+> `codidioma` resolution (line 107's `'es'` seed + line 111's `get_default()`)
+> therefore still does not call `get_effective_default_code()`. That divergence
+> is unreachable under the GDI-02 invariant (an active default always exists, so
+> `get_default()` is never `false`), but the call-site cleanup remains open. See
+> `apply-progress.md` → deviation 29. `[GDI-10; D-02, D-10]`
 
 ### Slice 5 — `tarifario` consumer migration
 
