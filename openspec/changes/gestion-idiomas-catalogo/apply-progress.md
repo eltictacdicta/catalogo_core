@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through) + slice 4b-mapping complete (server `field_options` in the mapping dropdown) + slice 4c complete (4c.1–4c.4 + 4c.6; 4c.5 deferred by scope)** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through) + slice 4b-mapping complete (server `field_options` in the mapping dropdown) + slice 4c complete (4c.1–4c.4 + 4c.6) + slice 4c5 complete (trait `codidioma` resolution; the previously deferred 4c.5)** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
 | **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. **Slice 4b used the pre-declared `4b₁`/`4b₂` boundary** — the whole slice measured 853 authored lines (> 800), so the export unit (`4b₁`, 144) and the import unit (`4b₂`, 709) landed as two review units, each ≤ 800. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). **No cut for slice 4c** — 511 authored lines ≤ 800, landed whole as one review unit. |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b, 4b-wiring, 4b-mapping and 4c complete and green; every task in `tasks.md` for the delivered slices is `[x]` except `4c.5`, which the launch prompt explicitly excluded (annotated in `tasks.md`). Slice `5` remains for a later batch |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b, 4b-wiring, 4b-mapping, 4c and 4c5 complete and green; every task in `tasks.md` for the delivered slices is `[x]`, including `4c.5`, which the earlier launch prompt deferred and the `slice-4c5` follow-up has now closed (annotated in `tasks.md`). Slice `5` remains for a later batch |
 
 ---
 
@@ -406,10 +406,11 @@ runner).
 ## Slice-4c task status — `catalogo_core` no-context consumers
 
 Delivered whole for the four named consumers (tasks 4c.1–4c.4 + the 4c.6
-verification). Task **4c.5** is deferred by the launch prompt's explicit "do not
-touch" scope (deviation 29). Every consumer with no language context now reads
-descriptions through the configured default language (D10), and the frozen base
-column stays the last-resort fallback.
+verification). Task **4c.5** was deferred by the original launch prompt's explicit
+"do not touch" scope (deviation 29) and was subsequently **closed by the
+`slice-4c5` follow-up** — see "Slice-4c5 task status" below. Every consumer with no
+language context now reads descriptions through the configured default language
+(D10), and the frozen base column stays the last-resort fallback.
 
 | Task | Tag(s) | State | Evidence |
 |---|---|---|---|
@@ -417,7 +418,7 @@ column stays the last-resort fallback.
 | 4c.2 GREEN — public API + Opcional autocomplete | `[GDI-10; D-10]` | [x] | `Model/CatalogoApiService.php` (`articulo_model()` seam + `get_descripcion_idioma()`); `Controller/VentasOpcional.php` (`articulo_model()` seam, `buscarSugerencias()` extraction, `descripcion_idioma(null, 50)` / `get_descripcion_idioma()`) |
 | 4c.3 GREEN — `tarif_articulo_precio::all_by_familias()` | `[GDI-10; D-10]` | [x] | `default_codidioma()` seam + left join + `COALESCE(d.descripcion, a.descripcion) AS descripcion` |
 | 4c.4 GREEN — `tarif_tarifa_articulo` six queries + the search `LIKE` | `[GDI-10; D-10]` | [x] | all six joins + `lower(COALESCE(d.descripcion, a.descripcion)) LIKE` |
-| 4c.5 GREEN — trait `codidioma` resolution | `[GDI-10; D-02, D-10]` | [ ] | **deferred** — the trait's description accessors were already correct; the launch prompt excludes the file. See deviation 29 |
+| 4c.5 GREEN — trait `codidioma` resolution | `[GDI-10; D-02, D-10]` | [x] | **closed by `slice-4c5`** — the trait no longer seeds `'es'` nor reads `get_default()`; a new protected `resolve_codidioma()` delegates to `get_effective_default_code()` (explicit request still wins). 3 behavioral cases in `tests/TarifarioOpcionalStateTraitTest.php` (RED first: 3 errors, then GREEN). See "Slice-4c5 task status" |
 | 4c.6 VERIFY — quick-create stays base-only | `[GDI-06; D-13]` | [x] | source gate: `Controller/VentasArticulos.php` contains `$art->descripcion = $descripcion;` and **zero** `set_descripcion_idioma` / `articulo_descripcion` tokens; `git diff` empty for that file |
 
 ### Non-tautology proof (mutation evidence)
@@ -446,6 +447,68 @@ counted as RED.
 
 ---
 
+## Slice-4c5 task status — trait `codidioma` resolution
+
+Follow-up work unit `slice-4c5-trait-default`, applied on top of slice 4c after
+deviation 29's deferred call-site cleanup was reviewed. Task **4c.5** — the only
+unchecked implementation task left in slice 4c — is now closed. The trait's
+description accessors were already correct and are byte-unchanged; only the
+active-language **resolution** changed.
+
+### The change
+
+`extras/TarifarioOpcionalStateTrait.php`:
+
+- The `'es'` seed plus the `get_default()` + `$default->codidioma` fallback in
+  `init_tarifario_opcional_state()` are gone. The method now assigns
+  `$this->codidioma = $this->resolve_codidioma($idioma);`.
+- A new protected `resolve_codidioma(catalogo_idioma $idioma): string` keeps the
+  explicit `$_REQUEST['codidioma']` precedence and otherwise returns
+  `$idioma->get_effective_default_code()` — the same total resolver every other
+  consumer uses (GDI-10 / D-02, D-10). The extraction mirrors the
+  `resolve_codidioma()` extraction slice 3 made on `Controller/VentasArticulo.php`
+  and the trait's own `run_in_transaction()` / `parse_price_input()` extractions,
+  and is what makes the resolution DB-free testable.
+- The description reads (`descripcion_idioma($this->codidioma, 50)` at `:169`,
+  `get_descripcion_idioma($this->codidioma)` at `:172`) are **not touched**, as
+  required; the durable gate `ConsumidoresIdiomaDefaultTest::test_opcional_state_trait_already_reads_through_the_language_api`
+  stays green.
+
+Behaviour: an explicit request value is unchanged; the fallback moves from
+"hard-coded `'es'` unless a configured active default exists" to the total
+resolver. Under the GDI-02 invariant the two agree when an active default exists;
+they differ (and the old code returned `'es'`) only when no `por_defecto` flag is
+set, which is exactly the case the new behavioral test pins.
+
+### Tests
+
+| Test | Tag(s) | State | Evidence |
+|---|---|---|---|
+| `TarifarioOpcionalStateTraitTest::test_codidioma_resolution_follows_the_configured_default` | `[GDI-10; D-02, D-10]` | [x] | Configured default `en` (never `es`), active `es` present → resolves `en`. **RED first** (`resolve_codidioma()` undefined). |
+| `TarifarioOpcionalStateTraitTest::test_codidioma_resolution_is_total_without_a_configured_default` | `[GDI-10; D-02, D-10]` | [x] | No `por_defecto` flag, `en` + `es` active → resolves the lowest active code `en`; the old `'es'` seed would have returned `es`. |
+| `TarifarioOpcionalStateTraitTest::test_explicit_request_language_wins_over_the_resolver` | `[GDI-10; D-02, D-10]` | [x] | `$_REQUEST['codidioma'] = 'es'` with configured default `en` → resolves `es` (precedence preserved). |
+
+`setUp()`/`tearDown()` unset `$_REQUEST['codidioma']` so the request case cannot
+leak into the other cases.
+
+### Non-tautology proof
+
+The three cases were written first and failed **3 errors** against the pre-change
+bytes (`Error: Call to undefined method class@anonymous::resolve_codidioma()` at
+`TarifarioOpcionalStateTraitTest.php:155`), then passed **23 tests, 33 assertions,
+OK** after the change. The "no configured default" case is the one that would fail
+against a naive `get_default()`-only implementation, so the test has teeth on the
+actual behaviour change rather than only on the method's existence.
+
+### Files
+
+| File | Action | What Was Done |
+|---|---|---|
+| `extras/TarifarioOpcionalStateTrait.php` | Modified | Removed the `'es'` seed + `get_default()` fallback; new protected `resolve_codidioma()`; `init_tarifario_opcional_state()` delegates to it (+18 / −9) |
+| `tests/TarifarioOpcionalStateTraitTest.php` | Modified | 3 resolution cases + `setUp()`/`tearDown()` request isolation + the `resolve()` wrapper on the trait subject (+91) |
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -470,6 +533,8 @@ counted as RED.
 | 4b.7 (slice-4b-wiring) | `--filter VentasArticulosExcelIdiomasWiringTest` → **7 tests, 9 assertions, 7 failures** (no pass-through in the controller, no `codidioma_defecto` on the trait, no `target_codidioma` in the modal or the JS) | same filter → **7 tests, 20 assertions, OK** | None — the wiring is purely additive; no refactor was needed |
 | 4b-mapping (slice-4b-mapping) | `--filter VentasArticulosExcelMappingOptionsTest` → **6 tests, 26 assertions, 4 failures** (the JS still rendered the dropdown from `FIELD_OPTIONS`; `loadPreview` ignored `json.field_options`; no `optionList()`/`fieldLabels()`; `renderPreviewTable` used `FIELD_LABELS`) | same filter → **6 tests, 29 assertions, OK** | None — the change is additive; the only cleanup was removing the now-unused `FIELD_LABELS` map |
 | 4c.1–4c.4 + 4c.6 (slice-4c) | `--filter ConsumidoresIdiomaDefaultTest` → **8 tests, 9 assertions, 3 errors + 3 failures** (`Class "articulo" not found` because the real `articulo::search()` ran before the seam existed; `buscarSugerencias()` undefined; both SQL readers emitted `SELECT ... a.descripcion ...` with no description join) | same filter → **8 tests, 48 assertions, OK** | Two testability seams extracted (`articulo_model()` on `CatalogoApiService` and `VentasOpcional`, `default_codidioma()` on the two tarif models) plus the `buscarSugerencias()` extraction out of the `exit`-ing response; re-ran green |
+
+| 4c.5 (slice-4c5) | `--filter TarifarioOpcionalStateTraitTest` → **23 tests, 30 assertions, 3 errors** (`Call to undefined method class@anonymous::resolve_codidioma()`; the 20 pre-existing cases green) | same filter → **23 tests, 33 assertions, OK** | None — the `resolve_codidioma()` extraction is behavior-preserving; the 20 pre-existing trait cases (transaction/price) stayed green throughout |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -601,6 +666,14 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 908 tests, 3970 assertions, 2 warnings, 1 skipped** (baseline before this unit: 900 tests, 3922 assertions; +8 tests, no regressions). The API and Opcional boundaries run the **real** method bodies DB-free through the `articulo_model()` seam over `FakeArticulo` + `IdiomaRegistryFake` (configured default `en`, never `es`); the two SQL readers are exercised through a recording engine that captures the emitted statement. A real-DB composed-SQL smoke of the `COALESCE` join on MySQL **and** PostgreSQL remains for `verify` (task 4c's own verification note). |
 | **Rollback boundary** | Revert commit `8fd0eb1a`: `Model/CatalogoApiService.php`, `Controller/VentasOpcional.php`, `model/tarif_articulo_precio.php`, `model/tarif_tarifa_articulo.php` and `tests/ConsumidoresIdiomaDefaultTest.php`. Each reader is an isolated substitution: reverting restores the base-column reads without touching schema, views, the language API, the search predicate or `tarifario`. Nothing else depends on the seams. |
 
+### Work unit `4c5` — trait active-language resolution uses the total resolver (GDI-10, D-02/D-10)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter TarifarioOpcionalStateTraitTest` → **OK (23 tests, 33 assertions)**; RED first was **3 errors** (`resolve_codidioma()` undefined) with the 20 pre-existing cases green |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 911 tests, 3973 assertions, 2 warnings, 1 skipped** (baseline before this unit: 908 tests, 3970 assertions; +3 tests, no regressions). The resolution boundary is exercised DB-free through the trait subject over `FakeCatalogoIdioma` + `IdiomaRegistryFake` (configured default `en`, never `es`); the real controller boot remains for `verify`. |
+| **Rollback boundary** | Revert this unit's commit: `extras/TarifarioOpcionalStateTrait.php` and `tests/TarifarioOpcionalStateTraitTest.php`. The revert restores the `'es'` seed + `get_default()` fallback (still correct under the GDI-02 invariant) and removes the three resolution cases; no other consumer, model, view, search, Excel or `tarifario` file is touched, and the description accessors were never changed. |
+
 ---
 
 ## Test commands and results (exact)
@@ -652,6 +725,12 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4c) | **OK** — **908 tests, 3970 assertions, 2 warnings, 1 skipped** (baseline before slice 4c: 900 tests, 3922 assertions; +8 tests, no regressions). |
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4c) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4c) | **FAILED (pre-existing, unrelated)** — 2143 tests, 8514 assertions, **8 failures**, 1 warning, 46 skipped. All 8 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×2, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the failure output returns **0**. Two adjacent runs of the same command reported **7** failures with the **same** `OidcProvider` failure set — the count is order/state-sensitive in that untouched plugin (the same behaviour slices 1 and 4a-fix recorded). The first attempt hung because two PHPUnit invocations were alive at once contending on the same runner cache; a single run finishes in ≈90 s. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter TarifarioOpcionalStateTraitTest` (RED, slice 4c5) | **RED** — 23 tests, 30 assertions, **3 errors** (`Call to undefined method class@anonymous::resolve_codidioma()`); the 20 pre-existing transaction/price cases green. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter TarifarioOpcionalStateTraitTest` (GREEN, slice 4c5) | **OK — 23 tests, 33 assertions**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter ConsumidoresIdiomaDefaultTest` (after slice 4c5) | **OK — 8 tests, 48 assertions**; the GDI-10 trait description-read gate is unmodified and green. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4c5) | **OK** — **911 tests, 3973 assertions, 2 warnings, 1 skipped** (baseline before: 908 tests, 3970 assertions; +3 tests, no regressions). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4c5) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4c5) | **FAILED (pre-existing, unrelated)** — 2146 tests, 8528 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the full failure output returns **0**. |
 
 ---
 
@@ -683,6 +762,8 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | Cut used for slice 4b-mapping? | **No** — 282 ≤ 800, landed whole as one review unit. |
 | Slice 4c authored changed lines (additions + deletions) | **511** — `Controller/VentasOpcional.php` +37/−10, `Model/CatalogoApiService.php` +18/−2, `model/tarif_articulo_precio.php` +17/−1, `model/tarif_tarifa_articulo.php` +27/−7, `tests/ConsumidoresIdiomaDefaultTest.php` +392 (new) |
 | Cut used for slice 4c? | **No** — 511 ≤ 800, landed whole as one review unit. The measured size sits above the `tasks.md` 240–330 estimate because the single new test file carries the two GDI-10 scenarios plus the three SQL-emission gates and the two verify gates (392 lines including the licence header, docblocks and the DB-free recording engine). No code, comment, blank line, doc or test was cut or compressed to fit. |
+| Slice 4c5 authored changed lines (additions + deletions) | **118** — `extras/TarifarioOpcionalStateTrait.php` +18/−9, `tests/TarifarioOpcionalStateTraitTest.php` +91 |
+| Cut used for slice 4c5? | **No** — 118 ≤ 800, landed whole as one review unit. No code, comment, blank line, doc or test was cut or compressed to fit. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -786,6 +867,7 @@ is requested, and no code, comment, blank line, doc or test was cut or compresse
 | `cf02b7f2` | `feat(catalogo_core): wire per-language Excel export and import into the live UI` | 7 | +322 / −3 |
 | `ed340ef9` | `feat(catalogo_core): offer the server field options in the Excel import mapping dropdown` | 2 | +272 / −10 |
 | `8fd0eb1a` | `feat(catalogo_core): resolve the configured default description in no-context readers` | 5 | +491 / −20 |
+| `1e86a4e6` | `fix(catalogo_core): resolve the opcional trait language through the effective default` | 2 | +109 / −9 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -848,6 +930,10 @@ Slice-4c files (commit `8fd0eb1a`): `Model/CatalogoApiService.php`,
 `model/tarif_tarifa_articulo.php`, `tests/ConsumidoresIdiomaDefaultTest.php`.
 The slice-4c SDD bookkeeping (`tasks.md` checkboxes 4c.1–4c.4/4c.6 + the 4c.5 annotation
 and this artifact) is committed separately.
+
+Slice-4c5 files (commit `1e86a4e6`): `extras/TarifarioOpcionalStateTrait.php`,
+`tests/TarifarioOpcionalStateTraitTest.php`.
+The slice-4c5 SDD bookkeeping (`tasks.md` checkbox 4c.5 + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -1078,6 +1164,11 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     always overwritten. It is left as a documented, non-blocking call-site cleanup rather
     than a silent edit outside the declared scope; `tasks.md` marks 4c.5 `[ ]` with the same
     annotation so `verify` reads it as a known, deliberate gap.
+    **Closed by slice `4c5`** — the follow-up work unit replaced the `'es'` seed
+    + `get_default()` fallback with a protected `resolve_codidioma()` delegating to
+    `get_effective_default_code()` (explicit request precedence preserved), and the
+    three new behavioral cases prove the total resolution. The description accessors
+    remain byte-unchanged. See "Slice-4c5 task status".
 
 ---
 
@@ -1149,6 +1240,13 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   and `Controller/VentasArticulos.php` still contains no `set_descripcion_idioma` /
   `articulo_descripcion` token (source gate). `tests/Integration/CatalogoCoreHookMarkersTest.php`
   is **unmodified** and green (12 tests). No new Composer dependency was added.
+- **Slice-4c5 no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty (no
+  delta merged) and the repository-root `openspec/` still has no entry for this change. The
+  commit contains only the two explicit paths listed in "Commits created"
+  (`extras/TarifarioOpcionalStateTrait.php` and `tests/TarifarioOpcionalStateTraitTest.php`); no
+  model, schema, view, controller, search, Excel, API, consumer or `tarifario` file was touched.
+  The trait's description accessors are byte-unchanged. `tests/Integration/CatalogoCoreHookMarkersTest.php`
+  is **unmodified** and green (12 tests). No new Composer dependency was added.
 
 ---
 
@@ -1166,9 +1264,10 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
 3. **Slice `4c` is done** — the four named no-context consumers (`CatalogoApiService`,
    `tarif_articulo_precio`, `tarif_tarifa_articulo`, `VentasOpcional`) resolve the configured
    default language in `slice-4c` (commit `8fd0eb1a`), and the quick-create path is verified as
-   base-only (4c.6). One task is deliberately open: **4c.5** (the `TarifarioOpcionalStateTrait`
-   `codidioma` resolution) — the launch prompt excluded the file, and the trait's description
-   accessors were already correct. See deviation 29.
+   base-only (4c.6). The one deliberately-open task, **4c.5** (the `TarifarioOpcionalStateTrait`
+   `codidioma` resolution), is now **closed by the `slice-4c5` follow-up**: the trait delegates
+   to `catalogo_idioma::get_effective_default_code()` (explicit request precedence preserved),
+   with three behavioral cases. See "Slice-4c5 task status".
 4. **`verify`** must follow this artifact: slices 1, 2, 3, 4a, 4a-fix, 4b, 4b-wiring, 4b-mapping
    and 4c are delivered in full. The real-DB
    boot smoke, a real-DB composed-SQL smoke of `articulo::search()` (the D-04 join + `DISTINCT` +

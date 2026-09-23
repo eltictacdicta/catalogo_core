@@ -341,7 +341,7 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 - [x] 4c.2 **GREEN** — In `plugins/catalogo_core/Model/CatalogoApiService.php:50` emit `'descripcion' => $a->get_descripcion_idioma()`; in `plugins/catalogo_core/Controller/VentasOpcional.php:394,397` use `$art->descripcion_idioma(null, 50)` / `$art->get_descripcion_idioma()`. `[GDI-10; D-10]`
 - [x] 4c.3 **GREEN** — In `plugins/catalogo_core/model/tarif_articulo_precio.php:421` add `LEFT JOIN articulo_descripciones d ON d.referencia = a.referencia AND d.codidioma = :def` with `COALESCE(d.descripcion, a.descripcion)` in the select list, binding the configured default. `[GDI-10; D-10]`
 - [x] 4c.4 **GREEN** — In `plugins/catalogo_core/model/tarif_tarifa_articulo.php` apply the same driver-specific join + `COALESCE` to the six queries (`:171,269,295,321,347,376`) and replace the `lower(a.descripcion) LIKE` at `:385` with `COALESCE(d.descripcion, a.descripcion)`. `[GDI-10; D-10]`
-- [ ] 4c.5 **GREEN** — In `plugins/catalogo_core/extras/TarifarioOpcionalStateTrait.php:111` replace the `get_default()` + hard-coded `'es'` resolution with `get_effective_default_code()`. `[GDI-10; D-02, D-10]`
+- [x] 4c.5 **GREEN** — In `plugins/catalogo_core/extras/TarifarioOpcionalStateTrait.php:111` replace the `get_default()` + hard-coded `'es'` resolution with `get_effective_default_code()`. `[GDI-10; D-02, D-10]`
 - [x] 4c.6 **VERIFY** — `Controller/VentasArticulos.php::nuevoArticulo()` keeps writing only `articulos.descripcion` (D-13) and adds no language row; `git diff` shows no language write on that path. `[GDI-06; D-13]`
 
 > **Annotated (slice-4c, applied).** `4c.1`–`4c.4` and `4c.6` are delivered. The
@@ -365,6 +365,18 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 > is unreachable under the GDI-02 invariant (an active default always exists, so
 > `get_default()` is never `false`), but the call-site cleanup remains open. See
 > `apply-progress.md` → deviation 29. `[GDI-10; D-02, D-10]`
+>
+> **Annotated — 4c.5 delivered (slice-4c5, follow-up).** The deferred call-site
+> cleanup landed. The trait no longer seeds `'es'` nor reads `get_default()`:
+> `init_tarifario_opcional_state()` delegates to a new protected
+> `resolve_codidioma(catalogo_idioma $idioma)` that keeps the explicit
+> `$_REQUEST['codidioma']` precedence and otherwise returns
+> `catalogo_idioma::get_effective_default_code()`. The description accessors
+> (`descripcion_idioma($this->codidioma, 50)` /
+> `get_descripcion_idioma($this->codidioma)`) are byte-unchanged. Proven by three
+> new behavioral cases in `tests/TarifarioOpcionalStateTraitTest.php` (configured
+> default `en`; total resolution with no configured default; explicit request
+> wins). See `apply-progress.md` → "Slice-4c5 task status". `[GDI-10; D-02, D-10]`
 
 ### Slice 5 — `tarifario` consumer migration
 
