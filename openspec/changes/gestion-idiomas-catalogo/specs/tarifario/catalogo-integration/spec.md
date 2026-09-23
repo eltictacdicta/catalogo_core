@@ -1,17 +1,35 @@
 # Delta for tarifario/catalogo-integration
 
 One requirement is **ADDED** covering tarifario's no-context description readers
-(D10). The canonical spec scopes itself to `R-TAR-HOOK-001…010` and none of those
-requirements covers a description read, so there is nothing to re-express as a
-`MODIFIED` block — ADDED is the convention-correct section here. The frozen hook
-names, the neutral permission-filter extension point, the host-neutrality
-requirements, the article/opcional tab surfaces, the familia-override removal, the
-currency contract and the strict-TDD mapping are unchanged.
+(D10). The canonical spec's requirements (`R-TAR-HOOK-001…011`) do not cover a
+description read, so there is nothing to re-express as a `MODIFIED` block — ADDED
+is the convention-correct section here. The frozen hook names, the neutral
+permission-filter extension point, the host-neutrality requirements, the
+article/opcional tab surfaces, the familia-override removal, the currency contract
+and the strict-TDD mapping are unchanged.
 
-`R-TAR-HOOK-013` is the next free number: `R-TAR-HOOK-011` is reserved by the
-unarchived `caracteristicas-producto` delta and `R-TAR-HOOK-012` by the archived
-`2026-09-16-mover-tarifa-catalogo-opcionales-a-tarifario` delta. Neither is present
-in this canonical spec today.
+`R-TAR-HOOK-013` is the next free number. `R-TAR-HOOK-011` is now present in the
+canonical (delivered by the archived `caracteristicas-producto`, merged by
+`f369faf7`), and `R-TAR-HOOK-012` is claimed by the archived-but-unmerged
+`2026-09-16-mover-tarifa-catalogo-opcionales-a-tarifario`; neither ID is
+renumbered by this change.
+
+## Archive instruction — canonical scope line
+
+The canonical
+`plugins/tarifario/openspec/specs/tarifario/catalogo-integration/spec.md` still
+opens with the stale scope line "Scope: exactly R-TAR-HOOK-001…010 (delivered by
+change `tarifario-catalogo-hook-integration`, archived 2026-09-03)." even though
+`R-TAR-HOOK-011` was merged into it by `caracteristicas-producto`. At archive,
+that line MUST be replaced by:
+
+> Scope: exactly R-TAR-HOOK-001…011 and R-TAR-HOOK-013
+> (R-TAR-HOOK-001…010 delivered by change `tarifario-catalogo-hook-integration`,
+> archived 2026-09-03; R-TAR-HOOK-011 delivered by `caracteristicas-producto`,
+> archived 2026-09-23; R-TAR-HOOK-013 delivered by `gestion-idiomas-catalogo`).
+
+No requirement is renumbered. `R-TAR-HOOK-012` stays absent from this canonical
+until its own change is merged.
 
 `R-TAR-CUR-010` of `tarifario/tarifa` is referenced, not redefined.
 
