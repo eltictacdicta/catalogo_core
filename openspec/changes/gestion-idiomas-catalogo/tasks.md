@@ -306,7 +306,7 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 - [x] 4b.4 **GREEN** — In `plugins/catalogo_core/Services/ArticuloExcelImportWizardService.php` leave `FIELD_CATALOG` untouched and add `languageFieldCatalog(array $idiomas): array` (`descripcion_<cod>` / `descripcion_corta_<cod>`, label `Descripción (<nombre>)`), extending `preview(..., array $idiomas = [])` to feed those aliases into `suggestMapping()`'s `$extraFields` and merge their options into `fieldOptions()`; `$idiomas = []` must reproduce today's behaviour exactly. `[Import wizard 3 pasos; D-07]`
 - [x] 4b.5 **GREEN** — In `plugins/catalogo_core/Services/ArticuloExcelRowUpdater.php` add `applyDescripcionIdioma()` (route the mapped locale value through `articulo::set_descripcion_idioma()`); leave the base `applyDescripcion` case untouched. `[Persistencia; D-07, D-10]`
 - [x] 4b.6 **GREEN** — In `plugins/catalogo_core/process_excel_wizard_dispatch.php` read `target_codidioma`, validate it against `(new catalogo_idioma())->all_activos()` (absent/unknown/inactive → `get_effective_default_code()`), split mapped rows into base vs locale fields, apply locale fields to the **single target language's** row (suffix equal to the target wins, otherwise the first mapped locale column in default-first order), ignore unknown/inactive suffixes silently, and never call `catalogo_idioma::save()`. `[Import wizard 3 pasos, Persistencia; D-07]`
-- [ ] 4b.7 **GREEN** — In `plugins/catalogo_core/View/partials/articulos/modal_importar_excel_wizard.html.twig` add the target-language `<select name="wizard_target_codidioma">` (active languages, configured default preselected) and in `plugins/catalogo_core/View/js/articulos-excel-import-wizard.js` push `target_codidioma=` alongside `default_action` / `round_price` in `startApply()`. `[Import wizard 3 pasos; D-07]` **DEFERRED — out of scope for this apply run** (the launch prompt excludes any view/controller change). The dispatch already accepts `target_codidioma` and falls back to the configured default when the parameter is absent, so the feature degrades safely. See `apply-progress.md` → "Slice-4b task status".
+- [x] 4b.7 **GREEN** — In `plugins/catalogo_core/View/partials/articulos/modal_importar_excel_wizard.html.twig` add the target-language `<select name="target_codidioma">` (active languages, configured default first and preselected — the name matches what `process_excel_wizard_dispatch.php` reads) and in `plugins/catalogo_core/View/js/articulos-excel-import-wizard.js` push `target_codidioma=` alongside `default_action` / `round_price` in `startApply()`. The controller pass-through of `$this->idiomas` to `buildSpreadsheet()` / `preview()` landed in the same work unit (`slice-4b-wiring`), so the locale columns and the target language are live. `[Import wizard 3 pasos; D-07]`
 - [x] 4b.8 **RED** — Extend `tests/Services/ArticuloExcelIdiomasTest.php` with the three **Persistencia** scenarios (a mapped populated pair persists on the target language's row; an empty mapped pair deletes that language's row; `articulos.descripcion` is unchanged when the default language is written). `[Persistencia, GDI-06; D-07, D-01]`
 - [x] 4b.9 **VERIFY** — Update `plugins/catalogo_core/tests/Services/ArticuloExcelExportServiceTest.php` for the additive locale layout while asserting the seven base headers stay byte-identical; touch `ArticuloExcelImportWizardServiceTest.php` and `ArticuloExcelRowUpdaterTest.php` only where the additive shape changes expectations; full plugin suite + PHPStan green. `[Export Excel, Import wizard 3 pasos; D-07]`
 
@@ -316,10 +316,14 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 > work unit (`5a36de09`) landed as two review units, each under budget. No code,
 > comment, blank line, doc or test was shrunk to fit. Two additive test methods and
 > the new `ArticuloExcelIdiomasTest.php` carry 19 tests over 10 spec scenarios.
-> `4b.7` is the only deferred task (view + JS wiring, excluded by the launch prompt's
-> "any view/controller change"); the controller pass-through of `$this->idiomas` to
-> `buildSpreadsheet()` / `preview()` is likewise deferred, so the locale columns are
-> inert in production until that wiring lands. See `apply-progress.md` → "Slice-4b
+> **Annotated (slice-4b-wiring, applied).** `4b.7` was deferred in the first `4b`
+> run because that launch prompt excluded any view/controller change, which left the
+> locale columns and the target-language parameter inert in production. The follow-up
+> work unit `slice-4b-wiring` closed it: the controller now forwards `$this->idiomas`
+> and the resolved `$this->codidioma_defecto` to `buildSpreadsheet()` (filtered, full
+> and template call sites) and `$this->idiomas` to `preview()`, the modal renders the
+> `target_codidioma` select (default first, preselected) and the wizard JS sends
+> `target_codidioma` with the apply request. See `apply-progress.md` → "Slice-4b
 > task status" and "Deviations".
 
 ### Slice 4c — `catalogo_core` no-context consumers

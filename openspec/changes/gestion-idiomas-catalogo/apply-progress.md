@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import; 4b.7 deferred)** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through)** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
 | **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. **Slice 4b used the pre-declared `4b₁`/`4b₂` boundary** — the whole slice measured 853 authored lines (> 800), so the export unit (`4b₁`, 144) and the import unit (`4b₂`, 709) landed as two review units, each ≤ 800. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix and 4b complete and green; 4b.7 (view/JS wiring) deferred by the launch prompt's scope |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b and 4b-wiring complete and green; every task in `tasks.md` for the delivered slices is `[x]` (4b.7 included). Slices `4c` and `5` remain for a later batch |
 
 ---
 
@@ -249,6 +249,80 @@ create or mutate a `catalogo_idiomas` row.
 
 ---
 
+## Slice-4b-wiring task status — wire the locale columns and target language into the live UI
+
+Follow-up work unit `slice-4b-wiring`, applied on top of slice 4b after the deferred
+wiring reported in deviation 22 was reviewed. Task **4b.7** was the only unchecked task
+in the change; it is now `[x]`, and the controller pass-through that left the locale
+columns inert is closed. No Excel service logic was changed — the service layer shipped
+in `8aa5f420` / `5a36de09` is byte-unchanged.
+
+### What was inert
+
+The **Export Excel** and **Import wizard 3 pasos** requirements were satisfied by the
+services but not by the live surfaces: `Controller/VentasArticulos.php` called
+`buildSpreadsheet($articulos)` and `preview($filePath, $sheet, $n)` without the page's
+active languages, and
+`View/partials/articulos/modal_importar_excel_wizard.html.twig` never sent
+`target_codidioma`. The locale columns and the target-language parameter existed and
+were unit-tested, but no production request produced them.
+
+### The wiring
+
+- **Controller pass-through** (`Controller/VentasArticulos.php`): `buildSpreadsheet()`
+  now receives `idiomas: $this->idiomas` and `codidioma_defecto: $this->codidioma_defecto`
+  on **both** call sites (the filtered/full export and the template/empty export), and
+  `preview()` receives `$this->idiomas` as its fourth argument.
+- **Trait** (`extras/VentasArticulosListTrait.php`): `public string $codidioma_defecto`
+  is resolved once in `load_list_idiomas()` through
+  `catalogo_idioma::get_effective_default_code()`, alongside the existing
+  `$idiomas` / `$idiomas_todos` load.
+- **Import modal**
+  (`View/partials/articulos/modal_importar_excel_wizard.html.twig`): step 1 gains a
+  `<select id="articulos-wizard-target-idioma" name="target_codidioma">` iterating
+  `fsc.idiomas`, the configured default rendered first and `selected`. The name matches
+  what `process_excel_wizard_dispatch.php` reads; the `tasks.md` text said
+  `wizard_target_codidioma`, which was a spec-phase slip (corrected in the task line).
+  Two new translation keys (`excel-import-target-language`,
+  `excel-import-target-language-help`) were added to both locales.
+- **Wizard JS** (`View/js/articulos-excel-import-wizard.js`): `getTargetCodidioma()`
+  mirrors the existing `getDefaultCodimpuesto()` reader, and `startApply()` pushes
+  `target_codidioma=` alongside `default_action` / `round_price`.
+
+### Tests
+
+| Test | Tag(s) | State | Evidence |
+|---|---|---|---|
+| `VentasArticulosExcelIdiomasWiringTest::test_export_passes_the_active_languages_to_the_spreadsheet_builder` | `[Export Excel; D-07]` | [x] | Source gate over the `exportExcel()` body: `buildSpreadsheet(` + `idiomas: $this->idiomas` + `codidioma_defecto: $this->codidioma_defecto`. **RED before the wiring.** |
+| `VentasArticulosExcelIdiomasWiringTest::test_template_export_passes_the_active_languages_too` | `[Export Excel; D-07]` | [x] | Source gate over the `exportExcelTemplate()` body (the empty-export call site). **RED before.** |
+| `VentasArticulosExcelIdiomasWiringTest::test_preview_passes_the_active_languages_to_the_wizard_service` | `[Import wizard 3 pasos; D-07]` | [x] | Source gate over the `getPreview()` body: `preview($filePath, $sheet, $n, $this->idiomas)`. **RED before.** |
+| `VentasArticulosExcelIdiomasWiringTest::test_list_trait_exposes_the_resolved_default_language` | `[Export Excel; D-07]` | [x] | The trait declares `public string $codidioma_defecto` and resolves it via `get_effective_default_code()` in `load_list_idiomas()`. **RED before.** |
+| `VentasArticulosExcelIdiomasWiringTest::test_import_modal_renders_the_target_language_select_default_first` | `[Import wizard 3 pasos; D-07]` | [x] | The **real** modal partial is rendered through a minimal Twig environment with a stub `fsc`; the select's options are `['en','es']` (configured default first) and `en` carries `selected`. **RED before.** |
+| `VentasArticulosExcelIdiomasWiringTest::test_import_modal_target_select_lists_every_active_language` | `[Import wizard 3 pasos; D-07]` | [x] | The rendered select lists every active language with its `nombre`. **RED before.** |
+| `VentasArticulosExcelIdiomasWiringTest::test_wizard_js_sends_the_target_language_with_the_apply_request` | `[Import wizard 3 pasos; D-07]` | [x] | The JS reads `articulos-wizard-target-idioma` and pushes `target_codidioma=` in `startApply()`. **RED before.** |
+
+### Non-tautology proof
+
+The seven cases were written first and failed **7/7** (`Tests: 7, Assertions: 9,
+Failures: 7`) against the pre-wiring bytes, then passed **7/7** after the wiring. The
+controller/trait cases are source gates — the repo's established controller-contract
+convention (`CatalogoIdiomaPermissionTest::test_get_cannot_mutate_and_the_page_has_no_admin_only`,
+`CatalogoIdiomaManagementTest::test_management_surface_dispatches_the_four_language_actions`);
+the modal case renders the shipped bytes, so it cannot pass on a stale copy.
+
+### Files
+
+| File | Action | What Was Done |
+|---|---|---|
+| `Controller/VentasArticulos.php` | Modified | `idiomas` + `codidioma_defecto` forwarded to `buildSpreadsheet()` on both export call sites; `idiomas` forwarded to `preview()` (+16 / −3) |
+| `extras/VentasArticulosListTrait.php` | Modified | `public string $codidioma_defecto` + resolution in `load_list_idiomas()` (+8) |
+| `View/partials/articulos/modal_importar_excel_wizard.html.twig` | Modified | target-language select, default first and preselected (+17) |
+| `View/js/articulos-excel-import-wizard.js` | Modified | `getTargetCodidioma()` + `target_codidioma=` in `startApply()` (+9) |
+| `translations/messages.es_ES.yaml` / `messages.en_EN.yaml` | Modified | two `excel-import-target-language*` keys each (+2 / +2) |
+| `tests/Controller/VentasArticulosExcelIdiomasWiringTest.php` | Created | the seven wiring cases (+268) |
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -270,6 +344,7 @@ create or mutate a `catalogo_idiomas` row.
 | 4a-fix (gate) | The interrupted first run left the tests and the fix uncommitted together; RED was re-established by removing the invalidate call from `catalogo_idioma::delete()` → **6 tests, 2 failures** (`test_language_delete_invalidates_the_cache` + the gate) | restored bytes → `--filter ArticuloSearchCacheInvalidationTest` **6 tests, 21 assertions, OK** | None — the pending bytes were kept verbatim; only the gate's allowlist split was already present in the pending diff and was reviewed, not rewritten |
 | 4b.1–4b.8 | `--filter ArticuloExcelIdiomasTest` → **17 tests, 4 assertions, 13 errors + 3 failures** (`resolveTargetCodidioma` / `languageFieldCatalog` / `resolveLocalePair` / `applyDescripcionIdioma` undefined; the export emitted no locale column; the base `Descripción` cell returned the raw base column) | same filter → **18 tests, 54 assertions, OK** | The dispatch wiring was added after the service layer was green, then the whole `--filter Excel` run → **46 tests, 142 assertions, OK**; the new test file was kept at one file per the tasks resolution |
 | 4b.9 | included in the 4b RED run (the export test update was written with the export service change) | `--filter Excel` → **46 tests, 142 assertions, OK**; full plugin suite → **887 tests, 3813+ assertions, OK** | `ArticuloExcelImportWizardServiceTest` / `ArticuloExcelRowUpdaterTest` needed no edit (the additive shape is backward compatible) |
+| 4b.7 (slice-4b-wiring) | `--filter VentasArticulosExcelIdiomasWiringTest` → **7 tests, 9 assertions, 7 failures** (no pass-through in the controller, no `codidioma_defecto` on the trait, no `target_codidioma` in the modal or the JS) | same filter → **7 tests, 20 assertions, OK** | None — the wiring is purely additive; no refactor was needed |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -373,6 +448,14 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 887 tests, 3873 assertions, 2 warnings, 1 skipped** (baseline before slice 4b: 868 tests, 3814 assertions; +19 tests, no regressions). The persistence boundary is exercised DB-free through `FakeArticulo` + `IdiomaRegistryFake`, which mutate the seeded `articulo_descripciones` rows exactly like the emitted SQL; the registry is asserted byte-identical after every write. The SSE/dispatch wiring is pinned by a source gate (reads `target_codidioma`, routes through `resolveLocalePair`, never `$idiomaModel->save(`); a real-DB SSE import smoke remains for `verify`. |
 | **Rollback boundary** | Revert commit `5a36de09`: `Services/ArticuloExcelImportWizardService.php`, `Services/ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php` and `tests/Services/ArticuloExcelIdiomasTest.php`. Every addition is optional/backward compatible (`$idiomas = []` reproduces the old behaviour), so the wizard keeps importing base fields exactly as before. The export unit is independent and stays. |
 
+### Work unit `4b-wiring` — live UI wiring for the locale columns and the target language (Export Excel, Import wizard 3 pasos)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter VentasArticulosExcelIdiomasWiringTest` → **OK (7 tests, 20 assertions)**; RED first was **7 failures** |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 894 tests, 3893 assertions, 2 warnings, 1 skipped** (baseline before this unit: 887 tests, 3873 assertions; +7 tests, no regressions). The modal boundary is exercised by rendering the real partial through a minimal Twig environment; a real-browser export/import smoke remains for `verify`. |
+| **Rollback boundary** | Revert commit `cf02b7f2`: `Controller/VentasArticulos.php` (the three call sites), `extras/VentasArticulosListTrait.php` (`codidioma_defecto`), `View/partials/articulos/modal_importar_excel_wizard.html.twig` (the select), `View/js/articulos-excel-import-wizard.js` (`getTargetCodidioma()` + the param), the two translation-key additions and the new test file. The services keep their optional `$idiomas = []` defaults, so reverting only makes the locale columns inert again; nothing else depends on the wiring. Clear the Twig cache after reverting the view. |
+
 ---
 
 ## Test commands and results (exact)
@@ -406,6 +489,13 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4b) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4b) | **FAILED (pre-existing, unrelated)** — 2121 tests, 8423 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the failure output returns **0**. |
 | `ddev exec composer phpstan` (after slice 4b) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` (`return.type`) error; phpstan paths are `src` and root `tests` only, so no slice-4b file is analysed by this config. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter VentasArticulosExcelIdiomasWiringTest` (RED, slice 4b-wiring) | **RED** — 7 tests, 9 assertions, **7 failures** (no pass-through in the controller, no `codidioma_defecto` on the trait, no `target_codidioma` in the modal or the JS). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter VentasArticulosExcelIdiomasWiringTest` (GREEN, slice 4b-wiring) | **OK — 7 tests, 20 assertions**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4b-wiring) | **OK** — **894 tests, 3893 assertions, 2 warnings, 1 skipped** (baseline before: 887 tests, 3873 assertions; +7 tests, no regressions). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4b-wiring) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4b-wiring) | **FAILED (pre-existing, unrelated)** — 2128 tests, 8441 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the failure output returns **0**. |
+| `ddev exec composer phpstan` (after slice 4b-wiring) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` (`return.type`) error; phpstan paths are `src` and root `tests` only, so no slice-4b-wiring file is analysed by this config. |
+| Translation parse check (slice 4b-wiring) | Both YAML files parse through `Symfony\Component\Yaml\Yaml::parseFile`: `es_ES` **180 keys**, `en_EN` **149 keys**; `excel-import-target-language` resolves in both. |
 
 ---
 
@@ -431,6 +521,8 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `4b₁` authored changed lines | **144** — `Services/ArticuloExcelExportService.php` +114/−6, `tests/Services/ArticuloExcelExportServiceTest.php` +30 |
 | `4b₂` authored changed lines | **709** — `Services/ArticuloExcelImportWizardService.php` +163/−7, `Services/ArticuloExcelRowUpdater.php` +55, `process_excel_wizard_dispatch.php` +84/−2, `tests/Services/ArticuloExcelIdiomasTest.php` +407 |
 | Cut used for slice 4b? | **Yes** — the whole slice measured 853 > 800, so the pre-declared `4b₁`/`4b₂` boundary was used: two review units, each ≤ 800. |
+| Slice 4b-wiring authored changed lines (additions + deletions) | **325** — `Controller/VentasArticulos.php` +16/−3, `extras/VentasArticulosListTrait.php` +8, `View/partials/articulos/modal_importar_excel_wizard.html.twig` +17, `View/js/articulos-excel-import-wizard.js` +9, `translations/messages.es_ES.yaml` +2, `translations/messages.en_EN.yaml` +2, `tests/Controller/VentasArticulosExcelIdiomasWiringTest.php` +268 (new) |
+| Cut used for slice 4b-wiring? | **No** — 325 ≤ 800, landed whole as one review unit. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -504,6 +596,11 @@ cannot be partially committed cleanly, so the three Export Excel scenarios in
 export verification (`ArticuloExcelExportServiceTest::testLocaleColumnsAreAdditiveAndLeaveTheBaseHeadersByteIdentical`),
 so it is a green, self-verifying work unit. No `size:exception` is requested for either unit.
 
+**Slice 4b-wiring fits.** 325 authored lines ≤ 800; the follow-up closes the deferred
+wiring that slice 4b reported and is one cohesive work unit (the pass-through, the modal
+select, the JS parameter and their tests, committed together). No `size:exception` is
+requested, and no code, comment, blank line, doc or test was cut or compressed to fit.
+
 ---
 
 
@@ -521,6 +618,7 @@ so it is a green, self-verifying work unit. No `size:exception` is requested for
 | `c1420c36` | `fix(catalogo_core): invalidate the search cache when a language is deleted` | 4 | +109 / −4 |
 | `8aa5f420` | `feat(catalogo_core): append per-language description columns to the article Excel export` | 2 | +138 / −6 |
 | `5a36de09` | `feat(catalogo_core): import article descriptions into an explicit target language` | 4 | +700 / −9 |
+| `cf02b7f2` | `feat(catalogo_core): wire per-language Excel export and import into the live UI` | 7 | +322 / −3 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -566,6 +664,13 @@ Slice-4b files (commit `5a36de09`, `4b₂`): `Services/ArticuloExcelImportWizard
 `Services/ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php`,
 `tests/Services/ArticuloExcelIdiomasTest.php`.
 The slice-4b SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
+
+Slice-4b-wiring files (commit `cf02b7f2`): `Controller/VentasArticulos.php`,
+`extras/VentasArticulosListTrait.php`,
+`View/partials/articulos/modal_importar_excel_wizard.html.twig`,
+`View/js/articulos-excel-import-wizard.js`, `translations/messages.es_ES.yaml`,
+`translations/messages.en_EN.yaml`, `tests/Controller/VentasArticulosExcelIdiomasWiringTest.php`.
+The slice-4b-wiring SDD bookkeeping (`tasks.md` checkbox 4b.7 + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -736,6 +841,21 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     only wrote `label 'Descripción (<nombre>)'` for the pair; two identical dropdown labels would
     be ambiguous, so the short column is disambiguated. No scenario pins the label text.
 
+### Slice-4b-wiring deviations (scope correction, no design change)
+
+26. **Deviation 22 is closed; the deferred wiring landed.** The first `4b` run deferred task 4b.7
+    and the controller pass-through because that launch prompt excluded "any view/controller
+    change". A follow-up run scoped to `slice-4b-wiring` delivered both: the pass-through of
+    `$this->idiomas` / `$this->codidioma_defecto` and the modal select + JS parameter. The service
+    layer is byte-unchanged. Two notes: (a) `tasks.md`'s 4b.7 text named the field
+    `wizard_target_codidioma`, but `process_excel_wizard_dispatch.php` reads `target_codidioma`
+    (shipped in `5a36de09`) — the delivered name is `target_codidioma` and the task line was
+    corrected; (b) the wizard's mapping dropdown is rendered from the JS `FIELD_OPTIONS` constant
+    and does not yet consume the server's `field_options` (which already includes the locale
+    fields), so the locale columns remain unselectable per column in the UI. That is a separate
+    gap outside this work unit's scope (the unit wires the target language and the export
+    columns); it is reported here for `verify`/a follow-up rather than silently patched.
+
 ---
 
 ## No-drift statements
@@ -785,16 +905,25 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   helpers were added). `articulos.descripcion` is never written by the language path — the export
   only *reads* it as the read chain's terminal leg, and `applyDescripcionIdioma()` routes every
   write through `articulo::set_descripcion_idioma()`. No new Composer dependency was added.
+- **Slice-4b-wiring no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty
+  (no delta merged) and the repository-root `openspec/` still has no entry for this change. The
+  commit contains only the seven explicit paths listed in "Commits created"; the Excel services
+  (`ArticuloExcelExportService.php`, `ArticuloExcelImportWizardService.php`,
+  `ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php`) are **byte-unchanged**. No
+  schema, model, search, API or `tarifario` file was touched. No new Composer dependency was added.
 
 ---
 
 ## Remaining work / next
 
 1. **Slices `1a`, `1b`, `2`, `3`, `4a`, `4a-fix` and `4b` are done** — committed and green.
-2. **Slice `4b`'s remaining wiring** — task 4b.7 (modal target-language `<select>` + JS
+2. **Slice `4b`'s wiring is done** — task 4b.7 (modal target-language `<select>` + JS
    `target_codidioma=`) and the `Controller/VentasArticulos.php` pass-through of `$this->idiomas`
-   to `buildSpreadsheet()` / `preview()`. Both were excluded by this run's scope. Until they land,
-   the locale columns exist in the services but are not emitted by the live UI.
+   / `$this->codidioma_defecto` to `buildSpreadsheet()` / `preview()` landed in
+   `slice-4b-wiring` (commit `cf02b7f2`). The locale columns and the target language are now fed
+   by the live UI. The wizard's per-column mapping dropdown still renders from the JS
+   `FIELD_OPTIONS` constant rather than the server's `field_options`; making the locale columns
+   individually selectable is a separate follow-up (deviation 26b).
 3. **Slice `4c`** (`catalogo_core` no-context consumers) is independent and can run in parallel with
    4b after slice 1.
 4. **`verify`** must follow this artifact: slices 1, 2, 3, 4a and 4a-fix are delivered in full. The real-DB
@@ -804,8 +933,10 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
    `verify`. The `catalogo_idioma::delete()` cache-invalidation gap (deviation 16) is **closed** by
    slice 4a-fix (deviation 19); `verify` should confirm it with a real-DB delete-and-search smoke.
    For slice 4b, `verify` should confirm the locale columns against a real workbook and a real-DB
-   composed import (target language row written, base column untouched), and record that 4b.7 +
-   the controller pass-through are still pending (deviation 22).
+   composed import (target language row written, base column untouched). Slice 4b-wiring closed the
+   deferred 4b.7 + controller pass-through (deviation 26); `verify` should confirm the modal select
+   and the `target_codidioma` request end-to-end in a real browser and note the per-column mapping
+   gap (deviation 26b) as a known follow-up.
 5. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
 6. **`size:exception` disposition for slice 4a** (861 authored lines vs the 800 budget) awaits the
