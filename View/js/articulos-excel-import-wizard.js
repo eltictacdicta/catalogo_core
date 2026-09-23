@@ -15,13 +15,6 @@
         { value: 'bloqueado', label: 'Bloqueado' }
     ];
 
-    var FIELD_LABELS = {};
-    FIELD_OPTIONS.forEach(function (opt) {
-        if (opt.value !== '__ignorar__') {
-            FIELD_LABELS[opt.value] = opt.label;
-        }
-    });
-
     var ALIASES = {
         referencia: ['referencia', 'ref', 'codigo', 'código', 'codigo (no editar)'],
         descripcion: ['descripción', 'descripcion', 'desc', 'description'],
@@ -84,6 +77,7 @@
         this.headers = [];
         this.rows = [];
         this.userMapping = {};
+        this.fieldOptions = null;
         this.eventSource = null;
     }
 
@@ -126,6 +120,7 @@
         this.headers = [];
         this.rows = [];
         this.userMapping = {};
+        this.fieldOptions = null;
         if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
         show($('articulos-wizard-step-1'));
         hide($('articulos-wizard-step-2'));
@@ -222,6 +217,7 @@
                 self.headers = json.headers || [];
                 self.rows = json.rows || [];
                 self.userMapping = self.normalizeMapping(json.suggested_mapping || {});
+                self.fieldOptions = self.normalizeFieldOptions(json.field_options);
                 self.renderMapping();
                 self.step = 2;
                 hide($('articulos-wizard-step-1'));
@@ -243,7 +239,7 @@
             var sel = document.createElement('select');
             sel.className = 'form-control input-sm';
             sel.dataset.colIdx = String(idx);
-            FIELD_OPTIONS.forEach(function (opt) {
+            self.optionList().forEach(function (opt) {
                 var o = document.createElement('option');
                 o.value = opt.value;
                 o.textContent = opt.label;
@@ -279,6 +275,54 @@
             }
         });
         return out;
+    };
+
+    /**
+     * Sanitizes the server `field_options` payload (the same `{value,label}`
+     * shape the `FIELD_OPTIONS` constant uses) into a usable option list.
+     * Returns null when the response carries none, so the base constant stays
+     * the fallback.
+     */
+    ArticulosExcelWizard.prototype.normalizeFieldOptions = function (raw) {
+        if (!raw || !raw.length) {
+            return null;
+        }
+        var out = [];
+        for (var i = 0; i < raw.length; i++) {
+            var opt = raw[i];
+            if (!opt || typeof opt.value !== 'string' || typeof opt.label !== 'string') {
+                continue;
+            }
+            out.push({ value: opt.value, label: opt.label });
+        }
+        return out.length ? out : null;
+    };
+
+    /**
+     * The options the mapping dropdown renders: the server list when the
+     * preview response provides one (base fields, features and the locale
+     * columns), otherwise the base constant exactly as before.
+     */
+    ArticulosExcelWizard.prototype.optionList = function () {
+        if (this.fieldOptions && this.fieldOptions.length) {
+            return this.fieldOptions;
+        }
+        return FIELD_OPTIONS;
+    };
+
+    /**
+     * Field-name to label lookup over the active option list, so a locale
+     * column is labelled with its server-provided name.
+     */
+    ArticulosExcelWizard.prototype.fieldLabels = function () {
+        var labels = {};
+        var options = this.optionList();
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].value !== '__ignorar__') {
+                labels[options[i].value] = options[i].label;
+            }
+        }
+        return labels;
     };
 
     ArticulosExcelWizard.prototype.getFieldForColumn = function (idx) {
@@ -429,10 +473,11 @@
         }
 
         var hr = document.createElement('tr');
+        var labels = this.fieldLabels();
         for (var i = 0; i < this.headers.length; i++) {
             var th = document.createElement('th');
             var fieldName = this.getFieldForColumn(i);
-            var fieldLabel = FIELD_LABELS[fieldName] || '—';
+            var fieldLabel = labels[fieldName] || '—';
             th.innerHTML = '<small>' + this.escapeHtml(this.headers[i] || '') + '</small><br>'
                 + '<small class="text-muted">' + this.escapeHtml(fieldLabel) + '</small>';
             hr.appendChild(th);
@@ -474,9 +519,10 @@
         }
 
         var hr = document.createElement('tr');
+        var labels = this.fieldLabels();
         fields.forEach(function (item) {
             var th = document.createElement('th');
-            th.textContent = FIELD_LABELS[item.field] || item.field;
+            th.textContent = labels[item.field] || item.field;
             hr.appendChild(th);
         });
         thead.appendChild(hr);
