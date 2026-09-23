@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through)** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import) + slice 4b-wiring complete (task 4b.7 + the controller pass-through) + slice 4b-mapping complete (server `field_options` in the mapping dropdown)** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
 | **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. **Slice 4b used the pre-declared `4b₁`/`4b₂` boundary** — the whole slice measured 853 authored lines (> 800), so the export unit (`4b₁`, 144) and the import unit (`4b₂`, 709) landed as two review units, each ≤ 800. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b and 4b-wiring complete and green; every task in `tasks.md` for the delivered slices is `[x]` (4b.7 included). Slices `4c` and `5` remain for a later batch |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix, 4b, 4b-wiring and 4b-mapping complete and green; every task in `tasks.md` for the delivered slices is `[x]` (4b.7 included). Slices `4c` and `5` remain for a later batch |
 
 ---
 
@@ -323,6 +323,86 @@ the modal case renders the shipped bytes, so it cannot pass on a stale copy.
 
 ---
 
+## Slice-4b-mapping task status — offer the server field options in the mapping dropdown
+
+Follow-up work unit `slice-4b-mapping`, applied on top of slice 4b-wiring after the
+residual gap recorded as **deviation 26b** was reviewed. The export columns, the target
+language and the dispatch were already live; the only missing leg was that the wizard's
+per-column dropdown was still built from the JS `FIELD_OPTIONS` constant and ignored the
+server's `field_options` response, so a locale column could not be mapped and per-language
+import was unreachable through the UI even though the server supported it. The Excel
+service layer is **byte-unchanged**.
+
+### The gap (restated)
+
+`ArticuloExcelImportWizardService::preview()` already returns `field_options`, and
+`Controller/VentasArticulos.php::getPreview()` already forwards it in the `get_preview`
+JSON (the same payload the wizard's `loadPreview()` reads). `field_options` includes one
+`descripcion_<cod>` and one `descripcion_corta_<cod>` entry per active language through
+`languageFieldCatalog()`. But `View/js/articulos-excel-import-wizard.js::renderMapping()`
+rendered the `<option>` list from the module-local `FIELD_OPTIONS` constant alone and
+`loadPreview()` discarded `json.field_options`. A `descripcion_en` header therefore
+resolved to `__ignorar__` in the dropdown.
+
+### The fix
+
+`View/js/articulos-excel-import-wizard.js` (no server change):
+
+- `loadPreview()` now stores `json.field_options` on the wizard state through a new
+  `normalizeFieldOptions()` sanitizer (the same shape the constant uses: `{value,label}`;
+  invalid entries dropped, an empty/absent payload returns `null`).
+- A new `optionList()` returns the server list when present, otherwise the
+  `FIELD_OPTIONS` constant — so the base fields render exactly as today when the response
+  carries no options.
+- `renderMapping()` builds the dropdown from `optionList()`, so locale (and feature)
+  entries are selectable.
+- A new `fieldLabels()` resolves labels from the active option list (sentinel excluded, so
+  an unmapped column still shows `—`); `renderPreviewTable()` and
+  `renderMappedSummaryTable()` use it, so a mapped locale column is labelled with its
+  server-provided name instead of a raw key.
+- The now-unused module-local `FIELD_LABELS` map was removed.
+
+No new endpoint, no new request shape and no parallel catalog: the existing
+`get_preview` response is the single source.
+
+### Tests
+
+| Test | Tag(s) | State | Evidence |
+|---|---|---|---|
+| `VentasArticulosExcelMappingOptionsTest::test_wizard_js_consumes_the_server_field_options` | `[Import wizard 3 pasos; D-07]` | [x] | `loadPreview()` reads `json.field_options` and stores it on the wizard state. **RED before.** |
+| `VentasArticulosExcelMappingOptionsTest::test_mapping_dropdown_renders_the_server_options` | `[Import wizard 3 pasos; D-07]` | [x] | `renderMapping()` uses `optionList()` and no longer calls `FIELD_OPTIONS.forEach`. **RED before.** |
+| `VentasArticulosExcelMappingOptionsTest::test_mapping_dropdown_falls_back_to_the_base_options` | `[Import wizard 3 pasos; D-07]` | [x] | `optionList()` leads with `this.fieldOptions` and falls back to `FIELD_OPTIONS`. **RED before.** |
+| `VentasArticulosExcelMappingOptionsTest::test_preview_labels_resolve_from_the_active_options` | `[Import wizard 3 pasos; D-07]` | [x] | `renderPreviewTable()` labels through `fieldLabels()`. **RED before.** |
+| `VentasArticulosExcelMappingOptionsTest::test_server_field_options_offer_the_locale_columns` | `[Import wizard 3 pasos; D-07]` | [x] | The **real** `preview()` over the shipped fixture returns `field_options` with `descripcion_es`, `descripcion_corta_es`, `descripcion_en`, `descripcion_corta_en` and the locale labels, sentinel first. Green before and after (payload contract). |
+| `VentasArticulosExcelMappingOptionsTest::test_server_field_options_keep_the_base_catalog_intact` | `[Import wizard 3 pasos; D-07]` | [x] | Every `FIELD_CATALOG` field stays selectable with its label and an inactive language (`fr`) is not offered. Green before and after (no regression). |
+
+### Non-tautology proof
+
+The four JS gates were written first and failed **4/6** against the pre-change bytes
+(`Tests: 6, Assertions: 26, Failures: 4`), then passed **6/6** (`29 assertions`) after the
+change. The two server-payload cases are deliberate characterization guards for the data
+contract the UI consumes; they pass before and after and are not counted as RED. The JS
+gates are source gates — the repo's established JS convention
+(`VentasArticulosExcelIdiomasWiringTest::test_wizard_js_sends_the_target_language_with_the_apply_request`)
+— and one gate carries a negative assertion (`renderMapping` must **not** call
+`FIELD_OPTIONS.forEach`), so the constant can no longer be the direct source.
+
+The option-list logic was additionally exercised outside the suite with a Node stub
+(`node --check` plus a `require` of the file under a minimal `document`/`window` stub):
+the server payload is used verbatim, labels exclude the sentinel, an absent payload falls
+back to the 8 base options (`— Ignorar —` first) and an invalid payload is sanitized to the
+fallback. This is a verification step, not a committed test (the repo has no JS test
+runner).
+
+### Files
+
+| File | Action | What Was Done |
+|---|---|---|
+| `View/js/articulos-excel-import-wizard.js` | Modified | `normalizeFieldOptions()`, `optionList()`, `fieldLabels()`; `loadPreview()` consumes `json.field_options`; `renderMapping()` renders from `optionList()`; the two render methods label through `fieldLabels()`; unused `FIELD_LABELS` removed (+56 / −10) |
+| `tests/Controller/VentasArticulosExcelMappingOptionsTest.php` | Created | the four JS gates + the two server-payload guards (+216) |
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -345,6 +425,7 @@ the modal case renders the shipped bytes, so it cannot pass on a stale copy.
 | 4b.1–4b.8 | `--filter ArticuloExcelIdiomasTest` → **17 tests, 4 assertions, 13 errors + 3 failures** (`resolveTargetCodidioma` / `languageFieldCatalog` / `resolveLocalePair` / `applyDescripcionIdioma` undefined; the export emitted no locale column; the base `Descripción` cell returned the raw base column) | same filter → **18 tests, 54 assertions, OK** | The dispatch wiring was added after the service layer was green, then the whole `--filter Excel` run → **46 tests, 142 assertions, OK**; the new test file was kept at one file per the tasks resolution |
 | 4b.9 | included in the 4b RED run (the export test update was written with the export service change) | `--filter Excel` → **46 tests, 142 assertions, OK**; full plugin suite → **887 tests, 3813+ assertions, OK** | `ArticuloExcelImportWizardServiceTest` / `ArticuloExcelRowUpdaterTest` needed no edit (the additive shape is backward compatible) |
 | 4b.7 (slice-4b-wiring) | `--filter VentasArticulosExcelIdiomasWiringTest` → **7 tests, 9 assertions, 7 failures** (no pass-through in the controller, no `codidioma_defecto` on the trait, no `target_codidioma` in the modal or the JS) | same filter → **7 tests, 20 assertions, OK** | None — the wiring is purely additive; no refactor was needed |
+| 4b-mapping (slice-4b-mapping) | `--filter VentasArticulosExcelMappingOptionsTest` → **6 tests, 26 assertions, 4 failures** (the JS still rendered the dropdown from `FIELD_OPTIONS`; `loadPreview` ignored `json.field_options`; no `optionList()`/`fieldLabels()`; `renderPreviewTable` used `FIELD_LABELS`) | same filter → **6 tests, 29 assertions, OK** | None — the change is additive; the only cleanup was removing the now-unused `FIELD_LABELS` map |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -456,6 +537,14 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 894 tests, 3893 assertions, 2 warnings, 1 skipped** (baseline before this unit: 887 tests, 3873 assertions; +7 tests, no regressions). The modal boundary is exercised by rendering the real partial through a minimal Twig environment; a real-browser export/import smoke remains for `verify`. |
 | **Rollback boundary** | Revert commit `cf02b7f2`: `Controller/VentasArticulos.php` (the three call sites), `extras/VentasArticulosListTrait.php` (`codidioma_defecto`), `View/partials/articulos/modal_importar_excel_wizard.html.twig` (the select), `View/js/articulos-excel-import-wizard.js` (`getTargetCodidioma()` + the param), the two translation-key additions and the new test file. The services keep their optional `$idiomas = []` defaults, so reverting only makes the locale columns inert again; nothing else depends on the wiring. Clear the Twig cache after reverting the view. |
 
+### Work unit `4b-mapping` — server field options in the mapping dropdown (Import wizard 3 pasos, D-07)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter VentasArticulosExcelMappingOptionsTest` → **OK (6 tests, 29 assertions)**; RED first was **4 failures** (the JS gates) with the two server-payload guards already green. |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 900 tests, 3922 assertions, 2 warnings, 1 skipped** (baseline before this unit: 894 tests, 3893 assertions; +6 tests, no regressions). The UI boundary is pinned by source gates over the shipped JS plus a real `preview()` over the shipped fixture; the option-list logic was also exercised under a Node stub (verification only). A real-browser mapping of a `descripcion_en` column remains for `verify`. |
+| **Rollback boundary** | Revert commit `ed340ef9`: `View/js/articulos-excel-import-wizard.js` and `tests/Controller/VentasArticulosExcelMappingOptionsTest.php`. No server, view-partial, controller, model or schema file is touched; reverting only re-hides the locale columns in the dropdown while the server keeps returning them. |
+
 ---
 
 ## Test commands and results (exact)
@@ -496,6 +585,12 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4b-wiring) | **FAILED (pre-existing, unrelated)** — 2128 tests, 8441 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the failure output returns **0**. |
 | `ddev exec composer phpstan` (after slice 4b-wiring) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` (`return.type`) error; phpstan paths are `src` and root `tests` only, so no slice-4b-wiring file is analysed by this config. |
 | Translation parse check (slice 4b-wiring) | Both YAML files parse through `Symfony\Component\Yaml\Yaml::parseFile`: `es_ES` **180 keys**, `en_EN` **149 keys**; `excel-import-target-language` resolves in both. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter VentasArticulosExcelMappingOptionsTest` (RED, slice 4b-mapping) | **RED** — 6 tests, 26 assertions, **4 failures** (the JS still rendered the dropdown from `FIELD_OPTIONS`; `loadPreview` ignored `json.field_options`; no `optionList()`/`fieldLabels()`; `renderPreviewTable` used `FIELD_LABELS`). The two server-payload guards were green. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter VentasArticulosExcelMappingOptionsTest` (GREEN, slice 4b-mapping) | **OK — 6 tests, 29 assertions**. |
+| `node --check View/js/articulos-excel-import-wizard.js` (slice 4b-mapping) | **JS SYNTAX OK**; a Node stub `require` proved the server payload is used verbatim, labels exclude the sentinel, an absent payload falls back to the 8 base options (`— Ignorar —` first) and an invalid payload is sanitized to the fallback. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4b-mapping) | **OK** — **900 tests, 3922 assertions, 2 warnings, 1 skipped** (baseline before: 894 tests, 3893 assertions; +6 tests, no regressions). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4b-mapping) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4b-mapping) | **FAILED (pre-existing, unrelated)** — 2135 tests, 8475 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the failure output returns **0**. |
 
 ---
 
@@ -523,6 +618,8 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | Cut used for slice 4b? | **Yes** — the whole slice measured 853 > 800, so the pre-declared `4b₁`/`4b₂` boundary was used: two review units, each ≤ 800. |
 | Slice 4b-wiring authored changed lines (additions + deletions) | **325** — `Controller/VentasArticulos.php` +16/−3, `extras/VentasArticulosListTrait.php` +8, `View/partials/articulos/modal_importar_excel_wizard.html.twig` +17, `View/js/articulos-excel-import-wizard.js` +9, `translations/messages.es_ES.yaml` +2, `translations/messages.en_EN.yaml` +2, `tests/Controller/VentasArticulosExcelIdiomasWiringTest.php` +268 (new) |
 | Cut used for slice 4b-wiring? | **No** — 325 ≤ 800, landed whole as one review unit. |
+| Slice 4b-mapping authored changed lines (additions + deletions) | **282** — `View/js/articulos-excel-import-wizard.js` +56/−10, `tests/Controller/VentasArticulosExcelMappingOptionsTest.php` +216 (new) |
+| Cut used for slice 4b-mapping? | **No** — 282 ≤ 800, landed whole as one review unit. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -601,6 +698,11 @@ wiring that slice 4b reported and is one cohesive work unit (the pass-through, t
 select, the JS parameter and their tests, committed together). No `size:exception` is
 requested, and no code, comment, blank line, doc or test was cut or compressed to fit.
 
+**Slice 4b-mapping fits.** 282 authored lines ≤ 800; the follow-up closes the residual
+gap that slice 4b-wiring reported (deviation 26b) and is one cohesive work unit (the JS
+consumption of the server payload plus its tests, committed together). No `size:exception`
+is requested, and no code, comment, blank line, doc or test was cut or compressed to fit.
+
 ---
 
 
@@ -619,6 +721,7 @@ requested, and no code, comment, blank line, doc or test was cut or compressed t
 | `8aa5f420` | `feat(catalogo_core): append per-language description columns to the article Excel export` | 2 | +138 / −6 |
 | `5a36de09` | `feat(catalogo_core): import article descriptions into an explicit target language` | 4 | +700 / −9 |
 | `cf02b7f2` | `feat(catalogo_core): wire per-language Excel export and import into the live UI` | 7 | +322 / −3 |
+| `ed340ef9` | `feat(catalogo_core): offer the server field options in the Excel import mapping dropdown` | 2 | +272 / −10 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -671,6 +774,10 @@ Slice-4b-wiring files (commit `cf02b7f2`): `Controller/VentasArticulos.php`,
 `View/js/articulos-excel-import-wizard.js`, `translations/messages.es_ES.yaml`,
 `translations/messages.en_EN.yaml`, `tests/Controller/VentasArticulosExcelIdiomasWiringTest.php`.
 The slice-4b-wiring SDD bookkeeping (`tasks.md` checkbox 4b.7 + this artifact) is committed separately.
+
+Slice-4b-mapping files (commit `ed340ef9`): `View/js/articulos-excel-import-wizard.js`,
+`tests/Controller/VentasArticulosExcelMappingOptionsTest.php`.
+The slice-4b-mapping SDD bookkeeping (`tasks.md` annotation 4b.7 + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -856,6 +963,20 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     gap outside this work unit's scope (the unit wires the target language and the export
     columns); it is reported here for `verify`/a follow-up rather than silently patched.
 
+### Slice-4b-mapping deviations (scope correction, no design change)
+
+27. **Deviation 26b is closed; the mapping dropdown now consumes the server options.** The
+    wizard's per-column dropdown rendered from the JS `FIELD_OPTIONS` constant and ignored
+    the `field_options` array the `get_preview` response already carried (base fields,
+    features and the locale columns), so a `descripcion_<cod>` column could not be mapped.
+    `loadPreview()` now stores the server list, `renderMapping()` renders from it, and
+    `optionList()` falls back to the constant when the payload is absent — so the base
+    options behave exactly as today and no new endpoint or parallel catalog was added. The
+    `field_options` payload is unchanged; only the UI consumption changed. The
+    now-unused module-local `FIELD_LABELS` map was removed, and label resolution moved to a
+    `fieldLabels()` helper over the active option list (sentinel excluded, preserving the
+    `—` shown for an unmapped column).
+
 ---
 
 ## No-drift statements
@@ -911,6 +1032,13 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   (`ArticuloExcelExportService.php`, `ArticuloExcelImportWizardService.php`,
   `ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php`) are **byte-unchanged**. No
   schema, model, search, API or `tarifario` file was touched. No new Composer dependency was added.
+- **Slice-4b-mapping no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty
+  (no delta merged) and the repository-root `openspec/` still has no entry for this change. The
+  commit contains only the two explicit paths listed in "Commits created"; the Excel services
+  (`ArticuloExcelExportService.php`, `ArticuloExcelImportWizardService.php`,
+  `ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php`), the controller and the modal
+  partial are **byte-unchanged**; only the wizard JS changed. No schema, model, search, API or
+  `tarifario` file was touched. No new Composer dependency was added.
 
 ---
 
@@ -921,9 +1049,9 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
    `target_codidioma=`) and the `Controller/VentasArticulos.php` pass-through of `$this->idiomas`
    / `$this->codidioma_defecto` to `buildSpreadsheet()` / `preview()` landed in
    `slice-4b-wiring` (commit `cf02b7f2`). The locale columns and the target language are now fed
-   by the live UI. The wizard's per-column mapping dropdown still renders from the JS
-   `FIELD_OPTIONS` constant rather than the server's `field_options`; making the locale columns
-   individually selectable is a separate follow-up (deviation 26b).
+   by the live UI. The wizard's per-column mapping dropdown now renders from the server's
+   `field_options` (`slice-4b-mapping`, commit `ed340ef9`), so the locale columns are individually
+   selectable; deviation 26b is closed.
 3. **Slice `4c`** (`catalogo_core` no-context consumers) is independent and can run in parallel with
    4b after slice 1.
 4. **`verify`** must follow this artifact: slices 1, 2, 3, 4a and 4a-fix are delivered in full. The real-DB
@@ -935,8 +1063,9 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
    For slice 4b, `verify` should confirm the locale columns against a real workbook and a real-DB
    composed import (target language row written, base column untouched). Slice 4b-wiring closed the
    deferred 4b.7 + controller pass-through (deviation 26); `verify` should confirm the modal select
-   and the `target_codidioma` request end-to-end in a real browser and note the per-column mapping
-   gap (deviation 26b) as a known follow-up.
+   and the `target_codidioma` request end-to-end in a real browser and confirm a
+   `descripcion_<cod>` column maps end-to-end (the per-column mapping gap, deviation 26b, is
+   closed by `slice-4b-mapping`, commit `ed340ef9`).
 5. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
 6. **`size:exception` disposition for slice 4a** (861 authored lines vs the 800 budget) awaits the

@@ -325,6 +325,15 @@ with no production edit. Requirement tags: `GDI-xx`, `ART-xx`, the three
 > `target_codidioma` select (default first, preselected) and the wizard JS sends
 > `target_codidioma` with the apply request. See `apply-progress.md` → "Slice-4b
 > task status" and "Deviations".
+>
+> **Annotated (slice-4b-mapping, applied).** Deviation 26b is closed: the wizard's
+> per-column mapping dropdown (`View/js/articulos-excel-import-wizard.js`) now renders
+> from the server `field_options` payload already returned by `get_preview` (which
+> carries `descripcion_<cod>` / `descripcion_corta_<cod>`), instead of only the JS
+> `FIELD_OPTIONS` constant, so a locale column is selectable. When the response omits
+> the payload the constant remains the exact fallback and the base fields render as
+> today. No new endpoint and no parallel catalog were added. See `apply-progress.md`
+> → "Slice-4b-mapping task status". `[Import wizard 3 pasos; D-07]`
 
 ### Slice 4c — `catalogo_core` no-context consumers
 
