@@ -256,6 +256,14 @@ class catalogo_idioma extends \fs_model
             return false;
         }
 
+        // Whether the language owns description rows decides the search-cache
+        // obligation (GDI-08 / D-03): the DELETE below is unconditional, but
+        // only a delete that actually removes rows is a write. A cheap LIMIT 1
+        // pre-check keeps a language with no translations from invalidating.
+        $hasDescriptions = (bool) $this->db->select(
+            'SELECT 1 FROM articulo_descripciones WHERE codidioma = ' . $this->var2str($this->codidioma) . ' LIMIT 1;'
+        );
+
         $this->db->begin_transaction();
 
         $ok = $this->db->exec(
@@ -271,6 +279,15 @@ class catalogo_idioma extends \fs_model
 
         $this->normalize_default();
         $this->db->commit();
+
+        // Deleting a language removes its description rows with raw SQL, so it
+        // owns the same search-cache obligation as the description model
+        // (GDI-08 / D-03). Placed after the successful commit: a rolled-back
+        // delete wrote nothing, and a language with no description rows has
+        // nothing to clean.
+        if ($hasDescriptions) {
+            articulo::invalidate_search_cache();
+        }
 
         return true;
     }

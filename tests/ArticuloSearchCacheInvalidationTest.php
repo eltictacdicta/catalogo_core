@@ -14,6 +14,7 @@ namespace Tests\CatalogoCore;
 
 use PHPUnit\Framework\TestCase;
 use Tests\CatalogoCore\Support\FakeArticuloDescripcion;
+use Tests\CatalogoCore\Support\FakeCatalogoIdioma;
 use Tests\CatalogoCore\Support\IdiomaRegistryFake;
 
 require_once __DIR__ . '/Support/IdiomaRegistryFake.php';
@@ -126,7 +127,56 @@ final class ArticuloSearchCacheInvalidationTest extends TestCase
         );
     }
 
-    public function test_the_description_model_is_the_only_owner_of_the_table_writes(): void
+    public function test_language_delete_invalidates_the_cache(): void
+    {
+        $cache = new \fs_cache();
+        $this->seedCachedSearch($cache);
+
+        $db = new IdiomaRegistryFake(
+            [
+                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ],
+            [
+                ['referencia' => 'ART1', 'codidioma' => 'en', 'descripcion' => 'English text'],
+            ]
+        );
+        $model = (new FakeCatalogoIdioma())->useFakeDb($db);
+        $model->codidioma = 'en';
+        $model->por_defecto = false;
+
+        $this->assertTrue($model->delete(), 'deleting a non-default language must succeed');
+
+        $this->assertSame(
+            [],
+            $cache->get_array(self::CACHE_KEY),
+            'deleting a language that owns description rows must invalidate the search cache'
+        );
+    }
+
+    public function test_language_delete_without_descriptions_keeps_the_cache(): void
+    {
+        $cache = new \fs_cache();
+        $this->seedCachedSearch($cache);
+
+        $db = new IdiomaRegistryFake([
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+        ]);
+        $model = (new FakeCatalogoIdioma())->useFakeDb($db);
+        $model->codidioma = 'en';
+        $model->por_defecto = false;
+
+        $this->assertTrue($model->delete(), 'deleting a non-default language must succeed');
+
+        $this->assertSame(
+            [['referencia' => 'ART1']],
+            $cache->get_array(self::CACHE_KEY),
+            'a language with no description rows has nothing to clean and must not invalidate'
+        );
+    }
+
+    public function test_every_description_writer_invalidates_or_is_explicitly_exempt(): void
     {
         $model = file_get_contents(FS_FOLDER . '/plugins/catalogo_core/model/core/articulo_descripcion.php');
         $this->assertIsString($model);
@@ -137,13 +187,22 @@ final class ArticuloSearchCacheInvalidationTest extends TestCase
         );
 
         // DML against `articulo_descripciones` is confined to the documented
-        // owners: the description model, the language-delete cleanup and the
-        // activation-time migration copy/purge.
-        $allowlist = [
+        // writers. Two groups:
+        //  - INVALIDATING: request-path writers that own the GDI-08 obligation
+        //    and MUST call the single `articulo::invalidate_search_cache()`
+        //    entry point.
+        //  - EXEMPT: the activation-time migration, which copies/purges rows
+        //    once during plugin boot, before any request populates the search
+        //    cache. It is exempt by explicit, reviewed decision — not by
+        //    omission.
+        $invalidating = [
             'model/core/articulo_descripcion.php',
             'model/core/catalogo_idioma.php',
+        ];
+        $exempt = [
             'Services/CatalogLegacyTableMigration.php',
         ];
+        $allowlist = array_merge($invalidating, $exempt);
 
         $offenders = [];
         $root = FS_FOLDER . '/plugins/catalogo_core';
@@ -177,6 +236,18 @@ final class ArticuloSearchCacheInvalidationTest extends TestCase
             $offenders,
             'DML against articulo_descripciones escaped the allowlist: ' . implode(', ', $offenders)
         );
+
+        // The allowlist is only honest if every request-path writer actually
+        // invalidates. This is what fails when a future writer is added to
+        // $invalidating without the call, or when an owner loses the call.
+        foreach ($invalidating as $relative) {
+            $source = (string) file_get_contents($root . '/' . $relative);
+            $this->assertStringContainsString(
+                'articulo::invalidate_search_cache()',
+                $source,
+                $relative . ' writes articulo_descripciones but never invalidates the search cache'
+            );
+        }
     }
 
     private function seedCachedSearch(\fs_cache $cache): void

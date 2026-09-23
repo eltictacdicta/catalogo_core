@@ -30,6 +30,10 @@ final class CatalogoIdiomaDeleteCleanupTest extends TestCase
         parent::setUp();
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
+        // `catalogo_idioma::delete()` delegates the search-cache obligation to
+        // `articulo::invalidate_search_cache()` (GDI-08), so the article model
+        // must be loadable when the delete path reaches it.
+        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
     }
 
     public function test_deleting_the_last_language_is_refused(): void

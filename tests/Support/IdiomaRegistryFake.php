@@ -228,6 +228,19 @@ final class IdiomaRegistryFake
             return [];
         }
 
+        // Cheap pre-check used by catalogo_idioma::delete() to decide whether
+        // the language owns description rows (and therefore whether the
+        // search-cache obligation applies).
+        if (preg_match('/^SELECT 1 FROM articulo_descripciones WHERE codidioma = \'([^\']*)\' LIMIT 1;?$/i', $sql, $m)) {
+            foreach ($this->descripciones as $row) {
+                if ((string) $row['codidioma'] === $m[1]) {
+                    return [['1' => 1]];
+                }
+            }
+
+            return [];
+        }
+
         return [];
     }
 
