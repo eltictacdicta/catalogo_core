@@ -7,10 +7,10 @@
 | **Artifact store** | `openspec` (core `openspec/` received nothing) |
 | **Phase** | `apply` |
 | **Mode** | **Strict TDD** (`strict_tdd: true`) |
-| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete** |
+| **Slice** | **1a + 1b (slice 1 complete) + slice 2 complete + slice 3 complete + slice 4a complete + slice 4a-fix (writer gate) complete + slice 4b complete (`4b₁` export + `4b₂` import; 4b.7 deferred)** |
 | **Delivery** | `auto-chain`, `chain_strategy: stacked-to-main`, `review_budget_lines: 800` |
-| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
-| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a and 4a-fix complete and green |
+| **Cut boundary used** | **No for `1b`** — 626 authored lines ≤ 800, landed whole. **No cut for slice 2** — 862 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 3** — 386 authored lines ≤ 800, landed whole. **No cut for slice 4a** — 861 authored lines, complete and green; overage reported for `size:exception` (see "Budget measurement"). **No cut for slice 4a-fix** — 113 authored lines ≤ 800, landed whole. **Slice 4b used the pre-declared `4b₁`/`4b₂` boundary** — the whole slice measured 853 authored lines (> 800), so the export unit (`4b₁`, 144) and the import unit (`4b₂`, 709) landed as two review units, each ≤ 800. The pre-declared `1a`/`1b` boundary **was** used for the `1a` PR (1023 lines), which the maintainer accepted as a `size:exception` (see "Budget measurement"). |
+| **Status** | **success** — slices 1 (`1a` + `1b`), 2, 3, 4a, 4a-fix and 4b complete and green; 4b.7 (view/JS wiring) deferred by the launch prompt's scope |
 
 ---
 
@@ -216,6 +216,39 @@ reverted from a byte-for-byte backup; the committed bytes are the pending diff e
 
 ---
 
+## Slice-4b task status — Excel export/import with per-language columns
+
+Delivered at the pre-declared `4b₁`/`4b₂` boundary (853 authored lines > the 800
+budget). The export appends one `descripcion_<codidioma>` and one
+`descripcion_corta_<codidioma>` column per active language after the byte-identical
+base headers, and the import targets an explicit language whose destination rule is
+the design's literal reading (the suffix qualifies importability, the target decides
+the destination). Unknown or deactivated locale suffixes are ignored and never
+create or mutate a `catalogo_idiomas` row.
+
+| Task | Tag(s) | State | Evidence |
+|---|---|---|---|
+| 4b.1 RED — `tests/Services/ArticuloExcelIdiomasTest.php` (3 Export Excel scenarios + default-first order + GDI-10 base cell) | `[Export Excel; D-07]` | [x] | 17 tests, RED first (**13 errors + 3 failures**), then GREEN |
+| 4b.2 GREEN — `descriptionHeaders()`, `orderedCodes()`, `writeLocaleCells()`, locale offset in `writeFeatureCells()`, base cell via `get_descripcion_idioma(null)` | `[Export Excel, GDI-10; D-07]` | [x] | `Services/ArticuloExcelExportService.php`; `EXPORT_HEADERS` untouched |
+| 4b.3 RED — 4 Import wizard scenarios (target default/override; unknown `zz`; deactivated `fr`; legacy base-only) + the destination rule + mapped-but-empty pair | `[Import wizard 3 pasos; D-07]` | [x] | included in the 17-test file |
+| 4b.4 GREEN — `languageFieldCatalog()`, `resolveTargetCodidioma()`, `resolveLocalePair()`, `orderedLanguages()`; `preview(..., array $idiomas = [])`, `fieldOptions(..., array $idiomas = [])`, `extra_field_aliases(array $idiomas = [])` | `[Import wizard 3 pasos; D-07]` | [x] | `Services/ArticuloExcelImportWizardService.php`; `FIELD_CATALOG` untouched; `$idiomas = []` reproduces the old behaviour |
+| 4b.5 GREEN — `applyDescripcionIdioma()` + private `currentLanguagePair()`; base `applyDescripcion` case untouched | `[Persistencia; D-07, D-10]` | [x] | `Services/ArticuloExcelRowUpdater.php`; writes route through `articulo::set_descripcion_idioma()` |
+| 4b.6 GREEN — `handleCatalogoStart()` reads/validates `target_codidioma`, loads `all_activos()`, recovers mapped-but-empty locale fields; `catalogoApplyWizardFields()` + new `catalogoApplyLocaleFields()` apply the resolved pair | `[Import wizard 3 pasos, Persistencia; D-07]` | [x] | `process_excel_wizard_dispatch.php`; `$idiomaModel` is read-only (`ensure_defaults`/`all_activos`/`get_effective_default_code`), never `save()` |
+| 4b.7 GREEN — modal target-language `<select>` + JS `target_codidioma=` | `[Import wizard 3 pasos; D-07]` | [ ] | **DEFERRED — out of scope for this run.** The launch prompt excludes any view/controller change. The dispatch accepts the parameter and falls back to the configured default when absent, so the feature degrades safely. |
+| 4b.8 RED — 3 Persistencia scenarios + the unmapped-component-preserved case + the registry-immutability case + the dispatch source gate | `[Persistencia, GDI-06; D-07, D-01]` | [x] | included in the 17-test file (18 with the dispatch gate) |
+| 4b.9 VERIFY — `ArticuloExcelExportServiceTest` gains the additive-layout test; the two other Excel service tests pass **unchanged**; full plugin suite + PHPStan | `[Export Excel, Import wizard 3 pasos; D-07]` | [x] | full plugin suite **887 tests OK**; `ArticuloExcelImportWizardServiceTest` / `ArticuloExcelRowUpdaterTest` byte-unchanged |
+
+> **Deferred wiring (documented, not silently dropped).** Task 4b.7 (modal + JS) is
+> excluded by the launch prompt ("any view/controller change"). Its consequence: the
+> controller (`Controller/VentasArticulos.php`) still calls
+> `buildSpreadsheet($articulos)` and `preview($filePath, $sheet, $n)` without
+> `$this->idiomas`, so the locale columns are **inert in production** until that
+> pass-through lands. The services default to `$idiomas = []`, which reproduces the
+> pre-change behaviour exactly, so nothing regresses. See "Deviations" 22 and
+> "Remaining work".
+
+---
+
 ## TDD Cycle Evidence (Strict TDD)
 
 | Task | RED | GREEN | REFACTOR |
@@ -235,6 +268,8 @@ reverted from a byte-for-byte backup; the committed bytes are the pending diff e
 | 3.2 / 3.5 / 3.6 | focused run → **3 failures** (`descripcion_es` overwritten by `$art->descripcion`; `descripcion_es` injected into the `en` slot; the empty pair left the row) | same run → **48 tests, 200 assertions, OK** | — |
 | 4a.1 / 4a.2 / 4a.3 | focused run over the three new/updated files → **16 tests, 24 assertions, 2 errors + 11 failures**: `languageDescriptionPredicate`/`languageDescriptionJoin` undefined, the cached `articulos_search_*` key survived every description write, the term in the `en` row was unfindable, the writer gate counted 0 invalidations | same run → **16 tests, 65 assertions, OK** | — |
 | 4a-fix (gate) | The interrupted first run left the tests and the fix uncommitted together; RED was re-established by removing the invalidate call from `catalogo_idioma::delete()` → **6 tests, 2 failures** (`test_language_delete_invalidates_the_cache` + the gate) | restored bytes → `--filter ArticuloSearchCacheInvalidationTest` **6 tests, 21 assertions, OK** | None — the pending bytes were kept verbatim; only the gate's allowlist split was already present in the pending diff and was reviewed, not rewritten |
+| 4b.1–4b.8 | `--filter ArticuloExcelIdiomasTest` → **17 tests, 4 assertions, 13 errors + 3 failures** (`resolveTargetCodidioma` / `languageFieldCatalog` / `resolveLocalePair` / `applyDescripcionIdioma` undefined; the export emitted no locale column; the base `Descripción` cell returned the raw base column) | same filter → **18 tests, 54 assertions, OK** | The dispatch wiring was added after the service layer was green, then the whole `--filter Excel` run → **46 tests, 142 assertions, OK**; the new test file was kept at one file per the tasks resolution |
+| 4b.9 | included in the 4b RED run (the export test update was written with the export service change) | `--filter Excel` → **46 tests, 142 assertions, OK**; full plugin suite → **887 tests, 3813+ assertions, OK** | `ArticuloExcelImportWizardServiceTest` / `ArticuloExcelRowUpdaterTest` needed no edit (the additive shape is backward compatible) |
 
 No task was completed without a test-first step. No silent fallback to Standard Mode.
 
@@ -320,6 +355,26 @@ No task was completed without a test-first step. No silent fallback to Standard 
 
 ---
 
+## Work Unit Evidence (slice 4b)
+
+### Work unit `4b₁` — additive per-language export columns (Export Excel, GDI-10)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter Excel` → **OK (46 tests, 142 assertions)**. The three Export Excel scenarios plus the default-first ordering and the GDI-10 base-cell leg live in `tests/Services/ArticuloExcelIdiomasTest.php` (committed with `4b₂`, see below) and the additive-layout guard in `tests/Services/ArticuloExcelExportServiceTest.php` (this unit). |
+| **Runtime harness command/scenario and exact result** | `N/A` — pure workbook-shape function with no routing, HTTP or process boundary; it is exercised over `Spreadsheet` objects with array rows and the DB-free `FakeArticulo` over `IdiomaRegistryFake`. A real-browser "export completo" download smoke remains for `verify`. |
+| **Rollback boundary** | Revert commit `8aa5f420`: `Services/ArticuloExcelExportService.php` and `tests/Services/ArticuloExcelExportServiceTest.php`. `EXPORT_HEADERS` was never edited, so the base workbook shape returns intact; the import path is independent and stays. |
+
+### Work unit `4b₂` — explicit-target-language import (Import wizard 3 pasos, Persistencia)
+
+| Evidence | Value |
+|---|---|
+| **Focused test command and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter ArticuloExcelIdiomasTest` → **OK (18 tests, 54 assertions)**; RED first was **13 errors + 3 failures**. |
+| **Runtime harness command/scenario and exact result** | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → **OK — 887 tests, 3873 assertions, 2 warnings, 1 skipped** (baseline before slice 4b: 868 tests, 3814 assertions; +19 tests, no regressions). The persistence boundary is exercised DB-free through `FakeArticulo` + `IdiomaRegistryFake`, which mutate the seeded `articulo_descripciones` rows exactly like the emitted SQL; the registry is asserted byte-identical after every write. The SSE/dispatch wiring is pinned by a source gate (reads `target_codidioma`, routes through `resolveLocalePair`, never `$idiomaModel->save(`); a real-DB SSE import smoke remains for `verify`. |
+| **Rollback boundary** | Revert commit `5a36de09`: `Services/ArticuloExcelImportWizardService.php`, `Services/ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php` and `tests/Services/ArticuloExcelIdiomasTest.php`. Every addition is optional/backward compatible (`$idiomas = []` reproduces the old behaviour), so the wizard keeps importing base fields exactly as before. The export unit is independent and stays. |
+
+---
+
 ## Test commands and results (exact)
 
 | Command | Result |
@@ -344,6 +399,13 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4a-fix) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
 | `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4a-fix) | **FAILED (pre-existing, unrelated)** — 2102 tests, 8353 assertions, **8 failures**, 1 warning, 46 skipped. All 8 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×2, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); the count is order/state-sensitive in that plugin (an adjacent run reported 7 with the same failure set). **No `catalogo_core` test failed.** |
 | `ddev exec composer phpstan` (after slice 4a-fix) | **Not re-run** — no `catalogo_core` file is analysed by this config (`src` + root `tests` only); the single pre-existing `tests/Core/PluginEnableAjaxSafetyTest.php:308` error is unchanged and unowned by this work unit. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter ArticuloExcelIdiomasTest` (RED, slice 4b) | **RED** — 17 tests, 4 assertions, **13 errors + 3 failures** (`resolveTargetCodidioma` / `languageFieldCatalog` / `resolveLocalePair` / `applyDescripcionIdioma` undefined; no locale column emitted; the base cell returned the raw base column). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter ArticuloExcelIdiomasTest` (GREEN, slice 4b) | **OK — 18 tests, 54 assertions**. |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter Excel` (after slice 4b) | **OK — 46 tests, 142 assertions** (the new file + the additive-layout guard + the three pre-existing Excel service tests). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` (after slice 4b) | **OK** — **887 tests, 3873 assertions, 2 warnings, 1 skipped** (baseline before slice 4b: 868 tests, 3814 assertions; +19 tests, no regressions). |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoCoreHookMarkersTest` (after slice 4b) | **OK — 12 tests, 68 assertions**, test file **unmodified** (`git status --short` empty). |
+| `ddev exec php vendor/bin/phpunit --testsuite Plugins` (root, regression, after slice 4b) | **FAILED (pre-existing, unrelated)** — 2121 tests, 8423 assertions, **7 failures**, 1 warning, 46 skipped. All 7 failures are in the untouched `OidcProvider` plugin (`OidcRegisterControllerMinimalClienteTest` ×1, `OidcLegacySchemaParityTest`, `OidcSchemaContractTest`, `migration011_cliente_gruposTest` ×4); a grep for `catalogo_core` in the failure output returns **0**. |
+| `ddev exec composer phpstan` (after slice 4b) | **FAILED (pre-existing, unrelated)** — the same single `tests/Core/PluginEnableAjaxSafetyTest.php:308` (`return.type`) error; phpstan paths are `src` and root `tests` only, so no slice-4b file is analysed by this config. |
 
 ---
 
@@ -365,6 +427,10 @@ No task was completed without a test-first step. No silent fallback to Standard 
 | Cut used for slice 4a? | **No** — the slice was complete and green at 861 lines; no code, comment, blank line, doc or test was cut to fit 800. |
 | Slice 4a-fix authored changed lines (additions + deletions) | **113** — `model/core/catalogo_idioma.php` +17, `tests/ArticuloSearchCacheInvalidationTest.php` +75/−4, `tests/CatalogoIdiomaDeleteCleanupTest.php` +4, `tests/Support/IdiomaRegistryFake.php` +13 |
 | Cut used for slice 4a-fix? | **No** — 113 ≤ 800, landed whole. |
+| Slice 4b total authored changed lines (additions + deletions) | **853** — `Services/ArticuloExcelExportService.php` +114/−6, `Services/ArticuloExcelImportWizardService.php` +163/−7, `Services/ArticuloExcelRowUpdater.php` +55, `process_excel_wizard_dispatch.php` +84/−2, `tests/Services/ArticuloExcelExportServiceTest.php` +30, `tests/Services/ArticuloExcelIdiomasTest.php` +407 (new) |
+| `4b₁` authored changed lines | **144** — `Services/ArticuloExcelExportService.php` +114/−6, `tests/Services/ArticuloExcelExportServiceTest.php` +30 |
+| `4b₂` authored changed lines | **709** — `Services/ArticuloExcelImportWizardService.php` +163/−7, `Services/ArticuloExcelRowUpdater.php` +55, `process_excel_wizard_dispatch.php` +84/−2, `tests/Services/ArticuloExcelIdiomasTest.php` +407 |
+| Cut used for slice 4b? | **Yes** — the whole slice measured 853 > 800, so the pre-declared `4b₁`/`4b₂` boundary was used: two review units, each ≤ 800. |
 
 **`1a` overage — accepted `size:exception`.** The `1a` work unit exceeded the 800-line budget
 by itself (1023 lines). The single largest contributor is the DB-free registry fake
@@ -421,6 +487,23 @@ reported and is one cohesive work unit (production + its tests, committed togeth
 `size:exception` is requested, and no code, comment, blank line, doc or test was cut or
 compressed to fit.
 
+**Slice 4b over budget — the pre-declared `4b₁`/`4b₂` boundary was used.** The whole slice
+measured **853 authored lines** against the 800 budget (53 over, `853/800`) — inside the
+`tasks.md` estimate band's upper edge (700–800) plus the two additive tests 4b.9 required.
+Rather than ship one oversized review unit or shrink tests to fit, the pre-declared
+boundary was applied: `4b₁` = the export work unit (**144** lines, commit `8aa5f420`) and
+`4b₂` = the import work unit (**709** lines, commit `5a36de09`), each ≤ 800. The overage is
+concentrated in test infrastructure: the new `ArticuloExcelIdiomasTest.php` alone is 407
+lines over 18 tests (export + import + Persistencia scenarios), the same test-infrastructure
+shape that produced `1a`'s accepted exception and slices 2/4a's requested exceptions. No
+code, comment, blank line, doc or test was cut or compressed to fit.
+
+The only imperfect seam: the tasks resolution keeps **one** new test file, and a new file
+cannot be partially committed cleanly, so the three Export Excel scenarios in
+`ArticuloExcelIdiomasTest.php` land with `4b₂` rather than `4b₁`. `4b₁` still carries its own
+export verification (`ArticuloExcelExportServiceTest::testLocaleColumnsAreAdditiveAndLeaveTheBaseHeadersByteIdentical`),
+so it is a green, self-verifying work unit. No `size:exception` is requested for either unit.
+
 ---
 
 
@@ -436,6 +519,8 @@ compressed to fit.
 | `1df1a7eb` | `feat(catalogo_core): invalidate the article search cache on every description write` | 3 | +257 / −9 |
 | `210a80bd` | `feat(catalogo_core): search articles across all description languages` | 7 | +560 / −35 |
 | `c1420c36` | `fix(catalogo_core): invalidate the search cache when a language is deleted` | 4 | +109 / −4 |
+| `8aa5f420` | `feat(catalogo_core): append per-language description columns to the article Excel export` | 2 | +138 / −6 |
+| `5a36de09` | `feat(catalogo_core): import article descriptions into an explicit target language` | 4 | +700 / −9 |
 
 `1a` files: `model/core/catalogo_idioma.php`, `Services/CatalogLegacyTableMigration.php`,
 `tests/CatalogoIdiomaInvariantsTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
@@ -474,6 +559,13 @@ Slice-4a-fix files (commit `c1420c36`): `model/core/catalogo_idioma.php`,
 `tests/ArticuloSearchCacheInvalidationTest.php`, `tests/CatalogoIdiomaDeleteCleanupTest.php`,
 `tests/Support/IdiomaRegistryFake.php`.
 The slice-4a-fix SDD bookkeeping (`tasks.md` annotation + this artifact) is committed separately.
+
+Slice-4b files (commit `8aa5f420`, `4b₁`): `Services/ArticuloExcelExportService.php`,
+`tests/Services/ArticuloExcelExportServiceTest.php`.
+Slice-4b files (commit `5a36de09`, `4b₂`): `Services/ArticuloExcelImportWizardService.php`,
+`Services/ArticuloExcelRowUpdater.php`, `process_excel_wizard_dispatch.php`,
+`tests/Services/ArticuloExcelIdiomasTest.php`.
+The slice-4b SDD bookkeeping (`tasks.md` checkboxes + this artifact) is committed separately.
 
 No push, no PR, no tag, no release. Local commits only. Pre-existing unrelated working-tree
 changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-drift").
@@ -611,8 +703,38 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
     proof for the two known writers is the dynamic cache tests. It would not detect a call that
     was commented out while the literal text survived, and `$exempt` remains a deliberate
     human-reviewed list. Neither gap weakens GDI-08 today: mutation checks confirm the gate fails
-    when the call is removed and when a new writer file is added. This is recorded so the gate is
-    not mistaken for a stronger guarantee than it provides.
+     when the call is removed and when a new writer file is added. This is recorded so the gate is
+     not mistaken for a stronger guarantee than it provides.
+
+### Slice-4b deviations (scope + local decisions, no design change)
+
+22. **Task 4b.7 (modal target-language `<select>` + JS `target_codidioma=`) was NOT implemented.**
+    The launch prompt explicitly scopes this run to the Excel service/dispatch shape and lists
+    "any view/controller change" as out of scope, so the view + JS wiring is deferred even though
+    `tasks.md` lists it. The consequence is documented, not hidden: `Controller/VentasArticulos.php`
+    still calls `buildSpreadsheet($articulos)` / `preview($filePath, $sheet, $n)` without
+    `$this->idiomas`, so the locale columns are inert in production until that pass-through and the
+    modal select land. Because the services default to `$idiomas = []` and the dispatch falls back
+    to `get_effective_default_code()`, nothing regresses. `tasks.md` marks 4b.7 `[ ]` with the
+    deferral annotation; `verify` must treat it as a known, deliberate gap, not a defect.
+23. **`resolveLocalePair()` is the destination rule, factored out of the dispatch so it is
+    DB-free testable.** D-07 described the rule ("the suffix qualifies importability, the target
+    decides the destination") but named no seam. The literal rule lives in
+    `ArticuloExcelImportWizardService::resolveLocalePair()` and the dispatch only recovers
+    mapped-but-empty locale fields (which `applyMapping()` drops) and routes the resolved pair
+    through `ArticuloExcelRowUpdater::applyDescripcionIdioma()`. This is the same "keep the pure
+    decision in the service, keep the transport in the dispatch" split the feature-column work
+    (CAR-17) already uses.
+24. **`applyDescripcionIdioma()` preserves an unmapped component instead of clearing it.** The
+    delta's Persistencia rule clears a language when its mapped pair is empty; it does not say a
+    *single* mapped column should blank the other. The helper therefore treats `null` as "not
+    mapped" (current value preserved) and `''` as "mapped but empty" (clearing), reading the
+    target language's own row through the same-language-only `get_descripciones()` list so no
+    fallback is inherited (R2). `set_descripcion_idioma()` remains the only writer and owns the
+    empty-pair deletion and the cache invalidation.
+25. **The locale header label for the short description is `Descripción corta (<nombre>)`.** D-07
+    only wrote `label 'Descripción (<nombre>)'` for the pair; two identical dropdown labels would
+    be ambiguous, so the short column is disambiguated. No scenario pins the label text.
 
 ---
 
@@ -655,14 +777,24 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
   commit contains only the four explicit paths listed in "Commits created"; no schema, view,
   controller, search-predicate, Excel, API or consumer file was touched; no new Composer
   dependency was added.
+- **Slice-4b no-drift.** `git status --short plugins/catalogo_core/openspec/specs/` is empty (no
+  delta merged) and the repository-root `openspec/` still has no entry for this change. The two
+  slice-4b commits contain only the six explicit paths listed in "Commits created"; no schema,
+  view, controller, API, `tarifario` or consumer file was touched. `EXPORT_HEADERS` and
+  `FIELD_CATALOG` were **not edited** (verified: the constants are byte-identical, only additive
+  helpers were added). `articulos.descripcion` is never written by the language path — the export
+  only *reads* it as the read chain's terminal leg, and `applyDescripcionIdioma()` routes every
+  write through `articulo::set_descripcion_idioma()`. No new Composer dependency was added.
 
 ---
 
 ## Remaining work / next
 
-1. **Slices `1a`, `1b`, `2`, `3`, `4a` and `4a-fix` are done** — committed and green.
-2. **Slice `4b`** (Excel export/import with per-language columns) is next; it depends on slice 1's
-   `set_descripcion_idioma()` and on slice 4a's D-03 for the per-row invalidation claim.
+1. **Slices `1a`, `1b`, `2`, `3`, `4a`, `4a-fix` and `4b` are done** — committed and green.
+2. **Slice `4b`'s remaining wiring** — task 4b.7 (modal target-language `<select>` + JS
+   `target_codidioma=`) and the `Controller/VentasArticulos.php` pass-through of `$this->idiomas`
+   to `buildSpreadsheet()` / `preview()`. Both were excluded by this run's scope. Until they land,
+   the locale columns exist in the services but are not emitted by the live UI.
 3. **Slice `4c`** (`catalogo_core` no-context consumers) is independent and can run in parallel with
    4b after slice 1.
 4. **`verify`** must follow this artifact: slices 1, 2, 3, 4a and 4a-fix are delivered in full. The real-DB
@@ -671,6 +803,9 @@ changes in `plugins/catalogo_core` were deliberately **not** staged (see "No-dri
    panel and a real-browser selector round trip (`codidioma` GET → edit → POST → reload) remain for
    `verify`. The `catalogo_idioma::delete()` cache-invalidation gap (deviation 16) is **closed** by
    slice 4a-fix (deviation 19); `verify` should confirm it with a real-DB delete-and-search smoke.
+   For slice 4b, `verify` should confirm the locale columns against a real workbook and a real-DB
+   composed import (target language row written, base column untouched), and record that 4b.7 +
+   the controller pass-through are still pending (deviation 22).
 5. **`size:exception` disposition for slice 2** (862 authored lines vs the 800 budget) awaits the
    maintainer, as recorded in "Budget measurement and cut decision".
 6. **`size:exception` disposition for slice 4a** (861 authored lines vs the 800 budget) awaits the
