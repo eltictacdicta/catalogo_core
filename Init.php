@@ -538,26 +538,56 @@ final class Init
     private static function migrateLegacyTables(): void
     {
         try {
-            $db = \FSFramework\DependencyInjection\Container::db();
-            CatalogLegacyTableMigration::migrateIfNeeded($db);
+            $db = self::plugin_db();
+            if ($db instanceof \fs_db2) {
+                CatalogLegacyTableMigration::migrateIfNeeded($db);
+            }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());
         }
     }
 
     /**
-     * DB seam for the boot migrations. Returns null when the container (or a
-     * live connection) is unavailable so a cold/failed boot never fatals.
+     * DB seam for the boot migrations. Returns null when the DB class cannot
+     * be loaded or constructed so a cold/failed boot never fatals.
+     *
+     * It opens a REAL `\fs_db2` instead of resolving the container's `db`
+     * service: that service is registered lazy, its Symfony proxy constructor
+     * never runs, and the ghost it returns is unusable unless another `fs_db2`
+     * already ran in the process. Relying on the container would therefore
+     * couple the boot migrations to the entry point's boot order — in
+     * `api.php` the plugin boot runs before the entry point builds its own
+     * `fs_db2`, so the migrations would silently skip.
      */
     private static function plugin_db(): ?\fs_db2
     {
         try {
-            return \FSFramework\DependencyInjection\Container::db();
+            self::require_db_class();
+
+            return new \fs_db2();
         } catch (\Throwable $e) {
             error_log('[catalogo_core] DB unavailable for a boot migration: ' . $e->getMessage());
 
             return null;
         }
+    }
+
+    /**
+     * Defensive load of the canonical DB classes, mirroring the guarded
+     * `require_once` already used for `fs_page` in this file. `fs_db2.php`
+     * requires its engines through FS_FOLDER-relative paths, and the engine
+     * constructor instantiates `fs_core_log` — the same pair every entry point
+     * (`index.php`, `api.php`, `cron.php`) loads before booting the Kernel.
+     * `require_once` keeps the load idempotent.
+     */
+    private static function require_db_class(): void
+    {
+        if (class_exists('\fs_db2', false)) {
+            return;
+        }
+
+        require_once FS_FOLDER . '/base/fs_core_log.php';
+        require_once FS_FOLDER . '/base/fs_db2.php';
     }
 
     /**
@@ -571,8 +601,10 @@ final class Init
     private static function migrateOpcionalExtension(): void
     {
         try {
-            $db = \FSFramework\DependencyInjection\Container::db();
-            TarifOpcionalExtMigration::migrateIfNeeded($db);
+            $db = self::plugin_db();
+            if ($db instanceof \fs_db2) {
+                TarifOpcionalExtMigration::migrateIfNeeded($db);
+            }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Opcional extension migration failed: ' . $e->getMessage());
         }

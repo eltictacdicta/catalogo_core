@@ -192,7 +192,17 @@ final class CaracteristicaRegistry
         }
 
         try {
-            return \FSFramework\DependencyInjection\Container::db();
+            // Open a real \fs_db2 rather than the container's lazy `db`
+            // service: that service is a Symfony proxy whose constructor never
+            // runs, so it is unusable unless another fs_db2 already ran in the
+            // process (see Init::plugin_db()). The guarded require_once mirrors
+            // Init::require_db_class(); require_once keeps it idempotent.
+            if (!class_exists('\fs_db2', false)) {
+                require_once FS_FOLDER . '/base/fs_core_log.php';
+                require_once FS_FOLDER . '/base/fs_db2.php';
+            }
+
+            return new \fs_db2();
         } catch (\Throwable $e) {
             error_log('[catalogo_core] CaracteristicaRegistry DB unavailable: ' . $e->getMessage());
             return null;
