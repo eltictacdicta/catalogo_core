@@ -95,6 +95,30 @@ final class CatalogMigrationFakeDb extends \fs_db2
             return [];
         }
 
+        // Pending pre-check for the M:N opcional↔group backfill:
+        // (id_opcional, id_grupo) pair join on the frozen id_grupo source.
+        if (preg_match(
+            '/FROM\s+catalogo_opcionales\s+o\s+LEFT JOIN\s+catalogo_opcional_grupo_rel\s+r'
+            . '\s+ON\s+r\.id_opcional\s*=\s*o\.id\s+AND\s+r\.id_grupo\s*=\s*o\.id_grupo/si',
+            $sql
+        )) {
+            $pairs = [];
+            foreach ($this->tables['catalogo_opcional_grupo_rel'] ?? [] as $rel) {
+                $pairs[(string) $rel['id_opcional'] . '|' . (string) $rel['id_grupo']] = true;
+            }
+            foreach ($this->tables['catalogo_opcionales'] ?? [] as $row) {
+                $grupo = $row['id_grupo'] ?? null;
+                if ($grupo === null || (int) $grupo <= 0) {
+                    continue;
+                }
+                if (!isset($pairs[(string) $row['id'] . '|' . (string) $grupo])) {
+                    return [['1' => 1]];
+                }
+            }
+
+            return [];
+        }
+
         // Pending pre-check for the both-exist copy: legacy LEFT JOIN target on id.
         if (preg_match(
             '/FROM\s+([a-zA-Z0-9_]+)\s+l\s+LEFT JOIN\s+([a-zA-Z0-9_]+)\s+t\s+ON\s+t\.id\s*=\s*l\.id/si',
@@ -167,6 +191,44 @@ final class CatalogMigrationFakeDb extends \fs_db2
     {
         $sql = trim($sql);
         $this->executed[] = $sql;
+
+        // CREATE of the M:N opcional↔group bridge: register the table so the
+        // post-create model-touch fallback is skipped and later statements can
+        // target it (the real DB behaves the same way).
+        if (preg_match('/^CREATE TABLE (?:IF NOT EXISTS )?catalogo_opcional_grupo_rel/i', $sql)) {
+            $this->tables['catalogo_opcional_grupo_rel'] = $this->tables['catalogo_opcional_grupo_rel'] ?? [];
+
+            return true;
+        }
+
+        // M:N backfill from the frozen id_grupo column (INSERT IGNORE, MySQL).
+        if (preg_match(
+            '/^INSERT IGNORE INTO catalogo_opcional_grupo_rel \(id_opcional, id_grupo\)'
+            . '\s*SELECT o\.id, o\.id_grupo FROM catalogo_opcionales o/si',
+            $sql
+        )) {
+            $pairs = [];
+            foreach ($this->tables['catalogo_opcional_grupo_rel'] ?? [] as $rel) {
+                $pairs[(string) $rel['id_opcional'] . '|' . (string) $rel['id_grupo']] = true;
+            }
+            foreach ($this->tables['catalogo_opcionales'] ?? [] as $row) {
+                $grupo = $row['id_grupo'] ?? null;
+                if ($grupo === null || (int) $grupo <= 0) {
+                    continue;
+                }
+                $key = (string) $row['id'] . '|' . (string) $grupo;
+                if (isset($pairs[$key])) {
+                    continue;
+                }
+                $this->tables['catalogo_opcional_grupo_rel'][] = [
+                    'id_opcional' => $row['id'],
+                    'id_grupo' => $grupo,
+                ];
+                $pairs[$key] = true;
+            }
+
+            return true;
+        }
 
         if (preg_match('/^RENAME TABLE `([^`]+)` TO `([^`]+)`/i', $sql, $m)) {
             if (isset($this->tables[$m[1]])) {
@@ -306,6 +368,7 @@ final class CatalogLegacyTableMigrationTest extends TestCase
             ],
             'catalogo_opcional_grupos' => [['id' => 1]],
             'catalogo_articulo_opcional_grupo' => [['id' => 1]],
+            'catalogo_opcional_grupo_rel' => [],
             'tarif_tarifas' => [
                 ['codtarifa' => 'DEF', 'nombre' => 'Default', 'activa' => 1, 'por_defecto' => 1, 'coddivisa' => 'EUR'],
             ],
@@ -474,6 +537,102 @@ final class CatalogLegacyTableMigrationTest extends TestCase
             [],
             $this->executedContaining($db, 'DELETE d FROM articulo_descripciones'),
             'the purge must be idempotent: a second run is a no-op'
+        );
+    }
+
+    public function test_creates_the_opcional_group_bridge_when_missing(): void
+    {
+        $tables = $this->baseTables();
+        unset($tables['catalogo_opcional_grupo_rel']); // force the create path
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $creates = $this->executedContaining($db, 'CREATE TABLE IF NOT EXISTS catalogo_opcional_grupo_rel');
+        $this->assertNotEmpty($creates, 'the migration must create the bridge when it is missing');
+        $this->assertStringContainsString(
+            'UNIQUE KEY catalogo_opcional_grupo_rel_unique (id_opcional, id_grupo)',
+            $creates[0]
+        );
+        $this->assertArrayHasKey('catalogo_opcional_grupo_rel', $db->tables);
+    }
+
+    public function test_backfills_the_bridge_from_positive_id_grupo_idempotently(): void
+    {
+        $tables = $this->baseTables();
+        unset(
+            $tables['tarif_opcionales'],
+            $tables['tarif_opcional_familia'],
+            $tables['tarif_articulo_opcional'],
+            $tables['tarif_opcional_precios']
+        );
+        $tables['catalogo_opcionales'] = [
+            ['id' => 1, 'id_grupo' => 5],
+            ['id' => 2, 'id_grupo' => null],
+            ['id' => 3, 'id_grupo' => 0],
+        ];
+        $tables['catalogo_opcional_grupo_rel'] = [];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $pairs = array_map(
+            static fn (array $row): array => [
+                'id_opcional' => (int) $row['id_opcional'],
+                'id_grupo' => (int) $row['id_grupo'],
+            ],
+            $db->tables['catalogo_opcional_grupo_rel']
+        );
+        $this->assertSame(
+            [['id_opcional' => 1, 'id_grupo' => 5]],
+            $pairs,
+            'only positive id_grupo values become bridge rows'
+        );
+        $this->assertNotEmpty($this->executedContaining($db, 'INSERT IGNORE INTO catalogo_opcional_grupo_rel'));
+
+        $db->executed = [];
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame(
+            [],
+            $this->executedContaining($db, 'INSERT IGNORE INTO catalogo_opcional_grupo_rel'),
+            'the second run must skip the backfill when no pair is pending'
+        );
+        $this->assertCount(1, $db->tables['catalogo_opcional_grupo_rel']);
+    }
+
+    public function test_grouped_assignments_read_the_bridge(): void
+    {
+        $tables = $this->baseTables();
+        unset(
+            $tables['tarif_articulo_opcional'],
+            $tables['tarif_opcionales'],
+            $tables['tarif_opcional_familia'],
+            $tables['tarif_opcional_precios']
+        );
+        $tables['catalogo_opcionales'] = [['id' => 7, 'id_grupo' => 3]];
+        $tables['catalogo_articulo_opcional'] = [
+            ['id' => 50, 'referencia' => 'ART1', 'id_opcional' => 7, 'obligatorio' => 0],
+        ];
+        $tables['catalogo_opcional_grupo_rel'] = [];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $inserts = $this->executedContaining($db, 'INSERT IGNORE INTO catalogo_articulo_opcional_grupo');
+        $this->assertNotEmpty($inserts);
+        $this->assertStringContainsString(
+            'INNER JOIN catalogo_opcional_grupo_rel r ON r.id_opcional = ao.id_opcional',
+            $inserts[0],
+            'the grouped-assignment insert must source membership from the bridge'
+        );
+
+        $deletes = $this->executedContaining($db, 'DELETE ao FROM catalogo_articulo_opcional');
+        $this->assertNotEmpty($deletes);
+        $this->assertStringContainsString(
+            'INNER JOIN catalogo_opcional_grupo_rel r ON r.id_opcional = ao.id_opcional',
+            $deletes[0],
+            'the grouped-assignment delete must source membership from the bridge'
         );
     }
 }

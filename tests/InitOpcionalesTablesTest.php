@@ -224,4 +224,36 @@ final class InitOpcionalesTablesTest extends TestCase
             'Init must not reference the old tarifario service namespace'
         );
     }
+
+    public function test_ensure_catalog_tables_includes_the_opcional_group_rel_bridge(): void
+    {
+        $method = $this->methodSource(
+            $this->initSource(),
+            'private static function ensureCatalogTables(): void'
+        );
+
+        $this->assertStringContainsString(
+            "'catalogo_opcional_grupo_rel'",
+            $method,
+            'ensureCatalogTables() must ensure the M:N opcional↔group bridge (OPG-03)'
+        );
+    }
+
+    public function test_init_ensures_the_opcional_group_rel_table(): void
+    {
+        $src = $this->initSource();
+
+        $this->assertStringContainsString(
+            'private static function ensureOpcionalGrupoRelTable(): void',
+            $src,
+            'Init must own an ensureOpcionalGrupoRelTable() helper'
+        );
+
+        $init = $this->methodSource($src, 'public function init(): void');
+        $this->assertStringContainsString(
+            'self::ensureOpcionalGrupoRelTable();',
+            $init,
+            'init() must ensure the bridge next to ensureArticuloOpcionalGrupoTable()'
+        );
+    }
 }
