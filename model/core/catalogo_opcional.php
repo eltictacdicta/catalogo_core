@@ -62,24 +62,107 @@ class catalogo_opcional extends \fs_model
         }
     }
 
+    /**
+     * @deprecated B1 stage shim — delegates to the bridge; removed by the WU-4 cutover.
+     * @return catalogo_opcional_grupo|false
+     */
     public function get_grupo()
     {
-        if (!$this->id_grupo) {
+        $grupos = $this->get_grupos();
+
+        return $grupos[0] ?? false;
+    }
+
+    /**
+     * @deprecated B1 stage shim — delegates to the bridge; removed by the WU-4 cutover.
+     */
+    public function etiqueta_grupo(): string
+    {
+        $labels = $this->grupos_labels();
+
+        return $labels[0] ?? '-';
+    }
+
+    /**
+     * Bridge-backed membership list, ordered by group `orden` then `nombre`.
+     *
+     * @return array<int, catalogo_opcional_grupo>
+     */
+    public function get_grupos(): array
+    {
+        if (!$this->id) {
+            return [];
+        }
+
+        $list = [];
+        $data = $this->db->select(
+            'SELECT g.* FROM ' . catalogo_opcional_grupo::TABLE . ' g'
+            . ' INNER JOIN ' . catalogo_opcional_grupo_rel::TABLE . ' r ON r.id_grupo = g.id'
+            . ' WHERE r.id_opcional = ' . $this->intval($this->id)
+            . ' ORDER BY g.orden ASC, g.nombre ASC;'
+        );
+        if ($data) {
+            foreach ($data as $d) {
+                $list[] = new catalogo_opcional_grupo($d);
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Bridge-backed group labels (multi-membership replacement for the old
+     * single-valued etiqueta_grupo()).
+     *
+     * @return list<string>
+     */
+    public function grupos_labels(): array
+    {
+        if (!$this->id) {
+            return [];
+        }
+
+        $labels = [];
+        $data = $this->db->select(
+            'SELECT g.nombre FROM ' . catalogo_opcional_grupo::TABLE . ' g'
+            . ' INNER JOIN ' . catalogo_opcional_grupo_rel::TABLE . ' r ON r.id_grupo = g.id'
+            . ' WHERE r.id_opcional = ' . $this->intval($this->id)
+            . ' ORDER BY g.orden ASC, g.nombre ASC;'
+        );
+        if ($data) {
+            foreach ($data as $d) {
+                $labels[] = (string) $d['nombre'];
+            }
+        }
+
+        return $labels;
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function grupo_ids(): array
+    {
+        if (!$this->id) {
+            return [];
+        }
+
+        return $this->grupo_rel_model()->group_ids_for_opcional((int) $this->id);
+    }
+
+    /**
+     * Bridge membership test: grouped ⇔ at least one bridge row.
+     */
+    public function is_grouped(): bool
+    {
+        if (!$this->id) {
             return false;
         }
 
-        $grupo = new catalogo_opcional_grupo();
-        return $grupo->get($this->id_grupo);
-    }
-
-    public function etiqueta_grupo(): string
-    {
-        $grupo = $this->get_grupo();
-        if (!$grupo) {
-            return '-';
-        }
-
-        return (string) $grupo->nombre;
+        return (bool) $this->db->select(
+            'SELECT 1 FROM ' . catalogo_opcional_grupo_rel::TABLE
+            . ' WHERE id_opcional = ' . $this->intval($this->id) . ' LIMIT 1;'
+        );
     }
 
     public function es_precio_porcentaje(): bool
@@ -196,55 +279,259 @@ class catalogo_opcional extends \fs_model
     }
 
     /**
-     * Asigna el opcional a un grupo y elimina relaciones directas con artículos.
+     * Adds the opcional to a group through the bridge (idempotent) and fires
+     * the "grouped ⇒ no direct article relations" cleanup on the 0 → ≥1
+     * membership transition only.
      */
-    public function assign_to_grupo(int $idGrupo): bool
+    public function add_to_grupo(int $idGrupo): bool
     {
         if (!$this->id || $idGrupo <= 0) {
             return false;
         }
 
-        $grupo = new catalogo_opcional_grupo();
-        if (!$grupo->get($idGrupo)) {
+        if (!$this->grupo_exists($idGrupo)) {
             $this->new_error_msg('Grupo no encontrado.');
             return false;
         }
 
-        $this->id_grupo = $idGrupo;
-        if (!$this->save()) {
+        $wasGrouped = $this->is_grouped();
+        if (!$this->grupo_rel_model()->add((int) $this->id, $idGrupo)) {
             return false;
         }
 
-        $rel = new catalogo_articulo_opcional();
-        $rel->delete_all_from_opcional((int) $this->id);
+        $this->syncLegacyProjection();
+
+        if (!$wasGrouped) {
+            $this->deleteDirectArticleRelations();
+        }
 
         return true;
     }
 
     /**
-     * Quita el opcional de su grupo actual.
+     * @deprecated B1 stage shim — delegates to add_to_grupo(); removed by the WU-4 cutover.
      */
-    public function remove_from_grupo(): bool
+    public function assign_to_grupo(int $idGrupo): bool
+    {
+        return $this->add_to_grupo($idGrupo);
+    }
+
+    /**
+     * Removes one bridge membership (int form) or, when called with no
+     * argument (legacy form), the currently projected group. Never restores
+     * direct article relations.
+     */
+    public function remove_from_grupo(int $idGrupo = 0): bool
     {
         if (!$this->id) {
             return false;
         }
 
-        $this->id_grupo = null;
+        if ($idGrupo <= 0) {
+            $idGrupo = (int) $this->id_grupo;
+        }
 
-        return $this->save();
+        $rel = $this->grupo_rel_model();
+        if ($idGrupo > 0) {
+            $rel->remove((int) $this->id, $idGrupo);
+        } else {
+            $rel->delete_all_from_opcional((int) $this->id);
+        }
+
+        $this->syncLegacyProjection();
+
+        return true;
     }
 
     /**
+     * Replaces the membership set with the normalized target set (`intval`,
+     * `> 0`, `array_unique`). Fires the first-membership cleanup exactly once
+     * on the 0 → ≥1 transition.
+     */
+    public function set_grupos(array $idGrupos): bool
+    {
+        if (!$this->id) {
+            return false;
+        }
+
+        $target = [];
+        foreach ($idGrupos as $idGrupo) {
+            $idGrupo = (int) $idGrupo;
+            if ($idGrupo > 0) {
+                $target[$idGrupo] = $idGrupo;
+            }
+        }
+
+        $current = $this->grupo_ids();
+        $wasGrouped = $current !== [];
+
+        $rel = $this->grupo_rel_model();
+        $ok = true;
+        foreach ($target as $idGrupo) {
+            if (!in_array($idGrupo, $current, true)) {
+                $ok = $rel->add((int) $this->id, $idGrupo) && $ok;
+            }
+        }
+        foreach ($current as $idGrupo) {
+            if (!isset($target[$idGrupo])) {
+                $ok = $rel->remove((int) $this->id, $idGrupo) && $ok;
+            }
+        }
+
+        $this->syncLegacyProjection();
+
+        if (!$wasGrouped && $target !== []) {
+            $this->deleteDirectArticleRelations();
+        }
+
+        return $ok;
+    }
+
+    /**
+     * Bridge model accessor. Overridable seam so membership writes are
+     * unit-testable without a live database.
+     */
+    protected function grupo_rel_model(): catalogo_opcional_grupo_rel
+    {
+        return new catalogo_opcional_grupo_rel();
+    }
+
+    /**
+     * Direct article↔opcional relation accessor. Overridable seam.
+     */
+    protected function articulo_opcional_model(): catalogo_articulo_opcional
+    {
+        return new catalogo_articulo_opcional();
+    }
+
+    private function grupo_exists(int $idGrupo): bool
+    {
+        return (bool) $this->db->select(
+            'SELECT * FROM ' . catalogo_opcional_grupo::TABLE
+            . ' WHERE id = ' . $this->intval($idGrupo) . ';'
+        );
+    }
+
+    /**
+     * Dual-write (B1 stage-safe): projects the bridge membership into the
+     * frozen `id_grupo` column so not-yet-migrated readers keep working. The
+     * lowest group id wins; no membership projects to NULL.
+     */
+    private function syncLegacyProjection(): void
+    {
+        if (!$this->id) {
+            return;
+        }
+
+        $ids = $this->grupo_ids();
+        $this->id_grupo = $ids === [] ? null : (int) $ids[0];
+
+        $this->db->exec(
+            'UPDATE ' . $this->table_name
+            . ' SET id_grupo = ' . $this->var2str($this->id_grupo)
+            . ' WHERE id = ' . $this->intval($this->id) . ';'
+        );
+    }
+
+    /**
+     * Dual-write (B1 stage-safe): reconciles the bridge with the legacy
+     * `id_grupo` value written by save(), so both sources agree.
+     */
+    private function syncBridgeFromLegacyGroup(): void
+    {
+        if (!$this->id) {
+            return;
+        }
+
+        $idGrupo = is_numeric($this->id_grupo) ? (int) $this->id_grupo : 0;
+        $rel = $this->grupo_rel_model();
+
+        if ($idGrupo <= 0) {
+            $rel->delete_all_from_opcional((int) $this->id);
+            return;
+        }
+
+        if ($rel->group_ids_for_opcional((int) $this->id) === [$idGrupo]) {
+            return;
+        }
+
+        $rel->delete_all_from_opcional((int) $this->id);
+        $rel->add((int) $this->id, $idGrupo);
+    }
+
+    private function deleteDirectArticleRelations(): void
+    {
+        if (!$this->id) {
+            return;
+        }
+
+        $this->articulo_opcional_model()->delete_all_from_opcional((int) $this->id);
+    }
+
+    /**
+     * Loose opcionales: no bridge row in any group (OPG-04).
+     *
      * @return array<int, static>
      */
     public function all_sin_grupo(int $offset = 0, int $limit = FS_ITEM_LIMIT): array
     {
         $list = [];
         $data = $this->db->select_limit(
-            'SELECT * FROM ' . $this->table_name
-            . ' WHERE id_grupo IS NULL OR id_grupo = 0'
-            . ' ORDER BY nombre ASC',
+            'SELECT * FROM ' . $this->table_name . ' o'
+            . ' WHERE NOT EXISTS (SELECT 1 FROM ' . catalogo_opcional_grupo_rel::TABLE . ' r WHERE r.id_opcional = o.id)'
+            . ' ORDER BY o.nombre ASC',
+            $limit,
+            $offset
+        );
+        if ($data) {
+            foreach ($data as $d) {
+                $list[] = new static($d);
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Active loose opcionales (bridge anti-join). Used by the TPV available
+     * list so grouped opcionales are never offered as loose.
+     *
+     * @return array<int, static>
+     */
+    public function all_activos_sin_grupo(int $offset = 0, int $limit = FS_ITEM_LIMIT): array
+    {
+        $list = [];
+        $data = $this->db->select_limit(
+            'SELECT * FROM ' . $this->table_name . ' o'
+            . ' WHERE o.activo = TRUE AND NOT EXISTS (SELECT 1 FROM '
+            . catalogo_opcional_grupo_rel::TABLE . ' r WHERE r.id_opcional = o.id)'
+            . ' ORDER BY o.nombre ASC',
+            $limit,
+            $offset
+        );
+        if ($data) {
+            foreach ($data as $d) {
+                $list[] = new static($d);
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Available list for a group editor (OPG-07): every opcional not already
+     * in this group, including members of other groups.
+     *
+     * @return array<int, static>
+     */
+    public function all_not_in_grupo(int $idGrupo, int $offset = 0, int $limit = FS_ITEM_LIMIT): array
+    {
+        $list = [];
+        $data = $this->db->select_limit(
+            'SELECT * FROM ' . $this->table_name . ' o'
+            . ' WHERE NOT EXISTS (SELECT 1 FROM ' . catalogo_opcional_grupo_rel::TABLE . ' r'
+            . ' WHERE r.id_opcional = o.id AND r.id_grupo = ' . $this->intval($idGrupo) . ')'
+            . ' ORDER BY o.nombre ASC',
             $limit,
             $offset
         );
@@ -405,9 +692,10 @@ class catalogo_opcional extends \fs_model
                 $this->id = $this->db->lastval();
             }
 
+            $this->syncBridgeFromLegacyGroup();
+
             if ($this->id_grupo) {
-                $rel = new catalogo_articulo_opcional();
-                $rel->delete_all_from_opcional((int) $this->id);
+                $this->deleteDirectArticleRelations();
             }
 
             return true;
@@ -418,6 +706,10 @@ class catalogo_opcional extends \fs_model
 
     public function delete()
     {
+        if ($this->id) {
+            $this->grupo_rel_model()->delete_all_from_opcional((int) $this->id);
+        }
+
         return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
     }
 
@@ -516,8 +808,9 @@ class catalogo_opcional extends \fs_model
 
     /**
      * Builds the group WHERE condition shared by the search paths (design
-     * AD-6): `''` disables the filter, `'0'` selects ungrouped rows, a numeric
-     * value selects that group. `intval()` keeps the id non-injectable.
+     * AD-9): `''` disables the filter, `'0'` selects loose rows through the
+     * bridge anti-join, a numeric value selects that group through `EXISTS`.
+     * `intval()` keeps the id non-injectable.
      *
      * @param string $id_grupo
      * @param string $alias
@@ -530,12 +823,13 @@ class catalogo_opcional extends \fs_model
             return '';
         }
 
-        $column = $alias . '.id_grupo';
+        $bridge = catalogo_opcional_grupo_rel::TABLE;
         if ($id_grupo === '0') {
-            return '(' . $column . ' IS NULL OR ' . $column . ' = 0)';
+            return 'NOT EXISTS (SELECT 1 FROM ' . $bridge . ' r WHERE r.id_opcional = ' . $alias . '.id)';
         }
 
-        return $column . ' = ' . intval($id_grupo);
+        return 'EXISTS (SELECT 1 FROM ' . $bridge . ' r WHERE r.id_opcional = ' . $alias
+            . '.id AND r.id_grupo = ' . intval($id_grupo) . ')';
     }
 
     public function count()

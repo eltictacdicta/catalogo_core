@@ -151,17 +151,36 @@ class catalogo_opcional_grupo extends \fs_model
         return false;
     }
 
+    /**
+     * Opcional↔group bridge accessor. Overridable seam for the AD-7 cascade.
+     */
+    protected function grupo_rel_model(): catalogo_opcional_grupo_rel
+    {
+        return new catalogo_opcional_grupo_rel();
+    }
+
+    /**
+     * Article↔group bridge accessor. Overridable seam.
+     */
+    protected function articulo_opcional_grupo_model(): catalogo_articulo_opcional_grupo
+    {
+        return new catalogo_articulo_opcional_grupo();
+    }
+
     public function delete()
     {
         if (!$this->id) {
             return false;
         }
 
+        $this->grupo_rel_model()->delete_all_from_grupo((int) $this->id);
+        $this->articulo_opcional_grupo_model()->delete_all_from_grupo((int) $this->id);
+
+        // B1 stage-safe: keep the frozen legacy column consistent for
+        // not-yet-migrated readers.
         $this->db->exec(
             'UPDATE catalogo_opcionales SET id_grupo = NULL WHERE id_grupo = ' . $this->intval($this->id) . ';'
         );
-        $rel = new catalogo_articulo_opcional_grupo();
-        $rel->delete_all_from_grupo((int) $this->id);
 
         return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
     }

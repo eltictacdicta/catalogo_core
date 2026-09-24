@@ -67,6 +67,7 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
             self::fail('missing unified list trait: ' . self::TRAIT_FILE);
         }
 
+        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
         require_once $path;
     }
 
@@ -817,10 +818,17 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         };
 
         self::assertSame('', $opcional->exposed(''), 'empty means no group filter');
-        self::assertSame('(o.id_grupo IS NULL OR o.id_grupo = 0)', $opcional->exposed('0'), 'the "Sin grupo" sentinel maps to ungrouped rows');
-        self::assertSame('o.id_grupo = 5', $opcional->exposed('5'));
         self::assertSame(
-            'o.id_grupo = 5',
+            'NOT EXISTS (SELECT 1 FROM catalogo_opcional_grupo_rel r WHERE r.id_opcional = o.id)',
+            $opcional->exposed('0'),
+            'the "Sin grupo" sentinel maps to the bridge anti-join (loose = no membership)'
+        );
+        self::assertSame(
+            'EXISTS (SELECT 1 FROM catalogo_opcional_grupo_rel r WHERE r.id_opcional = o.id AND r.id_grupo = 5)',
+            $opcional->exposed('5')
+        );
+        self::assertSame(
+            'EXISTS (SELECT 1 FROM catalogo_opcional_grupo_rel r WHERE r.id_opcional = o.id AND r.id_grupo = 5)',
             $opcional->exposed("5 OR 1=1; DROP TABLE catalogo_opcionales"),
             'the group id must be intval-cast before it reaches SQL'
         );
