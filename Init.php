@@ -58,6 +58,7 @@ final class Init
         self::migrateLegacyTables();
         self::migrateOpcionalExtension();
         self::ensureArticuloOpcionalGrupoTable();
+        self::ensureOpcionalGrupoRelTable();
         try {
             self::ensureFamiliasTarifaTables();
         } catch (\Throwable $e) {
@@ -619,6 +620,21 @@ final class Init
         }
     }
 
+    /**
+     * Ensures the M:N opcional↔group membership bridge exists at boot, so any
+     * consumer that depends on catalogo_core (e.g. tarifario) never boots
+     * without it (OPG-03, AD-15). Idempotent: fs_model only creates the table
+     * when it is missing.
+     */
+    private static function ensureOpcionalGrupoRelTable(): void
+    {
+        try {
+            self::touchNamespacedModel('catalogo_opcional_grupo_rel');
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] opcional_grupo_rel table ensure failed: ' . $e->getMessage());
+        }
+    }
+
     private static function ensureCatalogTables(): void
     {
         foreach ([
@@ -631,6 +647,7 @@ final class Init
             'catalogo_opcional_precio',
             'catalogo_opcional_grupo',
             'catalogo_articulo_opcional_grupo',
+            'catalogo_opcional_grupo_rel',
         ] as $modelName) {
             self::touchNamespacedModel($modelName);
         }

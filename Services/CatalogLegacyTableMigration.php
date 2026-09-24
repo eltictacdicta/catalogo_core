@@ -57,6 +57,7 @@ final class CatalogLegacyTableMigration
         self::syncOptionalPricingColumns($db);
         self::syncOptionalGroupColumns($db);
         self::syncArticuloOpcionalGrupoTable($db);
+        self::migrateOpcionalGroupRelations($db);
         self::migrateGroupedOptionalAssignments($db);
         self::syncObligatorioColumns($db);
         self::purgeOrphanDescriptions($db);
@@ -157,54 +158,136 @@ final class CatalogLegacyTableMigration
     }
 
     /**
+     * Crea el puente M:N opcional↔grupo y lo rellena desde la columna
+     * congelada `catalogo_opcionales.id_grupo`.
+     *
+     * Create-if-missing: NO hace early-return cuando la tabla ya existe, de
+     * modo que una ejecución a medias (tabla creada, backfill omitido) se
+     * repara en el siguiente arranque. El backfill va tras un pre-check
+     * `LEFT JOIN` barato (steady state = un solo `LIMIT 1`) y es idempotente
+     * (`ON CONFLICT … DO NOTHING` en PostgreSQL, `INSERT IGNORE` en MySQL).
+     * Debe correr ANTES de migrateGroupedOptionalAssignments() y de cualquier
+     * futura eliminación de `id_grupo`.
+     */
+    private static function migrateOpcionalGroupRelations(\fs_db2 $db): void
+    {
+        if (!self::tableExists($db, 'catalogo_opcional_grupo_rel')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_opcional_grupo_rel ('
+                    . 'id serial NOT NULL,'
+                    . 'id_opcional integer NOT NULL,'
+                    . 'id_grupo integer NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT catalogo_opcional_grupo_rel_unique UNIQUE (id_opcional, id_grupo)'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_opcional_grupo_rel ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'id_opcional INT NOT NULL,'
+                    . 'id_grupo INT NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'UNIQUE KEY catalogo_opcional_grupo_rel_unique (id_opcional, id_grupo)'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_opcionales') || !self::hasPendingGroupRelations($db)) {
+            return;
+        }
+
+        if (self::isPostgres($db)) {
+            $db->exec(
+                'INSERT INTO catalogo_opcional_grupo_rel (id_opcional, id_grupo) '
+                . 'SELECT o.id, o.id_grupo FROM catalogo_opcionales o '
+                . 'WHERE o.id_grupo IS NOT NULL AND o.id_grupo > 0 '
+                . 'ON CONFLICT (id_opcional, id_grupo) DO NOTHING;'
+            );
+            return;
+        }
+
+        $db->exec(
+            'INSERT IGNORE INTO catalogo_opcional_grupo_rel (id_opcional, id_grupo) '
+            . 'SELECT o.id, o.id_grupo FROM catalogo_opcionales o '
+            . 'WHERE o.id_grupo IS NOT NULL AND o.id_grupo > 0;'
+        );
+    }
+
+    /**
+     * Cheap idempotency pre-check for the M:N backfill. Keys on the
+     * (id_opcional, id_grupo) PAIR, never on `id`, because the bridge can hold
+     * several rows per opcional.
+     */
+    private static function hasPendingGroupRelations(\fs_db2 $db): bool
+    {
+        $data = $db->select(
+            'SELECT 1 FROM catalogo_opcionales o '
+            . 'LEFT JOIN catalogo_opcional_grupo_rel r '
+            . 'ON r.id_opcional = o.id AND r.id_grupo = o.id_grupo '
+            . 'WHERE o.id_grupo IS NOT NULL AND o.id_grupo > 0 AND r.id IS NULL LIMIT 1;'
+        );
+
+        return (bool) $data;
+    }
+
+    /**
      * Convierte asignaciones directas artículo↔opcional agrupado en artículo↔grupo
      * y elimina relaciones directas inválidas.
+     *
+     * Reads the M:N bridge (not the frozen `id_grupo` column), so an opcional
+     * in two groups propagates the article to both groups.
      */
     private static function migrateGroupedOptionalAssignments(\fs_db2 $db): void
     {
         if (!self::tableExists($db, 'catalogo_articulo_opcional')
             || !self::tableExists($db, 'catalogo_opcionales')
-            || !self::tableExists($db, 'catalogo_articulo_opcional_grupo')) {
+            || !self::tableExists($db, 'catalogo_articulo_opcional_grupo')
+            || !self::tableExists($db, 'catalogo_opcional_grupo_rel')) {
             return;
         }
 
         if (self::isPostgres($db)) {
             $db->exec(
                 'INSERT INTO catalogo_articulo_opcional_grupo (referencia, id_grupo) '
-                . 'SELECT DISTINCT ao.referencia, o.id_grupo '
+                . 'SELECT DISTINCT ao.referencia, r.id_grupo '
                 . 'FROM catalogo_articulo_opcional ao '
-                . 'INNER JOIN catalogo_opcionales o ON o.id = ao.id_opcional '
-                . 'WHERE o.id_grupo IS NOT NULL AND o.id_grupo > 0 '
+                . 'INNER JOIN catalogo_opcional_grupo_rel r ON r.id_opcional = ao.id_opcional '
                 . 'ON CONFLICT (referencia, id_grupo) DO NOTHING;'
             );
         } else {
             $db->exec(
                 'INSERT IGNORE INTO catalogo_articulo_opcional_grupo (referencia, id_grupo) '
-                . 'SELECT DISTINCT ao.referencia, o.id_grupo '
+                . 'SELECT DISTINCT ao.referencia, r.id_grupo '
                 . 'FROM catalogo_articulo_opcional ao '
-                . 'INNER JOIN catalogo_opcionales o ON o.id = ao.id_opcional '
-                . 'WHERE o.id_grupo IS NOT NULL AND o.id_grupo > 0;'
+                . 'INNER JOIN catalogo_opcional_grupo_rel r ON r.id_opcional = ao.id_opcional;'
             );
         }
 
         if (self::isPostgres($db)) {
             $db->exec(
                 'DELETE FROM catalogo_articulo_opcional ao '
-                . 'USING catalogo_opcionales o '
-                . 'WHERE ao.id_opcional = o.id '
-                . 'AND o.id_grupo IS NOT NULL AND o.id_grupo > 0;'
+                . 'USING catalogo_opcional_grupo_rel r '
+                . 'WHERE ao.id_opcional = r.id_opcional;'
             );
         } else {
             $db->exec(
                 'DELETE ao FROM catalogo_articulo_opcional ao '
-                . 'INNER JOIN catalogo_opcionales o ON o.id = ao.id_opcional '
-                . 'WHERE o.id_grupo IS NOT NULL AND o.id_grupo > 0;'
+                . 'INNER JOIN catalogo_opcional_grupo_rel r ON r.id_opcional = ao.id_opcional;'
             );
         }
     }
 
     /**
      * Crea la tabla de grupos y añade id_grupo a opcionales en instalaciones existentes.
+     *
+     * `catalogo_opcionales.id_grupo` is the FROZEN legacy column: this method
+     * keeps it physically alive so a rollback can still read it. It is **NOT**
+     * the source of truth anymore — membership lives in
+     * `catalogo_opcional_grupo_rel` (see migrateOpcionalGroupRelations()).
+     * The follow-up soak-drop change removes both the column and this method.
      */
     private static function syncOptionalGroupColumns(\fs_db2 $db): void
     {

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Relación opcional ↔ grupo de opcionales (M:N).
+    Un opcional puede pertenecer a varios grupos a la vez. Sin clave foránea:
+    la cascada es de la aplicación (espejo de catalogo_articulo_opcional_grupo).
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_opcional</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>id_grupo</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_opcional_grupo_rel_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>catalogo_opcional_grupo_rel_unique</nombre>
+        <consulta>UNIQUE (id_opcional, id_grupo)</consulta>
+    </restriccion>
+</tabla>
