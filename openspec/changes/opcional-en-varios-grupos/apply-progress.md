@@ -297,3 +297,149 @@ exit 0). No pre-existing failures.
   unit (tests ship with the behavior they verify); it was **not** shrunk by
   dropping tests. Recommend an explicit `size:exception` for this slice, or a
   future split of the test file if the reviewer prefers.
+
+---
+
+# Slice B2 — WU-3 dependent readers (stage-safe green intermediate)
+
+- **Slice implemented**: **Slice B2 — WU-3** (every behavior reader resolves
+  opcional↔group membership through the `catalogo_opcional_grupo_rel` bridge).
+- **Status**: Slice B2 complete and green. WU-4…WU-6 intentionally NOT
+  implemented in this batch.
+
+## B2 scope
+
+WU-3 moves the **dependent readers** onto the bridge while the B1 dual-write, the
+`$id_grupo` property and the legacy shims stay in place, so the tree never leaves
+GREEN:
+
+1. `catalogo_opcional_grupo::{get_opcionales, get_opcionales_activos}` now
+   `INNER JOIN catalogo_opcional_grupo_rel r ON r.id_opcional = o.id` filtered by
+   `r.id_grupo`; `count_opcionales()` counts the bridge. An opcional in two
+   groups appears under each of them (OPG-06). `delete()` stays as delivered in
+   B1 and `count_articulos()` is untouched.
+2. `catalogo_articulo_opcional::validate_opcional_for_articulo()` now asks
+   `$item->is_grouped()`; `get_opcionales_sueltos_from_articulo()` and
+   `get_opcionales_directos_from_articulo()` replace the frozen predicate with the
+   bridge anti-join `AND NOT EXISTS (SELECT 1 FROM catalogo_opcional_grupo_rel r
+   WHERE r.id_opcional = o.id)` — a grouped opcional is still **not** loose
+   (tarifario compatibility guard preserved exactly, OPG-08/OPG-11).
+3. `catalogo_opcional_familia::{add_with_propagation, remove_with_propagation}`
+   iterate **every** membership via `$op->grupo_ids()` instead of the single
+   `$op->id_grupo`.
+4. `VentasArticulo::loadOpcionalesDisponibles()` delegates to
+   `all_activos_sin_grupo(0, 500)` instead of `all_activos(0, 500)` + a per-row
+   `id_grupo` skip. The article↔group add/remove/toggle logic is untouched.
+5. `CaracteristicaResolver::opcional_parents()` reads the memberships from
+   `catalogo_opcional_grupo_rel` and unions the article parents of **all** groups
+   (OPG-10). Query budget stays exactly **4** when at least one opcional has a
+   membership and **3** when none — never per-opcional.
+
+## Files changed (B2)
+
+| File | Action | What was done |
+|---|---|---|
+| `plugins/catalogo_core/model/core/catalogo_opcional_grupo.php` | Modified | `get_opcionales()` / `get_opcionales_activos()` join the bridge; `count_opcionales()` counts bridge rows (OPG-06). |
+| `plugins/catalogo_core/model/core/catalogo_articulo_opcional.php` | Modified | `validate_opcional_for_articulo()` → `is_grouped()`; two loose reads → bridge anti-join; new `articulo_opcional_grupo_model()` test seam (no behavior change). |
+| `plugins/catalogo_core/model/core/catalogo_opcional_familia.php` | Modified | `add_with_propagation()` / `remove_with_propagation()` iterate `grupo_ids()`. |
+| `plugins/catalogo_core/Controller/VentasArticulo.php` | Modified | `loadOpcionalesDisponibles()` uses `all_activos_sin_grupo()`; bridge model added to the explicit require chain. |
+| `plugins/catalogo_core/Services/CaracteristicaResolver.php` | Modified | New `OPCIONAL_GRUPO_REL_TABLE` const; `opcional_parents()` reads the bridge and unions all groups; docblock updated to "four (three without memberships)". |
+| `plugins/catalogo_core/tests/fixtures/opcional_visibility_fakes.php` | Modified | `$groups` is now `id_opcional => list<int>` emitting one row per pair from `catalogo_opcional_grupo_rel`. |
+| `plugins/catalogo_core/tests/OpcionalVisibilityDerivationTest.php` | Modified | `groups: [7 => [3]]` seed + new `test_multi_group_opcional_unions_all_group_article_parents` (4-query assertion). |
+| `plugins/catalogo_core/tests/CatalogoOpcionalGrupoTest.php` | Rewritten | New `GrupoReaderFakeDb` + model doubles; `testOpcionalStoresIdGrupo` / `testGroupedOptionalHasIdGrupo` removed; OPG-06/07/09/03 tests added; two source contracts (familia propagation, VentasArticulo available list). |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/tasks.md` | Modified | WU-3 tasks `[x]` + B2 status note. |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/apply-progress.md` | Modified | This merge. |
+
+## TDD Cycle Evidence (B2)
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| WU-3.T1 | `tests/fixtures/opcional_visibility_fakes.php` | Fixture | ✅ existing | ✅ fixture re-keyed before production | ✅ | ✅ one row per pair | ✅ Clean |
+| WU-3.T2 | `tests/OpcionalVisibilityDerivationTest.php` | Unit | ✅ existing 12 | ✅ 2 failures (`null is true`) | ✅ 13/13 | ✅ single-group + multi-group + 4-query count | ✅ Clean |
+| WU-3.T3 | `tests/CatalogoOpcionalGrupoTest.php` | Unit (fake DB) | ✅ existing 6 | ✅ 6 failures (OPG-06/09, familia, VentasArticulo) | ✅ 13/13 | ✅ 2-group seeds for OPG-06/07/09 | ✅ Clean |
+| WU-3.T4/T5/T6/T7/T8 | production readers | Unit (fake DB) | ✅ existing suite | ✅ Driven by the RED above | ✅ | ✅ | ✅ Clean |
+
+**RED evidence (executed)**
+
+```bash
+ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoOpcionalGrupo
+# Tests: 24, Assertions: 55, Failures: 6 (exit 1)
+
+ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter OpcionalVisibilityDerivation
+# Tests: 13, Assertions: 20, Failures: 2 (exit 1)
+```
+
+**GREEN execution gates**
+
+| Command | Result |
+|---|---|
+| `ddev exec php -l <each changed PHP file>` | no syntax errors (8/8) |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoOpcionalGrupo` | **OK** — 24 tests, 64 assertions (exit 0) |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` | **OK** — Tests: 977, Assertions: 4264, Warnings: 2, Skipped: 1 (exit 0; baseline 969/4245 → **+8**) |
+| `ddev exec php vendor/bin/phpunit` (root regression floor) | **OK** — Tests: 2773, Assertions: 10291, Skipped: 24 (exit 0) |
+
+**Root-suite note**: the batch-start root run reported `Tests: 2765, Failures: 4`,
+all in `plugins/tpvmod/tests/TpvmodTwigTemplatesTest.php` against an **uncommitted
+in-flight tpvmod change** present in the working tree (out of scope, never
+touched). That external work was committed during the batch; the final root run is
+fully green with no catalogo_core-caused failures.
+
+## Work Unit Evidence (B2)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → exit 0, `OK` (2 pre-existing warnings), Tests: 977, Assertions: 4264 |
+| Runtime harness command/scenario and exact result | **N/A** — the plugin suite is DB-free by convention (fake `fs_db2` / anonymous subclasses); the live bridge reads are exercised by the verify-phase manual smoke (WU-6). |
+| Rollback boundary | Revert the five reader files (`catalogo_opcional_grupo.php`, `catalogo_articulo_opcional.php`, `catalogo_opcional_familia.php`, `VentasArticulo.php`, `CaracteristicaResolver.php`) + the fixture/test updates. The bridge may stay populated but unused; `id_grupo` becomes the reader source again only after WU-2 is also reverted. No schema change, no `id_grupo` drop. |
+
+## B1 limitation (intentional, documented after the B1 validator — doc-gap fix)
+
+> A legacy `save()` on a multi-membership opcional reconciles the bridge from the
+> single legacy value and drops the other memberships (idempotent; removed by the
+> WU-4 cutover).
+
+This is deliberate and stage-safe: B1 keeps the legacy `id_grupo` write and mirrors
+it into the bridge, so a not-yet-migrated writer that only knows the single value
+re-derives the bridge from it. Any membership added directly through the new API
+(`add_to_grupo()` / `set_grupos()`) survives until such a legacy `save()` runs; the
+WU-4 cutover removes the dual-write and the lossy reconciliation.
+
+## Deviations from Design (B2)
+
+1. **One narrow test seam added**
+   (`catalogo_articulo_opcional::articulo_opcional_grupo_model()`), used by
+   `get_opcionales_from_articulo()`. The design pinned that method as
+   "behavior-preserved, no code change"; the seam changes **no** behavior and only
+   lets the OPG-09 scenario-1 dedupe be covered DB-free (the plugin's established
+   seam convention). Documented for the reviewer.
+2. **Familia propagation covered by a source contract, not a behavior test.**
+   `add_with_propagation()` / `remove_with_propagation()` construct
+   `new catalogo_opcional()` internally with no seam, so a DB-free behavior test
+   would require extra production surface. The contract asserts both methods
+   iterate `grupo_ids()` and read no `->id_grupo`.
+3. **`OPCIONAL_TABLE` const removed** from `CaracteristicaResolver` (its only
+   reader — the old query 1 — was replaced by `OPCIONAL_GRUPO_REL_TABLE`).
+
+## What remains (WU-4…WU-6 — NOT implemented in this batch)
+
+- **WU-4** — controllers, trait and views (checkbox list, batched label map,
+  `VentasOpcionalGrupo` sites) **plus** the deferred WU-2 removals: `$id_grupo`,
+  the legacy shims, the `save()` freeze and the `grupos[]` payload.
+- **WU-5** — `tpvmod` dedupe + grouped detection; `tarifario` two bulk-delete
+  cleanups.
+- **WU-6** — verify pass (`phpstan`, grep audit, manual smoke, suites) and the
+  `verify-report.md` (owned by `sdd-verify`, not written here).
+
+## Workload / PR boundary (B2)
+
+- **Mode**: chained PR slice (`auto-chain`, `stacked-to-main`).
+- **Current work unit**: Slice B2 — WU-3 dependent readers (stage-safe).
+- **Boundary**: starts from the Slice B1 tree (membership API + dual-write); ends
+  with every WU-3 reader bridge-backed and its DB-free tests green. No controller
+  (`VentasOpcional*`), trait or view switched; `$id_grupo` and the shims remain.
+- **Review budget impact**: **at the ~800-line budget** — production + tests total
+  **802** changed lines (`git diff --numstat` over `Services`, `model`,
+  `Controller`, `tests`; 713 added + 89 removed). The test file is a near-complete
+  rewrite of a 109-line file, so part of the count is re-emitted kept tests, not
+  new surface. The slice was **not** shrunk by dropping tests.
+

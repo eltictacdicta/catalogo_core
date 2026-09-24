@@ -315,15 +315,23 @@ resolver unions all groups with a constant query count.
 
 **Dependency order**: after WU-1 and WU-2.
 
+> **B2 stage-safe status (apply batch 3, Slice B2)**: implemented as a **green
+> intermediate slice**. Every WU-3 reader now resolves membership through the
+> bridge while the B1 dual-write, the `$id_grupo` property and the legacy shims
+> stay in place, so the tree never leaves GREEN. One narrow test seam
+> (`catalogo_articulo_opcional::articulo_opcional_grupo_model()`) was added so
+> the behavior-preserved `get_opcionales_from_articulo()` dedupe (OPG-09 s1) is
+> covered DB-free. See `apply-progress.md` §B2.
+
 ### Tests first (must fail / RED)
 
-- `WU-3.T1`: update `tests/fixtures/opcional_visibility_fakes.php` (failing):
+- [x] `WU-3.T1`: update `tests/fixtures/opcional_visibility_fakes.php` (failing):
   replace the `FROM catalogo_opcionales` branch with `FROM catalogo_opcional_grupo_rel`;
   `$groups` becomes `array<int, list<int>>` (`id_opcional => [id_grupo...]`) and
   emits **one row per pair** (`['id_opcional' => 7, 'id_grupo' => 3]`);
   `inInts()` filters on `id_opcional`; keep `groupArticles`, `articles`,
   `families`. Covers **OPG-10**.
-- `WU-3.T2`: extend `tests/OpcionalVisibilityDerivationTest.php` (failing):
+- [x] `WU-3.T2`: extend `tests/OpcionalVisibilityDerivationTest.php` (failing):
   update `test_grouped_opcional_uses_the_group_article_parents` to seed
   `groups: [7 => [3]]`; ADD
   `test_multi_group_opcional_unions_all_group_article_parents`
@@ -331,7 +339,7 @@ resolver unions all groups with a constant query count.
   assert both parents union) = **OPG-10** scenario 1; keep
   `test_query_count_is_bounded_and_independent_of_the_page_size`
   (`assertLessThanOrEqual(4, ...)`, equal counts) = **OPG-10** scenario 2.
-- `WU-3.T3`: extend `tests/CatalogoOpcionalGrupoTest.php` (failing): remove
+- [x] `WU-3.T3`: extend `tests/CatalogoOpcionalGrupoTest.php` (failing): remove
   `testOpcionalStoresIdGrupo` / `testGroupedOptionalHasIdGrupo`; keep
   `testUrlNuevoEnGrupoIncludesQueryParam`, `testGrupoModelGeneratesCodigoPrefix`,
   `testTpvmodBuildOpcionalItemIncludesGroupMetadata`,
@@ -351,7 +359,7 @@ ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter '
 
 ### Implementation
 
-- `WU-3.T4`: `catalogo_opcional_grupo` (AD-8): `get_opcionales()` (`:172-189`)
+- [x] `WU-3.T4`: `catalogo_opcional_grupo` (AD-8): `get_opcionales()` (`:172-189`)
   and `get_opcionales_activos()` (`:224-242`) INNER JOIN
   `catalogo_opcional_grupo_rel`; `count_opcionales()` (`:191-204`) counts the
   bridge; `delete()` (`:160-162`) replaces
@@ -362,7 +370,8 @@ ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter '
   **and** the legacy `id_grupo = NULL` update kept). The bridge-backed reads
   (`get_opcionales`, `get_opcionales_activos`, `count_opcionales`) remain for
   WU-3.
-- `WU-3.T5`: `catalogo_articulo_opcional` (AD-8):
+  **B2**: the three bridge-backed reads landed; `delete()` kept as delivered in B1.
+- [x] `WU-3.T5`: `catalogo_articulo_opcional` (AD-8):
   `validate_opcional_for_articulo()` (`:47-60`) → `if ($item->is_grouped())`;
   `get_opcionales_sueltos_from_articulo()` (`:114-129`) and
   `get_opcionales_directos_from_articulo()` (`:175-190`) replace
@@ -370,15 +379,18 @@ ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter '
   `AND NOT EXISTS (SELECT 1 FROM catalogo_opcional_grupo_rel r WHERE r.id_opcional = o.id)`;
   `get_opcionales_from_articulo()` (`:136-165`) unchanged (behavior-preserved,
   locked by the OPG-09 tests).
-- `WU-3.T6`: `catalogo_opcional_familia` (AD-8): in
+  **B2**: the anti-joins landed. `get_opcionales_from_articulo()` stays
+  behavior-preserved; only a `articulo_opcional_grupo_model()` test seam was
+  added (no behavior change) so its dedupe is covered DB-free.
+- [x] `WU-3.T6`: `catalogo_opcional_familia` (AD-8): in
   `add_with_propagation()` (`:52-88`) and `remove_with_propagation()` (`:90-120`)
   replace `if ($op && $op->id_grupo)` with
   `$grupoIds = $op ? $op->grupo_ids() : [];` and iterate **every** `$idGrupo` for
   the article↔group propagation.
-- `WU-3.T7`: `VentasArticulo::loadOpcionalesDisponibles()` (`:950-967`): replace
+- [x] `WU-3.T7`: `VentasArticulo::loadOpcionalesDisponibles()` (`:950-967`): replace
   `if ($opcional->id_grupo) continue;` + `all_activos(0, 500)` with
   `$opcionalModel->all_activos_sin_grupo(0, 500)`.
-- `WU-3.T8`: `CaracteristicaResolver::opcional_parents()`
+- [x] `WU-3.T8`: `CaracteristicaResolver::opcional_parents()`
   (`Services/CaracteristicaResolver.php:267-338`) (AD-10, OPG-10): add
   `private const OPCIONAL_GRUPO_REL_TABLE = 'catalogo_opcional_grupo_rel';`;
   query 1 reads `catalogo_opcional_grupo_rel` into `$memberships[$id] = list<int>`;
