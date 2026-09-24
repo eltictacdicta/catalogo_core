@@ -201,6 +201,16 @@ readable.
 **Goal**: set-valued membership API on the opcional; `id_grupo` is no longer read
 or written by the model; delete cascades bridge rows.
 
+> **B1 stage-safe status (apply batch 2)**: implemented as a **green intermediate
+> slice**. The new bridge-backed membership API (`add_to_grupo`, `set_grupos`,
+> `get_grupos`, `grupo_ids`, `grupos_labels`, `is_grouped`, `all_sin_grupo` /
+> `all_not_in_grupo` / `all_activos_sin_grupo`, `where_id_grupo`) and the AD-7
+> cascades landed. The WU-2 big-bang removals are **deliberately staged out of
+> B1** to keep the tree green: `public $id_grupo` and the legacy
+> `get_grupo()` / `etiqueta_grupo()` / `assign_to_grupo()` shims are kept, and
+> `save()` **dual-writes** (writes the frozen column and reconciles the bridge)
+> instead of freezing the write. See `apply-progress.md` §B1.
+
 **Files**:
 - `model/core/catalogo_opcional.php`
 - `model/tarif_opcional.php` (guard only)
@@ -212,7 +222,7 @@ or written by the model; delete cascades bridge rows.
 
 ### Tests first (must fail / RED)
 
-- `WU-2.T1`: write `tests/CatalogoOpcionalMembershipTest.php` (failing):
+- [x] `WU-2.T1`: write `tests/CatalogoOpcionalMembershipTest.php` (failing):
   anonymous `catalogo_opcional` subclass with fake `fs_db2`. Covers **OPG-04,
   OPG-05, OPG-08**:
   - `add_to_grupo` inserts the bridge row and fires
@@ -226,13 +236,20 @@ or written by the model; delete cascades bridge rows.
   - `all_sin_grupo()` and `where_id_grupo()` render the `NOT EXISTS` / `EXISTS`
     bridge bodies; `all_not_in_grupo()` renders its anti-join;
   - source assertion: the class source reads/writes no `id_grupo`.
+  **B1**: delivered green (20 tests) with the dual-write variant; the final
+  "reads/writes no `id_grupo`" source assertion is deferred to the WU-3/WU-4
+  cutover because B1 intentionally dual-writes the frozen column.
 - `WU-2.T2`: extend `tests/CatalogoOpcionalesUnifiedControllerTest.php`
   (failing): `test_new_opcional_persists_percentage_and_group` (`:706-732`) posts
   `grupos[]` and asserts `set_grupos()`; `test_where_id_grupo_treats_sentinel_and_rejects_injection`
   (`:804-823`) asserts the new `EXISTS`/`NOT EXISTS` strings; the stub (`:1066`)
   drops `$id_grupo` and gains `set_grupos()`. Covers **OUM-02, OUM-05, OPG-04**.
+  **B1**: only the `where_id_grupo` assertion migrated (green); the `grupos[]`
+  payload and the stub `$id_grupo` drop are deferred to WU-4 (stage-safe).
 - `WU-2.T3`: extend `tests/Integration/CatalogoCoreHookMarkersTest.php`
   (failing): drop `'id_grupo' => ''` from the host fixture (`:483`).
+  **B1**: deferred to the removal batch — the fixture keeps `id_grupo` while B1
+  dual-writes the column.
 
 **Run (RED)**:
 ```bash
@@ -249,17 +266,25 @@ ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter '
   `where_id_grupo()` bodies to the bridge anti-join / `EXISTS`/`NOT EXISTS`
   (`design.md` § Model API surface, § Filters); REMOVE `get_grupo()`,
   `etiqueta_grupo()`, `assign_to_grupo()`.
+  **B1**: the full set API and every bridge body landed (green); removing
+  `$id_grupo` and the `get_grupo()` / `etiqueta_grupo()` / `assign_to_grupo()`
+  shims is deferred to WU-3/WU-4 (the shims delegate to the bridge and stay
+  green).
 - `WU-2.T5`: `save()` freeze (AD-5): drop `, id_grupo = ...` from the UPDATE
   (was `:389`); drop `id_grupo` from the INSERT column list and value
   (was `:392-400`); remove the post-save cleanup block
   `if ($this->id_grupo) { ... }` (was `:408-411`). The cleanup now lives in
   `add_to_grupo()` / `set_grupos()` (WU-2.T4).
-- `WU-2.T6`: `delete()` gains the cascade (AD-7):
+  **B1**: staged as **dual-write** instead — `save()` keeps writing `id_grupo`
+  and reconciles the bridge (`syncBridgeFromLegacyGroup()`); the grouped ⇒ no
+  direct relations side effect is preserved on first membership. The freeze and
+  the block removal are deferred to the WU-3/WU-4 cutover.
+- [x] `WU-2.T6`: `delete()` gains the cascade (AD-7):
   `(new catalogo_opcional_grupo_rel())->delete_all_from_opcional((int) $this->id)`
   before the master `DELETE` (`design.md` § `save()`).
-- `WU-2.T7`: `model/tarif_opcional.php` guard — confirm `where_id_grupo()`
+- [x] `WU-2.T7`: `model/tarif_opcional.php` guard — confirm `where_id_grupo()`
   inherits the new body, `search()` / `count_filtered()` keep their signatures, and
-  no `id_grupo` write is added.
+  no `id_grupo` write is added. **B1**: confirmed, no change required.
 
 ### Run (GREEN)
 
@@ -333,6 +358,10 @@ ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter '
   `UPDATE catalogo_opcionales SET id_grupo = NULL ...` with
   `(new catalogo_opcional_grupo_rel())->delete_all_from_grupo((int) $this->id)`
   (AD-7). `count_articulos()` untouched.
+  **B1**: the `delete()` AD-7 cascade half already landed (bridge rows deleted
+  **and** the legacy `id_grupo = NULL` update kept). The bridge-backed reads
+  (`get_opcionales`, `get_opcionales_activos`, `count_opcionales`) remain for
+  WU-3.
 - `WU-3.T5`: `catalogo_articulo_opcional` (AD-8):
   `validate_opcional_for_articulo()` (`:47-60`) → `if ($item->is_grouped())`;
   `get_opcionales_sueltos_from_articulo()` (`:114-129`) and

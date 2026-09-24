@@ -82,9 +82,14 @@ UNIQUE KEY catalogo_opcional_grupo_rel_unique (id_opcional, id_grupo)
 ```
 
 No `FOREIGN KEY`, no `REFERENCES`, no `ON DELETE CASCADE` (mirrors
-`syncArticuloOpcionalGrupoTable()` `:128-150`). After creating the table the method
-mirrors the template's model touch (`new \FSFramework\model\catalogo_opcional_grupo_rel();`)
-so `fs_model` reconciles columns.
+`syncArticuloOpcionalGrupoTable()` `:128-150`). The method deliberately **omits** the
+template's post-create model touch (`new \FSFramework\model\catalogo_opcional_grupo_rel();`):
+on a real database `tableExists()` is already true right after `CREATE TABLE`, so that
+touch is a failed-create-only fallback (dead in production, exactly like the article
+template) and including it would force a live DB connection inside the DB-free
+migration tests. Model provisioning (column reconciliation) is owned by
+`Init::ensureOpcionalGrupoRelTable()`, which runs on `init()`/`upgrade()` and touches
+the namespaced model. See `apply-progress.md` §Deviations from Design.
 
 XML (`model/table/catalogo_opcional_grupo_rel.xml`): columns `id` (`serial`),
 `id_opcional` (`integer`), `id_grupo` (`integer`), constraints

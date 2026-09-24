@@ -162,3 +162,138 @@ Skipped: 24` (OK). No pre-existing failures.
 ## Composer / vendor note
 
 This change adds **NO** Composer dependency. No `vendor/` step is required.
+
+---
+
+# Slice B1 — WU-2 membership API (stage-safe green intermediate)
+
+- **Slice implemented**: **Slice B1 — WU-2** (`catalogo_opcional` membership API,
+  AD-7 cascades, dual-write `save()`), deliberately staged so the tree stays
+  **GREEN** with no big-bang removal.
+- **Status**: Slice B1 complete and green. WU-3…WU-6 intentionally NOT
+  implemented in this batch.
+
+## B1 scope vs the WU-2 big-bang
+
+The batch redefines WU-2 as a green intermediate slice. Delivered here:
+
+1. **Membership API** on `FSFramework\model\catalogo_opcional`, exactly as the
+   batch/design AD-4 pins the surface: `add_to_grupo(int): bool`,
+   `remove_from_grupo(int $idGrupo = 0): bool` (new int arg; the 0 default is the
+   legacy no-arg shim), `set_grupos(array): bool`, `get_grupos(): array`,
+   `grupo_ids(): array`, `grupos_labels(): array`, `is_grouped(): bool`, plus the
+   bridge-backed `all_sin_grupo()` / `all_not_in_grupo(int, …)` /
+   `all_activos_sin_grupo(int, …)`.
+2. **Dual-write (stage-safe)**: `save()` keeps writing
+   `catalogo_opcionales.id_grupo` **and** reconciles the bridge through
+   `syncBridgeFromLegacyGroup()` so both sources agree. The
+   "grouped ⇒ delete direct article relations" side effect is preserved on the
+   0 → ≥1 membership transition (in `add_to_grupo()` / `set_grupos()` and kept in
+   `save()`).
+3. **Legacy API kept as deprecated shims** (so WU-3/WU-4 code keeps working
+   unchanged): `get_grupo()`, `etiqueta_grupo()`, `assign_to_grupo(int)` and the
+   no-arg `remove_from_grupo()`. `public $id_grupo` and its constructor mapping
+   are **kept**; no reader/controller/view was switched.
+4. **AD-7 cascades**: `catalogo_opcional::delete()` deletes its bridge rows;
+   `catalogo_opcional_grupo::delete()` deletes that group's bridge rows **and**
+   keeps the legacy `id_grupo = NULL` update for unmigrated readers.
+5. **Docs reconciliation**: `design.md` §Bridge DDL now states the post-create
+   model touch is intentionally omitted and `Init::ensureOpcionalGrupoRelTable()`
+   owns model provisioning on `init()`/`upgrade()`.
+
+## Files changed (B1)
+
+| File | Action | What was done |
+|---|---|---|
+| `plugins/catalogo_core/model/core/catalogo_opcional.php` | Modified | New bridge-backed membership API (`add_to_grupo`, `remove_from_grupo(int = 0)`, `set_grupos`, `get_grupos`, `grupo_ids`, `grupos_labels`, `is_grouped`, `all_sin_grupo`, `all_activos_sin_grupo`, `all_not_in_grupo`); `where_id_grupo()` → `EXISTS`/`NOT EXISTS` bridge bodies; `save()` dual-write; `delete()` bridge cascade; deprecated `get_grupo()`/`etiqueta_grupo()`/`assign_to_grupo()` shims; `grupo_rel_model()`/`articulo_opcional_model()` seams. |
+| `plugins/catalogo_core/model/core/catalogo_opcional_grupo.php` | Modified | `delete()` deletes the group's bridge rows (AD-7) while keeping the legacy `id_grupo = NULL` update; `grupo_rel_model()`/`articulo_opcional_grupo_model()` seams. |
+| `plugins/catalogo_core/tests/CatalogoOpcionalMembershipTest.php` | Created | 20 DB-free contract tests: add/remove/set writes, first-membership cleanup, projection/set sync, `is_grouped`/`grupo_ids`/`grupos_labels`/`get_grupos` ordering, bridge anti-join bodies, `where_id_grupo` `EXISTS`/`NOT EXISTS` (injection-safe), shim delegation, dual-write `save()`, both AD-7 cascades, and a source contract for the loose/filter predicates. |
+| `plugins/catalogo_core/tests/CatalogoOpcionalesUnifiedControllerTest.php` | Modified | `test_where_id_grupo_treats_sentinel_and_rejects_injection` migrated to the new `EXISTS`/`NOT EXISTS` strings; `loadTrait()` requires the bridge model so the assertion is DB-free. |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/design.md` | Modified | §Bridge DDL wording reconciled with the implemented deviation. |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/tasks.md` | Modified | WU-2 B1 status note; `WU-2.T1`/`T6`/`T7` ticked with B1 annotations on `T2`/`T3`/`T4`/`T5` and `WU-3.T4`'s cascade half. |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/apply-progress.md` | Modified | This merge. |
+
+## TDD Cycle Evidence (B1)
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| WU-2.T1 | `tests/CatalogoOpcionalMembershipTest.php` | Unit (fake DB) | N/A (new) | ✅ 20 written, 11 errors + 9 failures | ✅ 20/20 (64 assertions) | ✅ set/add/remove, dual-write, cascades, SQL bodies, shims | ✅ Clean |
+| WU-2.T2 (part) | `tests/CatalogoOpcionalesUnifiedControllerTest.php` | Unit (source/behavior) | ✅ existing suite green | ✅ updated assertion failed against the old body | ✅ 1/1 | ✅ sentinel + numeric + injection | ✅ Clean |
+
+**RED evidence (executed)**
+
+```bash
+ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoOpcionalMembership
+# Tests: 20, Assertions: 18, Errors: 11, Failures: 9  (exit 2)
+
+ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter test_where_id_grupo_treats_sentinel_and_rejects_injection
+# Tests: 1, Failures: 1  (exit 1)
+```
+
+**GREEN execution gates**
+
+| Command | Result |
+|---|---|
+| `ddev exec php -l <each changed PHP file>` | no syntax errors (4/4) |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoOpcionalMembership` | **OK** — Tests: 20, Assertions: 64 (exit 0) |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` | **OK** — Tests: 969, Assertions: 4245, Warnings: 2, Skipped: 1 (exit 0; baseline 949/4181 → **+20**) |
+| `ddev exec php vendor/bin/phpunit` (root regression floor) | **OK** — Tests: 2760, Assertions: 9964, Skipped: 24 (exit 0; baseline 2742/9948) |
+
+Baselines were captured before any edit (plugin `949/4181`, root `2742/9948`, both
+exit 0). No pre-existing failures.
+
+## Work Unit Evidence (B1)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → exit 0, `OK` (with the 2 pre-existing warnings), Tests: 969, Assertions: 4245 |
+| Runtime harness command/scenario and exact result | **N/A** — the plugin suite is DB-free by convention (fake `fs_db2` / anonymous subclasses); the live bridge writes are exercised by the verify-phase manual smoke (WU-6). |
+| Rollback boundary | Revert `model/core/catalogo_opcional.php` and `model/core/catalogo_opcional_grupo.php`; readers still work on the frozen `id_grupo` column and the bridge is inert. No schema change, no `id_grupo` drop. |
+
+## Deviations from the WU-2 big-bang (deliberate, stage-safe)
+
+1. **`save()` dual-writes instead of freezing.** B1 keeps the legacy column write
+   and reconciles the bridge so unmigrated WU-4 controllers/views read a value
+   consistent with membership. The AD-5 freeze (drop the `id_grupo` write and the
+   post-save block) is deferred to the WU-3/WU-4 cutover.
+2. **`$id_grupo` and the legacy shims are kept.** AD-6's property removal and the
+   `get_grupo()`/`etiqueta_grupo()`/`assign_to_grupo()` removals are deferred;
+   the shims now delegate to the bridge and stay green.
+3. **`catalogo_opcional_grupo::delete()` keeps the legacy UPDATE.** AD-7 only
+   required the bridge cascade; B1 adds it *and* keeps the column update so
+   not-yet-migrated readers do not see stale memberships.
+4. **Two test-only model seams added** (`grupo_rel_model()`,
+   `articulo_opcional_model()`, `articulo_opcional_grupo_model()`) so the
+   cascades and membership writes are DB-free-testable, following the plugin's
+   existing seam convention.
+5. **Test harness require.** `CatalogoOpcionalesUnifiedControllerTest::loadTrait()`
+   now requires the bridge model, because `extras/VentasOpcionalesListTrait.php`
+   (a forbidden path in this batch) does not. Production relies on the plugin
+   autoloader, so no production file needed the same line.
+
+## What remains (WU-3…WU-6 — NOT implemented in this batch)
+
+- **WU-3** — dependent readers (`catalogo_opcional_grupo` bridge reads,
+  `catalogo_articulo_opcional` anti-joins, `catalogo_opcional_familia`,
+  `VentasArticulo`, `CaracteristicaResolver`).
+- **WU-4** — controllers, trait and views (checkbox list, batched label map,
+  `VentasOpcionalGrupo` sites) **plus** the deferred WU-2 removals:
+  `$id_grupo`, the legacy shims, the `save()` freeze and the `grupos[]` payload.
+- **WU-5** — `tpvmod` dedupe + grouped detection; `tarifario` two bulk-delete
+  cleanups.
+- **WU-6** — verify pass (`phpstan`, grep audit, manual smoke, suites) and the
+  `verify-report.md` (owned by `sdd-verify`, not written here).
+
+## Workload / PR boundary (B1)
+
+- **Mode**: chained PR slice (`auto-chain`, `stacked-to-main`).
+- **Current work unit**: Slice B1 — WU-2 membership API (stage-safe).
+- **Boundary**: starts from the Slice A tree (bridge present, no writer
+  switched); ends with the membership API, dual-write `save()`, AD-7 cascades
+  and their DB-free tests green. No reader/controller/view switched.
+- **Review budget impact**: **over the 800-line slice budget** — the code+tests
+  commit is ~1239 authored lines (production ~320 + the new 880-line DB-free
+  contract suite + the existing-test edit). This is a cohesive strict-TDD work
+  unit (tests ship with the behavior they verify); it was **not** shrunk by
+  dropping tests. Recommend an explicit `size:exception` for this slice, or a
+  future split of the test file if the reviewer prefers.
