@@ -235,7 +235,7 @@ final class OpcionalVisibilityDerivationTest extends TestCase
     public function test_grouped_opcional_uses_the_group_article_parents(): void
     {
         $db = new OpcionalVisibilitySpyDb(
-            groups: [7 => 3],
+            groups: [7 => [3]],
             groupArticles: [3 => ['REF-G']]
         );
         $this->rows = [
@@ -246,6 +246,33 @@ final class OpcionalVisibilityDerivationTest extends TestCase
         $this->assertTrue(
             $resolver->resolve_opcional_visibility(7, 'T1', 'en_catalogo'),
             'a grouped opcional is article-attached through its group relation'
+        );
+    }
+
+    public function test_multi_group_opcional_unions_all_group_article_parents(): void
+    {
+        $db = new OpcionalVisibilitySpyDb(
+            groups: [7 => [3, 4]],
+            groupArticles: [3 => ['REF-G1'], 4 => ['REF-G2']]
+        );
+        $this->rows = [
+            'articulo' => [
+                'T1' => [
+                    'REF-G1' => [self::CARACTERISTICA_ID => $this->boolRow(false)],
+                    'REF-G2' => [self::CARACTERISTICA_ID => $this->boolRow(true)],
+                ],
+            ],
+        ];
+        $resolver = $this->buildResolver($db);
+
+        $this->assertTrue(
+            $resolver->resolve_opcional_visibility(7, 'T1', 'en_catalogo'),
+            'the union must merge the article parents of every group the opcional belongs to'
+        );
+        $this->assertSame(
+            4,
+            count($db->selectStatements),
+            'two memberships keep the resolver at exactly four batched queries'
         );
     }
 

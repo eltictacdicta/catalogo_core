@@ -51,11 +51,12 @@ class CaracteristicaResolver
 
     /**
      * Opcional parent tables needed by the D12 derivation (CAR-12). The names
-     * mirror the `catalogo_core` models (`catalogo_opcional::TABLE`,
-     * `catalogo_articulo_opcional::TABLE`, `catalogo_articulo_opcional_grupo::TABLE`,
-     * `catalogo_opcional_familia::TABLE`) without forcing those classes to load.
+     * mirror the `catalogo_core` models
+     * (`catalogo_opcional_grupo_rel::TABLE`, `catalogo_articulo_opcional::TABLE`,
+     * `catalogo_articulo_opcional_grupo::TABLE`, `catalogo_opcional_familia::TABLE`)
+     * without forcing those classes to load.
      */
-    private const OPCIONAL_TABLE = 'catalogo_opcionales';
+    private const OPCIONAL_GRUPO_REL_TABLE = 'catalogo_opcional_grupo_rel';
     private const ARTICULO_OPCIONAL_TABLE = 'catalogo_articulo_opcional';
     private const ARTICULO_OPCIONAL_GRUPO_TABLE = 'catalogo_articulo_opcional_grupo';
     private const OPCIONAL_FAMILIA_TABLE = 'catalogo_opcional_familias';
@@ -256,10 +257,10 @@ class CaracteristicaResolver
     /**
      * Parent discovery for the D12 derivation.
      *
-     * Three (four when a group relation is present) batched queries, all keyed
-     * by the requested opcional ids: the `id_grupo` of each opcional, its
-     * direct article relations, its group article relations and its family
-     * assignments. Never a per-opcional query.
+     * Four (three without memberships) batched queries, all keyed by the
+     * requested opcional ids: the bridge memberships of each opcional, its
+     * direct article relations, its group article relations (union over every
+     * membership) and its family assignments. Never a per-opcional query.
      *
      * @param list<int> $id_opcionales
      * @return array<int, array{referencias: list<string>, familias: list<string>}>
@@ -273,12 +274,17 @@ class CaracteristicaResolver
 
         $in = $this->in_list($id_opcionales);
 
-        $groups = [];
+        $memberships = [];
         $rows = (array) $this->db()->select(
-            'SELECT id, id_grupo FROM ' . self::OPCIONAL_TABLE . ' WHERE id IN (' . $in . ');'
+            'SELECT id_opcional, id_grupo FROM ' . self::OPCIONAL_GRUPO_REL_TABLE
+            . ' WHERE id_opcional IN (' . $in . ');'
         );
         foreach ($rows as $row) {
-            $groups[(int) $row['id']] = (int) ($row['id_grupo'] ?? 0);
+            $idOpcional = (int) $row['id_opcional'];
+            $idGrupo = (int) ($row['id_grupo'] ?? 0);
+            if ($idGrupo > 0) {
+                $memberships[$idOpcional][] = $idGrupo;
+            }
         }
 
         $rows = (array) $this->db()->select(
@@ -291,9 +297,11 @@ class CaracteristicaResolver
         }
 
         $grupos = [];
-        foreach ($groups as $idGrupo) {
-            if ($idGrupo > 0 && !in_array($idGrupo, $grupos, true)) {
-                $grupos[] = $idGrupo;
+        foreach ($memberships as $ids) {
+            foreach ($ids as $idGrupo) {
+                if (!in_array($idGrupo, $grupos, true)) {
+                    $grupos[] = $idGrupo;
+                }
             }
         }
 
@@ -313,12 +321,13 @@ class CaracteristicaResolver
         }
 
         foreach ($parents as $id => $parent) {
-            $idGrupo = $groups[$id] ?? 0;
-            if ($idGrupo > 0 && isset($byGroup[$idGrupo])) {
-                $parents[$id]['referencias'] = array_values(array_unique(array_merge(
-                    $parents[$id]['referencias'],
-                    $byGroup[$idGrupo]
-                )));
+            foreach ($memberships[$id] ?? [] as $idGrupo) {
+                if (isset($byGroup[$idGrupo])) {
+                    $parents[$id]['referencias'] = array_values(array_unique(array_merge(
+                        $parents[$id]['referencias'],
+                        $byGroup[$idGrupo]
+                    )));
+                }
             }
         }
 

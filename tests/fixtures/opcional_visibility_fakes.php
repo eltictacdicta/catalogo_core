@@ -25,7 +25,7 @@ final class OpcionalVisibilitySpyDb
 
     /**
      * @param array<int, list<string>> $articles      id_opcional => referencias
-     * @param array<int, int>          $groups        id_opcional => id_grupo
+     * @param array<int, list<int>>    $groups        id_opcional => list<int> id_grupo (one entry per bridge pair)
      * @param array<int, list<string>> $groupArticles id_grupo => referencias
      * @param array<int, list<string>> $families      id_opcional => codfamilias
      */
@@ -107,13 +107,15 @@ final class OpcionalVisibilitySpyDb
             return $rows;
         }
 
-        if (str_contains((string) $sql, 'FROM catalogo_opcionales')) {
+        if (str_contains((string) $sql, 'FROM catalogo_opcional_grupo_rel')) {
             $rows = [];
-            foreach ($this->groups as $id => $grupo) {
+            foreach ($this->groups as $id => $grupos) {
                 if (!in_array((int) $id, $ids, true)) {
                     continue;
                 }
-                $rows[] = ['id' => (int) $id, 'id_grupo' => (int) $grupo];
+                foreach ($grupos as $idGrupo) {
+                    $rows[] = ['id_opcional' => (int) $id, 'id_grupo' => (int) $idGrupo];
+                }
             }
 
             return $rows;
