@@ -64,11 +64,14 @@ class catalogo_opcional_familia extends \fs_model
         $opcional = new catalogo_opcional();
         $op = $opcional->get($id_opcional);
 
-        if ($op && $op->id_grupo) {
+        $grupoIds = $op ? $op->grupo_ids() : [];
+        if ($grupoIds !== []) {
             $grupoRel = new catalogo_articulo_opcional_grupo();
-            foreach ($articulos as $articulo) {
-                if ($grupoRel->add($articulo['referencia'], (int) $op->id_grupo)) {
-                    $result['articulos']++;
+            foreach ($grupoIds as $idGrupo) {
+                foreach ($articulos as $articulo) {
+                    if ($grupoRel->add($articulo['referencia'], (int) $idGrupo)) {
+                        $result['articulos']++;
+                    }
                 }
             }
 
@@ -94,11 +97,14 @@ class catalogo_opcional_familia extends \fs_model
         $opcional = new catalogo_opcional();
         $op = $opcional->get($id_opcional);
 
-        if ($op && $op->id_grupo) {
+        $grupoIds = $op ? $op->grupo_ids() : [];
+        if ($grupoIds !== []) {
             $grupoRel = new catalogo_articulo_opcional_grupo();
-            foreach ($articulos as $articulo) {
-                if ($grupoRel->remove($articulo['referencia'], (int) $op->id_grupo)) {
-                    $result['articulos']++;
+            foreach ($grupoIds as $idGrupo) {
+                foreach ($articulos as $articulo) {
+                    if ($grupoRel->remove($articulo['referencia'], (int) $idGrupo)) {
+                        $result['articulos']++;
+                    }
                 }
             }
         } else {

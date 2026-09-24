@@ -28,6 +28,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/impuesto.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional_grupo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo.php';
@@ -956,10 +957,7 @@ class VentasArticulo extends PageController
 
         $opcionalModel = new catalogo_opcional();
         $this->opcionales_disponibles = [];
-        foreach ($opcionalModel->all_activos(0, 500) as $opcional) {
-            if ($opcional->id_grupo) {
-                continue;
-            }
+        foreach ($opcionalModel->all_activos_sin_grupo(0, 500) as $opcional) {
             if (!isset($asignados[(int) $opcional->id])) {
                 $this->opcionales_disponibles[] = $opcional;
             }

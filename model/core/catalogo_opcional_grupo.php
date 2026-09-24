@@ -186,6 +186,9 @@ class catalogo_opcional_grupo extends \fs_model
     }
 
     /**
+     * Variants of this group, resolved through the membership bridge so an
+     * opcional in several groups is returned for each of them (OPG-06).
+     *
      * @return array<int, catalogo_opcional>
      */
     public function get_opcionales(): array
@@ -195,9 +198,10 @@ class catalogo_opcional_grupo extends \fs_model
         }
 
         $list = [];
-        $data = $this->db->select('SELECT * FROM ' . catalogo_opcional::TABLE
-            . ' WHERE id_grupo = ' . $this->intval($this->id)
-            . ' ORDER BY nombre ASC;');
+        $data = $this->db->select('SELECT o.* FROM ' . catalogo_opcional::TABLE . ' o'
+            . ' INNER JOIN ' . catalogo_opcional_grupo_rel::TABLE . ' r ON r.id_opcional = o.id'
+            . ' WHERE r.id_grupo = ' . $this->intval($this->id)
+            . ' ORDER BY o.nombre ASC;');
         if ($data) {
             foreach ($data as $d) {
                 $list[] = new catalogo_opcional($d);
@@ -213,7 +217,7 @@ class catalogo_opcional_grupo extends \fs_model
             return 0;
         }
 
-        $data = $this->db->select('SELECT COUNT(*) as total FROM ' . catalogo_opcional::TABLE
+        $data = $this->db->select('SELECT COUNT(*) as total FROM ' . catalogo_opcional_grupo_rel::TABLE
             . ' WHERE id_grupo = ' . $this->intval($this->id) . ';');
         if ($data) {
             return (int) $data[0]['total'];
@@ -238,6 +242,9 @@ class catalogo_opcional_grupo extends \fs_model
     }
 
     /**
+     * Active variants of this group, resolved through the membership bridge so
+     * an opcional in several groups is returned for each of them (OPG-06).
+     *
      * @return array<int, catalogo_opcional>
      */
     public function get_opcionales_activos(): array
@@ -247,10 +254,11 @@ class catalogo_opcional_grupo extends \fs_model
         }
 
         $list = [];
-        $data = $this->db->select('SELECT * FROM ' . catalogo_opcional::TABLE
-            . ' WHERE id_grupo = ' . $this->intval($this->id)
-            . ' AND activo = TRUE'
-            . ' ORDER BY nombre ASC;');
+        $data = $this->db->select('SELECT o.* FROM ' . catalogo_opcional::TABLE . ' o'
+            . ' INNER JOIN ' . catalogo_opcional_grupo_rel::TABLE . ' r ON r.id_opcional = o.id'
+            . ' WHERE r.id_grupo = ' . $this->intval($this->id)
+            . ' AND o.activo = TRUE'
+            . ' ORDER BY o.nombre ASC;');
         if ($data) {
             foreach ($data as $d) {
                 $list[] = new catalogo_opcional($d);

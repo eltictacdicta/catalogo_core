@@ -40,6 +40,15 @@ class catalogo_articulo_opcional extends \fs_model
     }
 
     /**
+     * Article↔group bridge accessor. Overridable seam for the resolved-for-sale
+     * read (tests inject a DB-free double); production behavior is unchanged.
+     */
+    protected function articulo_opcional_grupo_model(): catalogo_articulo_opcional_grupo
+    {
+        return new catalogo_articulo_opcional_grupo();
+    }
+
+    /**
      * Los opcionales con grupo solo se asignan al artículo vía el grupo.
      *
      * @return true|string
@@ -52,7 +61,7 @@ class catalogo_articulo_opcional extends \fs_model
             return 'Opcional no encontrado.';
         }
 
-        if ($item->id_grupo) {
+        if ($item->is_grouped()) {
             return 'Este opcional pertenece a un grupo. Asigna el grupo al artículo, no cada variante.';
         }
 
@@ -117,7 +126,8 @@ class catalogo_articulo_opcional extends \fs_model
         $data = $this->db->select('SELECT o.*, ao.obligatorio AS obligatorio_en_articulo FROM ' . catalogo_opcional::TABLE . ' o'
             . ' INNER JOIN ' . $this->table_name . ' ao ON o.id = ao.id_opcional'
             . ' WHERE ao.referencia = ' . $this->var2str($referencia)
-            . ' AND (o.id_grupo IS NULL OR o.id_grupo = 0)'
+            . ' AND NOT EXISTS (SELECT 1 FROM ' . catalogo_opcional_grupo_rel::TABLE
+            . ' r WHERE r.id_opcional = o.id)'
             . ' ORDER BY o.nombre ASC;');
         if ($data) {
             foreach ($data as $d) {
@@ -146,7 +156,7 @@ class catalogo_articulo_opcional extends \fs_model
             }
         }
 
-        $grupoRel = new catalogo_articulo_opcional_grupo();
+        $grupoRel = $this->articulo_opcional_grupo_model();
         foreach ($grupoRel->get_grupos_from_articulo($referencia) as $grupo) {
             foreach ($grupo->get_opcionales_activos() as $opcional) {
                 $id = (int) $opcional->id;
@@ -178,7 +188,8 @@ class catalogo_articulo_opcional extends \fs_model
         $data = $this->db->select('SELECT o.* FROM ' . catalogo_opcional::TABLE . ' o'
             . ' INNER JOIN ' . $this->table_name . ' ao ON o.id = ao.id_opcional'
             . ' WHERE ao.referencia = ?'
-            . ' AND (o.id_grupo IS NULL OR o.id_grupo = 0)'
+            . ' AND NOT EXISTS (SELECT 1 FROM ' . catalogo_opcional_grupo_rel::TABLE
+            . ' r WHERE r.id_opcional = o.id)'
             . ' ORDER BY o.nombre ASC;', [$referencia]);
         if ($data) {
             foreach ($data as $d) {
