@@ -443,3 +443,156 @@ WU-4 cutover removes the dual-write and the lossy reconciliation.
   rewrite of a 109-line file, so part of the count is re-emitted kept tests, not
   new surface. The slice was **not** shrunk by dropping tests.
 
+---
+
+# Slice B3 — WU-4 controllers, trait and views (the membership cutover)
+
+- **Slice implemented**: **Slice B3 — WU-4** (checkbox-list assignment UI, lossless
+  `set_grupos()`, the multi-label "Grupo" column from one batched map, the four
+  `VentasOpcionalGrupo` membership sites) **plus the deferred WU-2 removals**
+  (AD-5 `save()` freeze, AD-6 `$id_grupo` + shims, AD-7 group-delete legacy reset).
+- **Status**: Slice B3 complete and green. WU-5/WU-6 intentionally NOT implemented
+  in this batch.
+
+## B3 scope
+
+WU-4 closes the membership cutover the earlier slices staged:
+
+1. **Checkbox-list assignment (AD-11, `ui_checkbox_list`)**. The opcional edit form
+   (`View/ventas_opcional.html.twig`) and the unified-list create modal
+   (`View/ventas_opcionales.html.twig`) replace the single `<select name="sid_grupo">`
+   with a `name="grupos[]"` checkbox list. `Controller/VentasOpcional` renders the
+   list as **active groups ∪ the opcional's current memberships** (lossless:
+   `membership_preserve_all`; an inactive-group membership still renders and
+   survives), and `guardarOpcional()` persists the whole checked set through
+   `catalogo_opcional::set_grupos()` after `save()`. `addArticulo()` gates on
+   `is_grouped()`.
+2. **Create path**. `VentasOpcionalesListTrait::new_opcional()` reads
+   `$request->request->all('grupos')` and calls `set_grupos()` **inside** the
+   existing `run_in_transaction()`, so memberships persist with the opcional.
+3. **"Grupo" column — one batched map (OPG-02)**. `load_grupos_cache()` loads all
+   groups once (names from **all** groups, active-only kept for the filter/create),
+   then builds `nombres_grupo_opcional($id) = list<string>` from a single
+   `map_for_opcionales($ids)` call (seam `opcional_grupo_rel_model()`). The list view
+   renders one badge per label, `-` for a loose row.
+4. **Group editor (OPG-07, AD-4/AD-6)**. `VentasOpcionalGrupo` uses
+   `all_not_in_grupo((int) $this->grupo->id, 0, 500)` for the available list,
+   `add_to_grupo(int)`, a `grupo_ids()` set test, and
+   `remove_from_grupo((int) $this->grupo->id)`.
+5. **Freeze / removals (the deferred WU-2 work)**. `catalogo_opcional` drops
+   `public $id_grupo` and its constructor mapping, removes `get_grupo()` /
+   `etiqueta_grupo()` / `assign_to_grupo()` and the no-arg legacy
+   `remove_from_grupo()`, freezes `save()` (no `id_grupo` write, no post-save block)
+   and deletes the dual-write machinery (`syncLegacyProjection()`,
+   `syncBridgeFromLegacyGroup()`). `catalogo_opcional_grupo::delete()` drops the
+   legacy `UPDATE catalogo_opcionales SET id_grupo = NULL`. The physical column
+   stays; **no `DROP COLUMN`**. The "grouped ⇒ delete direct article relations"
+   side effect stays on the 0 → ≥1 transition in `add_to_grupo()` / `set_grupos()`.
+   `model/tarif_opcional.php` needed no change (its `where_id_grupo()` is inherited
+   bridge-backed and its `save()` delegates to `parent::save()`).
+
+## Files changed (B3)
+
+| File | Action | What was done |
+|---|---|---|
+| `plugins/catalogo_core/Controller/VentasOpcional.php` | Modified | `grupos_asignados` / `grupos_asignados_ids`; new `loadGruposAsignados()` (active ∪ current, `?id_grupo` preset seeds the checked set without writing the model); `guardarOpcional()` reads `grupos[]` and calls `set_grupos()`; `addArticulo()` uses `is_grouped()`; bridge model added to the require chain. |
+| `plugins/catalogo_core/Controller/VentasOpcionalGrupo.php` | Modified | Four membership sites migrated: `all_not_in_grupo()`, `add_to_grupo()`, `grupo_ids()` set test, `remove_from_grupo((int) …)`. Bridge model required. |
+| `plugins/catalogo_core/extras/VentasOpcionalesListTrait.php` | Modified | `opcional_grupo_rel_model()` seam; `load_grupos_cache()` → all-groups names + one batched `map_for_opcionales()`; accessor `nombre_grupo_opcional()` → `nombres_grupo_opcional(): array`; `new_opcional()` reads `grupos[]` and calls `set_grupos()` inside the transaction; bridge model required. |
+| `plugins/catalogo_core/View/ventas_opcional.html.twig` | Modified | Checkbox membership list (`name="grupos[]"`, checked from `fsc.grupos_asignados_ids`); `is_grouped()` gating; one view-group link per `fsc.grupos_asignados`. |
+| `plugins/catalogo_core/View/ventas_opcionales.html.twig` | Modified | Create-modal checkbox list; "Grupo" cell renders every label from `fsc.nombres_grupo_opcional()`. |
+| `plugins/catalogo_core/model/core/catalogo_opcional.php` | Modified | AD-5/AD-6: property + shims + dual-write removed; `remove_from_grupo(int)`; `save()` frozen. |
+| `plugins/catalogo_core/model/core/catalogo_opcional_grupo.php` | Modified | AD-7: dropped the legacy `id_grupo = NULL` reset from `delete()`. |
+| `plugins/catalogo_core/tests/CatalogoOpcionalesHtmxContractTest.php` | Modified | List-view contract migrated to `grupos[]` / `nombres_grupo_opcional()`; new edit-view checkbox contract. |
+| `plugins/catalogo_core/tests/VentasOpcionalesControllerTest.php` | Modified | Stub gains `set_grupos()`; create payload → `grupos[]`; new group-editor call-site source contract. |
+| `plugins/catalogo_core/tests/CatalogoOpcionalesUnifiedControllerTest.php` | Modified | Batched-map group-column test; stub `set_grupos()`; create payload → `grupos[]`; `opcional_grupo_rel_model()` seam. |
+| `plugins/catalogo_core/tests/Integration/CatalogoCoreHookMarkersTest.php` | Modified | Host fixture seeds `grupos_asignados` / `grupos_asignados_ids`, drops `id_grupo`. |
+| `plugins/catalogo_core/tests/CatalogoOpcionalMembershipTest.php` | Modified | Freeze contracts (no legacy write; shims/arity removed; source freeze) replace the B1 dual-write/shim tests. |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/tasks.md` | Modified | WU-4 tasks `[x]`; WU-2.T2..T5 marked complete with B3 notes. |
+| `plugins/catalogo_core/openspec/changes/opcional-en-varios-grupos/apply-progress.md` | Modified | This merge. |
+
+## TDD Cycle Evidence (B3)
+
+| Task | Test file | Layer | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|
+| WU-4.T1 | `tests/CatalogoOpcionalesHtmxContractTest.php` | Source contract (view) | ✅ list/edit view assertions failed | ✅ 55/55 focused | ✅ list view + edit view + no-shim/`.id_grupo` | ✅ Clean |
+| WU-4.T2 | `tests/VentasOpcionalesControllerTest.php` | Unit + source contract | ✅ `grupos[]` payload failed | ✅ `set_grupos` args `[3,4]` | ✅ payload + 4 call sites | ✅ Clean |
+| WU-4.T3 | `tests/CatalogoOpcionalesUnifiedControllerTest.php` | Unit (fake seams) | ✅ batched-map test failed | ✅ one map call, all labels | ✅ loose/single/inactive/unknown | ✅ Clean |
+| WU-4.T4…T7 | production (controller/trait/views) | Unit + source contract | ✅ Driven by the RED above | ✅ full plugin suite | ✅ | ✅ Clean |
+| WU-2.T2/T3/T4/T5 (deferred) | `MembershipTest`, `UnifiedControllerTest`, `HookMarkersTest` | Unit + source contract | ✅ 7 failures | ✅ 20/20 membership | ✅ freeze + shims + arity + source | ✅ Clean |
+
+**RED evidence (executed)**
+
+```bash
+ddev exec "php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'CatalogoOpcionalesHtmxContract|VentasOpcionalesController|CatalogoOpcionalesUnifiedController|CatalogoCoreHookMarkers'"
+# Tests: 55, Assertions: 293, Failures: 5  (exit 1)
+
+ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter CatalogoOpcionalMembership
+# Tests: 20, Assertions: 55, Failures: 7  (exit 2)
+```
+
+**GREEN execution gates**
+
+| Command | Result |
+|---|---|
+| `ddev exec php -l <each changed PHP file>` | no syntax errors (6/6) |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` | **OK** — Tests: 978, Assertions: 4277, Warnings: 2, Skipped: 1 (exit 0; baseline 977/4264) |
+| `ddev exec php vendor/bin/phpunit` (root regression floor) | **OK** — Tests: 2778, Assertions: 10435, Skipped: 24 (exit 0) |
+
+## Work Unit Evidence (B3)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` → exit 0, `OK` (2 pre-existing warnings), Tests: 978, Assertions: 4277 |
+| Runtime harness command/scenario and exact result | **N/A** — the plugin suite is DB-free by convention (fake `fs_db2` / anonymous subclasses); the live checkbox save and batched map are exercised by the verify-phase manual smoke (WU-6). |
+| Rollback boundary | Revert the three B3 commits in reverse order: (1) the group-editor contract test, (2) the model freeze/removals (`catalogo_opcional.php`, `catalogo_opcional_grupo.php`), (3) the controllers/trait/views. Reverting (3) first restores the single-select UI; reverting (2) restores the property/shims/dual-write. No schema change, no `id_grupo` drop. |
+
+## Commits (B3, nested `plugins/catalogo_core` repo)
+
+| Commit | Subject |
+|---|---|
+| `80d7e874` | `feat(catalogo_core): switch opcional group assignment to a checkbox list` |
+| `3a0f3018` | `refactor(catalogo_core): freeze the opcional group column and drop the legacy shims` |
+| `478be229` | `test(catalogo_core): lock the group-editor membership call sites` |
+
+Not pushed; no PR opened.
+
+## Deviations from Design (B3)
+
+1. **`loadGruposAsignados()` extracted** instead of folding the union into the
+   existing `loadGruposOpcional()`. `loadGruposOpcional()` runs before the opcional
+   is loaded (it only needs the active catalog), so a separate method called after
+   the opcional load is the smallest correct seam. Behaviour matches the design
+   (active ∪ current memberships; `?id_grupo` preset seeds ids without writing the
+   model).
+2. **Three work units instead of one.** WU-4 is a single green boundary; it was
+   split into consumer-switch → model-freeze → call-site-contract so each commit is
+   independently reviewable and green. The model freeze cannot land before the
+   consumers stop reading the property; the reverse order keeps every commit green.
+3. **The group-editor call-site contract is a source contract** (no DB-free seam in
+   `VentasOpcionalGrupo`), mirroring the plugin's established source-contract
+   convention for controllers without an injectable seam.
+4. **View "exclusive" hint** in the create modal uses a static `(exclusivo)` label
+   (the modal has no translation key wired for it), while the edit form keeps the
+   existing `optional-group-exclusive-short` key.
+
+## What remains (WU-5, WU-6 — NOT implemented in this batch)
+
+- **WU-5** — `tpvmod` cart-add dedupe + grouped detection (`'grouped'` flag instead
+  of `id_grupo`, `grupo_id => null`); `tarifario` two bulk-delete cleanups
+  (`limpiar_opcionales()` + `limpiar_todo()`) + the new compatibility test. Note:
+  `tpvmod/lib/tpvmod_opcionales_ajax.php` still reads/writes `$candidate->id_grupo`
+  on the real model (now an undefined-property warning, not a fatal) until WU-5.
+- **WU-6** — verify pass (`phpstan`, grep audit, manual smoke, all three suites) and
+  the `verify-report.md` (owned by `sdd-verify`, not written here).
+
+## Workload / PR boundary (B3)
+
+- **Mode**: chained PR slice (`auto-chain`, `stacked-to-main`).
+- **Current work unit**: Slice B3 — WU-4 + the deferred WU-2 removals.
+- **Boundary**: starts from the Slice B2 tree (all readers bridge-backed, model still
+  dual-writes); ends with checkbox-list UI, lossless set writes, the batched label
+  map, the four group-editor sites and a frozen legacy column with no PHP access.
+- **Review budget impact**: production + tests total **~694** changed lines across
+  the three commits (commit 1: 322+/84- = 406; commit 2: 81+/177- = 258; commit 3:
+  ~30). Under the 800-line session budget; the individual commits are reviewable
+  work units. The diff was **not** shrunk by dropping tests.
