@@ -204,6 +204,37 @@ class VentasOpcionalesControllerTest extends TestCase
         );
     }
 
+    /**
+     * OPG-07 / AD-4 / AD-6 — the group editor tables its membership reads and
+     * writes on the bridge API: the available list offers members of other
+     * groups, the add/remove sites use the set operations, and neither the
+     * frozen property nor the single-valued shims survive.
+     */
+    public function testGroupEditorMembershipSitesUseTheBridgeApi(): void
+    {
+        $source = (string) file_get_contents(
+            FS_FOLDER . '/plugins/catalogo_core/Controller/VentasOpcionalGrupo.php'
+        );
+
+        $this->assertStringContainsString(
+            'all_not_in_grupo(',
+            $source,
+            'the available list must offer opcionales already in another group (OPG-07)'
+        );
+        $this->assertStringContainsString('add_to_grupo(', $source, 'the add site must use the bridge set write');
+        $this->assertStringContainsString('grupo_ids()', $source, 'the membership check must be a bridge set test');
+        $this->assertStringContainsString(
+            'remove_from_grupo((int) $this->grupo->id)',
+            $source,
+            'the remove site must pass the group id (arity 0 -> 1)'
+        );
+
+        $this->assertStringNotContainsString('assign_to_grupo', $source, 'the removed shim must not be called');
+        $this->assertStringNotContainsString('all_sin_grupo', $source, 'the loose-only list must not be used');
+        $this->assertStringNotContainsString('->id_grupo', $source, 'no frozen-property read may survive');
+        $this->assertStringNotContainsString('remove_from_grupo()', $source, 'the no-arg legacy form must be gone');
+    }
+
     /** Extracts a method body by brace matching from its signature. */
     private function methodBody(string $source, string $method): string
     {
