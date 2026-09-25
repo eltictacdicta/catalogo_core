@@ -610,11 +610,11 @@ tarifario handler edits; no schema change.
 `sdd-verify` (this tasks artifact does NOT write `verify-report.md`).
 
 **Tasks**:
-- `WU-6.T1`: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`
-- `WU-6.T2`: `ddev exec php vendor/bin/phpunit -c plugins/tpvmod/phpunit.xml`
-- `WU-6.T3`: `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml`
-- `WU-6.T4`: `ddev exec php vendor/bin/phpunit` (root regression floor)
-- `WU-6.T5`: grep audit — every residual `id_grupo` reference MUST be confined to
+- [x] `WU-6.T1`: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`
+- [x] `WU-6.T2`: `ddev exec php vendor/bin/phpunit -c plugins/tpvmod/phpunit.xml`
+- [x] `WU-6.T3`: `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml`
+- [x] `WU-6.T4`: `ddev exec php vendor/bin/phpunit` (root regression floor)
+- [x] `WU-6.T5`: grep audit — every residual `id_grupo` reference MUST be confined to
   the allowed residual set: the migration service (`syncOptionalGroupColumns`,
   `migrateOpcionalGroupRelations` pre-check/backfill,
   `migrateGroupedOptionalAssignments`), the XML column, and archived SDD docs.
