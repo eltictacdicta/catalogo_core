@@ -596,3 +596,149 @@ Not pushed; no PR opened.
   the three commits (commit 1: 322+/84- = 406; commit 2: 81+/177- = 258; commit 3:
   ~30). Under the 800-line session budget; the individual commits are reviewable
   work units. The diff was **not** shrunk by dropping tests.
+
+---
+
+# Slice C — WU-5 consumer companions (tpvmod + tarifario)
+
+- **Slice implemented**: **Slice C — WU-5** (TPV cart-add dedupe, bridge-backed
+  grouped detection, the two tarifario bulk-delete cleanups and the compatibility
+  test).
+- **Status**: Slice C complete and green. WU-6 intentionally NOT implemented in
+  this batch.
+
+## Slice C scope
+
+1. **TPV cart-add dedupe (AD-12, OPG-09 s3)**. `view/js/tpvmod.js::tpvmod_pick_opcional()`
+   now checks `tpvmod_get_added_opcional_ids(parentUid)` and early-returns
+   **before** the `opcional.grupo_id && opcional.grupo_exclusivo` replacement
+   branch. The opcional is presented under every group it belongs to, so a second
+   selection of the same id under another exclusive group no longer adds a second
+   line/charge. Picking a *different* opcional in the same exclusive group still
+   replaces the previous selection.
+2. **Bridge-backed grouped detection (AD-13)**. `lib/tpvmod_opcionales_ajax.php`
+   no longer reads/writes the removed `catalogo_opcional::$id_grupo` property:
+   `tpvmod_opcional_candidate_array()` exposes `'grouped'` from
+   `is_grouped()` (via the new `tpvmod_opcional_is_grouped()` helper),
+   `tpvmod_match_opcional_by_nombre()` skips on `!empty($item['grouped'])`, and
+   `tpvmod_opcionales_ajax_opcional_payload()` pins `'grupo_id' => null` (a
+   quick-created/reused opcional is always loose). Both `$opcional->id_grupo = …`
+   assignments in `tpvmod_opcionales_ajax_persist()` are gone.
+   `lib/tpvmod_opcionales.php` renames its normalized data key
+   `'id_grupo' => null` → `'grouped' => false`.
+3. **tarifario bulk-delete cleanups (AD-7/AD-14, OPG-11)**. Both bulk deletes of
+   `catalogo_opcionales` in `Services/ArticuloListActionHandler.php` now clean the
+   `catalogo_opcional_grupo_rel` bridge so memberships never orphan:
+   `limpiar_opcionales()` deletes the bridge immediately before the opcionales
+   delete (counted into `$stats['relaciones_grupo']`); `limpiar_todo()` adds
+   `$deleteTable('catalogo_opcional_grupo_rel', 'relaciones_grupo')` between the
+   `catalogo_opcional_familias` and `catalogo_opcionales` steps. Both report the
+   new count in their success message. No family/tarifa behaviour changed.
+4. **Compatibility proof**. New DB-free `tests/Integration/OpcionalGrupoTarifarioCompatTest.php`
+   proves `catalogo_articulo_opcional::get_opcionales_directos_from_articulo()`
+   returns the same direct set with one or two groups (a grouped opcional is
+   excluded either way) and that a non-grouped control returns both direct
+   opcionales; plus a per-method source contract for **both** tarifario delete
+   paths and the bridge anti-join predicate.
+
+## Files changed (C)
+
+| File | Repo | Action | What was done |
+|---|---|---|---|
+| `lib/tpvmod_opcionales_ajax.php` | tpvmod | Modified | `grouped` flag from `is_grouped()`; reuse-skip on `grouped`; payload `grupo_id => null`; dropped both `id_grupo` writes; new `tpvmod_opcional_is_grouped()` helper. |
+| `lib/tpvmod_opcionales.php` | tpvmod | Modified | Quick-create data key `'id_grupo' => null` → `'grouped' => false`. |
+| `view/js/tpvmod.js` | tpvmod | Modified | Dedupe-by-id early return moved before the exclusive-group replacement branch (AD-12). |
+| `tests/TpvmodOpcionalRapidoTest.php` | tpvmod | Modified | Assertions/inputs migrated from `id_grupo` to `grouped` / `grupo_id => null`; `$id_grupo` removed from the double. |
+| `tests/TpvmodOpcionalDedupeTest.php` | tpvmod | Created | DB-free source contract: dedupe ordering, no `id_grupo` in the AJAX layer, `grouped`-based reuse-skip, no removed key in the payload. |
+| `Services/ArticuloListActionHandler.php` | tarifario | Modified | Bridge cleanup + `relaciones_grupo` stat/message on both bulk-delete paths. |
+| `tests/TarifConfiguradorOpcionalesTest.php` | tarifario | Modified | Test-only: load the bridge model before invoking the direct read (pre-existing isolated-run fix). |
+| `tests/Integration/OpcionalGrupoTarifarioCompatTest.php` | catalogo_core | Created | Compatibility test (behaviour + per-method source contract). |
+| `openspec/changes/opcional-en-varios-grupos/tasks.md` | catalogo_core | Modified | WU-5 tasks `[x]` + Slice C status note. |
+| `openspec/changes/opcional-en-varios-grupos/apply-progress.md` | catalogo_core | Modified | This merge. |
+
+## TDD Cycle Evidence (C)
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| WU-5.T1 | `tests/TpvmodOpcionalDedupeTest.php` | Source contract (JS/PHP) | N/A (new) | ✅ 4 written, ordering + `id_grupo` contracts failed | ✅ 4/4 | ✅ dedupe ordering, no-id_grupo, grouped skip, payload key | ✅ Clean |
+| WU-5.T2 | `tests/TpvmodOpcionalRapidoTest.php` | Unit | ✅ 176/176 baseline green | ✅ 5 failures (payload/normalize/match/candidate/persist) | ✅ all | ✅ grouped flag present/absent, grouped reuse-skip | ✅ Clean |
+| WU-5.T3 | `tests/Integration/OpcionalGrupoTarifarioCompatTest.php` | Unit (fake DB) + source contract | N/A (new) | ✅ tarifario source contracts failed (2/4) | ✅ 4/4 | ✅ 1-group vs 2-group vs no-membership control | ✅ Clean |
+| WU-5.T4…T8 | production (JS/PHP) | Unit + source contract | ✅ existing suites | ✅ Driven by the RED above | ✅ | ✅ | ✅ Clean |
+
+**RED evidence (executed)**
+
+```bash
+ddev exec php vendor/bin/phpunit -c plugins/tpvmod/phpunit.xml
+# Tests: 180, Failures: 9 (exit 1)
+
+ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter OpcionalGrupoTarifarioCompat
+# Tests: 4, Failures: 2 (exit 1)
+```
+
+**GREEN execution gates**
+
+| Command | Result |
+|---|---|
+| `ddev exec php -l <each changed PHP file>` | no syntax errors (7/7) |
+| `ddev exec php vendor/bin/phpunit -c plugins/tpvmod/phpunit.xml` | **OK** — Tests: 180, Assertions: 1309 (exit 0; baseline 176/1298 → **+4**) |
+| `ddev exec php vendor/bin/phpunit -c plugins/tarifario/phpunit.xml` | **OK** — Tests: 268, Assertions: 1116, Skipped: 2 (exit 0; baseline had **1 pre-existing error**, now fixed) |
+| `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` | **OK** — Tests: 983, Assertions: 4296, Warnings: 2, Skipped: 1 (exit 0) |
+| `ddev exec php vendor/bin/phpunit` (root regression floor) | **OK** — Tests: 2788, Assertions: 10493, Skipped: 24 (exit 0) |
+
+## Work Unit Evidence (C)
+
+| Evidence | Value |
+|---|---|
+| Focused test command and exact result | `ddev exec php vendor/bin/phpunit -c plugins/tpvmod/phpunit.xml` → exit 0, `OK`, 180 tests / 1309 assertions; `… -c plugins/tarifario/phpunit.xml` → exit 0, `OK`, 268 tests / 1116 assertions, 2 skipped; `… -c plugins/catalogo_core/phpunit.xml` → exit 0, `OK`, 983 tests / 4296 assertions |
+| Runtime harness command/scenario and exact result | **N/A** — all three plugin suites are DB-free by convention (fake `fs_db2` / anonymous subclasses); the live TPV dedupe and the tarifario bulk deletes are exercised by the verify-phase manual smoke (WU-6). The tarifario SQL shape is pinned by the per-method source contract instead. |
+| Rollback boundary | tpvmod: revert `lib/tpvmod_opcionales_ajax.php`, `lib/tpvmod_opcionales.php`, `view/js/tpvmod.js` + their tests. tarifario: revert `Services/ArticuloListActionHandler.php` + the test-only require. catalogo_core: delete `tests/Integration/OpcionalGrupoTarifarioCompatTest.php`. No schema change; the bridge and the frozen column are untouched. |
+
+## Commits (Slice C, per repo)
+
+| Repo | Commit | Subject |
+|---|---|---|
+| `plugins/tpvmod` | `134cbcc` | `fix(tpvmod): dedupe an opcional selected across several groups` |
+| `plugins/tarifario` | `f9cac3b` | `fix(tarifario): clean opcional bridge rows on both bulk-delete paths` |
+| `plugins/tarifario` | `310015e` | `test(tarifario): load the opcional bridge model in the configurator contract` |
+| `plugins/catalogo_core` | _(this commit)_ | `test(catalogo_core): lock the tarifario opcional-bridge compatibility` |
+
+Not pushed; no PR opened.
+
+## Deviations from Design (C)
+
+1. **Added a `tpvmod_opcional_is_grouped()` helper** instead of inlining the
+   design's single `$candidate instanceof \FSFramework\model\catalogo_opcional`
+   ternary. The helper is functionally equivalent but also supports plain-object
+   test doubles and already-normalized arrays, and keeps the `grouped`
+   normalization in one place. The behavior pinned by AD-13 (bridge-backed
+   `is_grouped()`, `grupo_id => null`) is unchanged.
+2. **Test-only tarifario fix** (`tests/TarifConfiguradorOpcionalesTest.php`): the
+   isolated tarifario suite was RED **before** this batch with
+   `Class "FSFramework\model\catalogo_opcional_grupo_rel" not found`
+   (`catalogo_articulo_opcional.php:191`) — a consequence of the B2 bridge
+   anti-join, not a WU-5 regression. Since the batch MUST end green and this is a
+   compatibility requirement of the change, the require chain was completed
+   (`require_once …catalogo_opcional_grupo_rel.php` in `setUpBeforeClass()`). No
+   family/tarifa behaviour was touched. Recorded here for the reviewer/verify.
+3. **Two tarifario commits instead of one**: the cleanup fix and the pre-existing
+   isolated-run test fix are distinct concerns and are independently revertible.
+
+## What remains (WU-6 — NOT implemented in this batch)
+
+- **WU-6** — verify pass: the three plugin suites + root regression, the
+  residual-`id_grupo` grep audit, `composer phpstan`, the manual smoke checklist
+  (multi-group checkbox save; the "Grupo" column badges; the TPV charging the
+  opcional once under two groups), and the `verify-report.md` (owned by
+  `sdd-verify`, not written here).
+
+## Workload / PR boundary (C)
+
+- **Mode**: chained PR slice (`auto-chain`, `stacked-to-main`).
+- **Current work unit**: Slice C — WU-5 consumer companions.
+- **Boundary**: starts from the Slice B3 tree (frozen column, bridge sole source
+  of truth, checkbox UI); ends with the TPV dedupe + grouped detection and both
+  tarifario bulk deletes cleaning the bridge, all three suites green.
+- **Review budget impact**: **~250** changed lines across the four commits
+  (tpvmod `173+/33-` = 206; tarifario `21+/1-` + `4+/0-` = 26; catalogo_core test
+  + docs). Comfortably inside the 800-line slice budget. The diff was **not**
+  shrunk by dropping tests.

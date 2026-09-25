@@ -526,18 +526,27 @@ leave no orphan memberships.
 **Dependency order**: after WU-2 (AD-13 depends on `is_grouped()`, AD-6 removes
 the property). Distinct plugin repos; commit per repo.
 
+> **Slice C status (apply batch 5, WU-5 = consumer companions)**: implemented and
+> fully GREEN. tpvmod cart-add dedupe (AD-12), bridge-backed grouped detection
+> (AD-13), the tarifario `limpiar_opcionales()` / `limpiar_todo()` bridge
+> cleanups (AD-7/AD-14) and the `OpcionalGrupoTarifarioCompatTest` landed. A
+> pre-existing isolated-suite failure in
+> `plugins/tarifario/tests/TarifConfiguradorOpcionalesTest.php` (bridge model not
+> loaded in the isolated run, a B2 consequence) was fixed test-only. See
+> `apply-progress.md` §C.
+
 ### Tests first (must fail / RED)
 
-- `WU-5.T1`: add `plugins/tpvmod/tests/TpvmodOpcionalDedupeTest.php` (failing):
+- [x] `WU-5.T1`: add `plugins/tpvmod/tests/TpvmodOpcionalDedupeTest.php` (failing):
   source contract on `view/js/tpvmod.js` — `tpvmod_pick_opcional` checks
   `tpvmod_get_added_opcional_ids(...)` **before** the exclusive replacement
   branch; `tpvmod_opcionales_ajax.php` contains no `id_grupo` read;
   `tpvmod_match_opcional_by_nombre` uses `grouped`. Covers **OPG-09** scenario 3.
-- `WU-5.T2`: update `plugins/tpvmod/tests/TpvmodOpcionalRapidoTest.php`
+- [x] `WU-5.T2`: update `plugins/tpvmod/tests/TpvmodOpcionalRapidoTest.php`
   (failing): assertions migrate from `id_grupo` to `grouped` / `grupo_id => null`
   (`:133`, `:151`, `:230-260`, `:425`, `:491-523`, `:688`). Covers
   **OUM-05 / AD-13**.
-- `WU-5.T3`: add
+- [x] `WU-5.T3`: add
   `plugins/catalogo_core/tests/Integration/OpcionalGrupoTarifarioCompatTest.php`
   (failing): the 2-group seed proves `get_opcionales_directos_from_articulo()`
   excludes a grouped opcional identically with 1 or 2 groups (fake db); a
@@ -556,27 +565,27 @@ ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter '
 
 ### Implementation
 
-- `WU-5.T4`: `tpvmod/view/js/tpvmod.js::tpvmod_pick_opcional()` (`:675-707`):
+- [x] `WU-5.T4`: `tpvmod/view/js/tpvmod.js::tpvmod_pick_opcional()` (`:675-707`):
   move the dedupe-by-id check (`tpvmod_get_added_opcional_ids(parentUid)[String(opcional.id)]`)
   **before** the `opcional.grupo_id && opcional.grupo_exclusivo` replacement
   branch (`design.md` § Cart-add dedupe).
-- `WU-5.T5`: `tpvmod/lib/tpvmod_opcionales_ajax.php` (AD-13):
+- [x] `WU-5.T5`: `tpvmod/lib/tpvmod_opcionales_ajax.php` (AD-13):
   `tpvmod_opcional_candidate_array()` (`:31-51`) exposes
   `'grouped' => ... is_grouped() ...` instead of `'id_grupo'`;
   `tpvmod_match_opcional_by_nombre()` (`:59-86`) skips when
   `!empty($item['grouped'])`; `tpvmod_opcionales_ajax_opcional_payload()`
   (`:151-174`) pins `'grupo_id' => null`; `tpvmod_opcionales_ajax_persist()`
   (`:254`, `:262`) drops both `$opcional->id_grupo = ...` assignments.
-- `WU-5.T6`: `tpvmod/lib/tpvmod_opcionales.php:111`
+- [x] `WU-5.T6`: `tpvmod/lib/tpvmod_opcionales.php:111`
   (`tpvmod_normalize_opcional_input()`): rename the `'id_grupo' => null` data key
   to `'grouped' => false`.
-- `WU-5.T7`: `tarifario/Services/ArticuloListActionHandler.php::limpiar_opcionales()`
+- [x] `WU-5.T7`: `tarifario/Services/ArticuloListActionHandler.php::limpiar_opcionales()`
   (`:2167-2238`) (AD-7): insert a **new step 4**
   `$db->exec("DELETE FROM catalogo_opcional_grupo_rel;")` immediately **before**
   the existing `catalogo_opcionales` delete (`:2207-2214`, now step 5); count it
   into `$stats['relaciones_grupo']`, append to `$errores` on failure, and report
   it in the success message (`:2220-2228`).
-- `WU-5.T8`: same class, `limpiar_todo()` (`:1742-2050`) (AD-7): insert
+- [x] `WU-5.T8`: same class, `limpiar_todo()` (`:1742-2050`) (AD-7): insert
   `$deleteTable('catalogo_opcional_grupo_rel', 'relaciones_grupo')` between step
   10 (`catalogo_opcional_familias`, `:1987`) and step 11 (`catalogo_opcionales`,
   `:1992`); seed `'relaciones_grupo' => 0` in `$stats` (`:1747-1759`); add the
