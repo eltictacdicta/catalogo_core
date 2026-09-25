@@ -103,12 +103,14 @@
                            <div class="form-group">
                               <label class="col-sm-2 control-label">Grupo</label>
                               <div class="col-sm-10">
-                                 <select class="form-control" name="sid_grupo">
-                                    <option value="">Sin grupo</option>
-                                    {% for grupo in fsc.grupos_opcional %}
-                                    <option value="{{ grupo.id }}">{{ grupo.nombre }}</option>
-                                    {% endfor %}
-                                 </select>
+                                 {% for grupo in fsc.grupos_opcional %}
+                                 <label class="checkbox-inline">
+                                    <input type="checkbox" name="grupos[]" value="{{ grupo.id }}"/>
+                                    {{ grupo.nombre }}{% if grupo.exclusivo %} <span class="text-muted">(exclusivo)</span>{% endif %}
+                                 </label>
+                                 {% else %}
+                                 <p class="text-muted">No hay grupos definidos.</p>
+                                 {% endfor %}
                                  <p class="help-block"><a href="index.php?page=ventas_opcional_grupos">Gestionar grupos</a></p>
                               </div>
                            </div>
@@ -424,8 +426,15 @@
                    {% endif %}
                 </td>
                 <td>
-                   {# Grupo resuelto desde un único mapa en el controlador (OPG-02). #}
-                   {{ fsc.nombre_grupo_opcional(value.id) }}
+                   {# Grupo(s) resueltos desde un único mapa batcheado en el controlador (OPG-02). #}
+                   {% set grupos = fsc.nombres_grupo_opcional(value.id) %}
+                   {% if grupos|length > 0 %}
+                      {% for nombre in grupos %}
+                         <span class="label label-info">{{ nombre }}</span>
+                      {% endfor %}
+                   {% else %}
+                      <span class="text-muted">-</span>
+                   {% endif %}
                 </td>
                 <td class="text-right">
                    {% set precio_tarifa = fsc.get_precio_opcional_tarifa(value.id) %}

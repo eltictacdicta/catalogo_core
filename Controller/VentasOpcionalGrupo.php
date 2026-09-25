@@ -8,6 +8,7 @@ namespace FSFramework\Plugins\catalogo_core\Controller;
 
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional_grupo.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
@@ -99,7 +100,7 @@ class VentasOpcionalGrupo extends PageController
 
         $opcionalModel = new catalogo_opcional();
         $this->opcionales_disponibles = [];
-        foreach ($opcionalModel->all_sin_grupo(0, 500) as $opcional) {
+        foreach ($opcionalModel->all_not_in_grupo((int) $this->grupo->id, 0, 500) as $opcional) {
             if (!isset($asignados[(int) $opcional->id])) {
                 $this->opcionales_disponibles[] = $opcional;
             }
@@ -175,7 +176,7 @@ class VentasOpcionalGrupo extends PageController
             return;
         }
 
-        if ($item->assign_to_grupo((int) $this->grupo->id)) {
+        if ($item->add_to_grupo((int) $this->grupo->id)) {
             $this->new_message('Opcional ' . $item->codigo . ' añadido al grupo.');
             return;
         }
@@ -202,12 +203,12 @@ class VentasOpcionalGrupo extends PageController
 
         $opcional = new catalogo_opcional();
         $item = $opcional->get($idOpcional);
-        if (!$item || (int) $item->id_grupo !== (int) $this->grupo->id) {
+        if (!$item || !in_array((int) $this->grupo->id, $item->grupo_ids(), true)) {
             $this->new_error_msg('Opcional no encontrado en este grupo.');
             return;
         }
 
-        if ($item->remove_from_grupo()) {
+        if ($item->remove_from_grupo((int) $this->grupo->id)) {
             $this->new_message('Opcional ' . $item->codigo . ' quitado del grupo.');
             return;
         }

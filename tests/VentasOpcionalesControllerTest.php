@@ -186,6 +186,7 @@ class VentasOpcionalesControllerTest extends TestCase
             'nombre' => 'Nuevo',
             'precio_tarifa_T1' => '1,50',
             'precio_tarifa_T2' => '2,50',
+            'grupos' => ['3', '4'],
         ]);
 
         $controller->exposeNewOpcional();
@@ -195,6 +196,11 @@ class VentasOpcionalesControllerTest extends TestCase
             ['T1' => 1.5, 'T2' => 2.5],
             $opcional->precios,
             'with the tarifa context loaded both create-modal per-tarifa values must persist'
+        );
+        $this->assertSame(
+            [3, 4],
+            $opcional->grupos,
+            'the create-modal checkbox list must persist every checked membership through set_grupos()'
         );
     }
 
@@ -239,8 +245,8 @@ final class CreateOrderingOpcionalStub
     /** @var array<string, float> */
     public array $precios = [];
 
-    /** @var int|null */
-    public $id_grupo = null;
+    /** @var list<int> */
+    public array $grupos = [];
 
     public function get_new_codigo(): string
     {
@@ -269,6 +275,13 @@ final class CreateOrderingOpcionalStub
     public function set_precio_tarifa($codtarifa, $precio): bool
     {
         $this->precios[(string) $codtarifa] = (float) $precio;
+
+        return true;
+    }
+
+    public function set_grupos(array $idGrupos): bool
+    {
+        $this->grupos = array_map('intval', array_values($idGrupos));
 
         return true;
     }

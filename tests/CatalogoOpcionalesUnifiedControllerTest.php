@@ -267,11 +267,12 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         bool $csrfValid = true,
         bool $allowDelete = false,
         ?object $db = null,
-        ?object $grupo = null
+        ?object $grupo = null,
+        ?object $grupoRel = null
     ): object {
         $this->loadTrait();
 
-        return new class($master, $opcional, $request, $price, $csrfValid, $allowDelete, $db, $grupo) {
+        return new class($master, $opcional, $request, $price, $csrfValid, $allowDelete, $db, $grupo, $grupoRel) {
             use \VentasOpcionalesListTrait;
 
             /** @var \Symfony\Component\HttpFoundation\Request */
@@ -301,10 +302,12 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
 
             private $grupoStub;
 
+            private $grupoRelStub;
+
             /** @var object|null D12 visibility-resolver double (never a real read). */
             public $visibilityResolverStub = null;
 
-            public function __construct($master, $opcional, $request, $price, $csrfValid, $allowDelete, $db, $grupo)
+            public function __construct($master, $opcional, $request, $price, $csrfValid, $allowDelete, $db, $grupo, $grupoRel)
             {
                 $this->masterStub = $master;
                 $this->opcionalStub = $opcional;
@@ -314,6 +317,7 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
                 $this->allow_delete = $allowDelete;
                 $this->db = $db;
                 $this->grupoStub = $grupo;
+                $this->grupoRelStub = $grupoRel;
             }
 
             protected function opcional_master_state()
@@ -340,7 +344,22 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
             protected function opcional_grupo_model()
             {
                 return $this->grupoStub ?? new class() {
+                    public function all()
+                    {
+                        return [];
+                    }
+
                     public function all_activos()
+                    {
+                        return [];
+                    }
+                };
+            }
+
+            protected function opcional_grupo_rel_model()
+            {
+                return $this->grupoRelStub ?? new class() {
+                    public function map_for_opcionales(array $ids)
                     {
                         return [];
                     }
@@ -381,7 +400,8 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         ?object $price = null,
         bool $csrfValid = true,
         bool $allowDelete = false,
-        ?object $grupo = null
+        ?object $grupo = null,
+        ?object $grupoRel = null
     ): object {
         return $this->subject(
             $master ?? $this->masterStub(),
@@ -391,7 +411,8 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
             $csrfValid,
             $allowDelete,
             new UnifiedListStateSpyDb(),
-            $grupo
+            $grupo,
+            $grupoRel
         );
     }
 
@@ -704,7 +725,7 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         self::assertNotSame([], $badPriceSubject->errors);
     }
 
-    public function test_new_opcional_persists_percentage_and_group(): void
+    public function test_new_opcional_persists_percentage_and_multiple_groups(): void
     {
         $opcional = new UnifiedListOpcionalStub();
         $subject = $this->buildSubject(
@@ -713,7 +734,7 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
                 'nombre' => 'Porcentual',
                 'tipo_precio' => 'porcentaje',
                 'porcentaje' => '12,5',
-                'sid_grupo' => '3',
+                'grupos' => ['3', '4'],
                 'familias' => ['F1'],
             ]),
             null,
@@ -727,7 +748,11 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         self::assertTrue($opcional->saved, 'a valid percentage payload must be persisted');
         self::assertSame('porcentaje', $opcional->tipo_precio);
         self::assertSame(12.5, $opcional->porcentaje, 'the global percentage must be normalized');
-        self::assertSame(3, $opcional->id_grupo, 'the create-modal group assignment must persist');
+        self::assertSame(
+            [3, 4],
+            $opcional->grupos,
+            'the create-modal checkbox list must persist every checked membership through set_grupos()'
+        );
         self::assertSame(['T1' => 12.5], $opcional->porcentajes, 'the effective row must be written in percentage mode');
         self::assertSame([], $opcional->precios, 'percentage mode must not write fixed prices');
     }
@@ -758,14 +783,28 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
     // OPG-02 / AD-5, AD-6, AD-7 — groups
     // =====================================================================
 
-    public function test_grupo_column_map_loads_once_without_n_plus_one(): void
+    public function test_grupo_column_map_loads_all_labels_from_one_batched_map(): void
     {
         $grupoModel = new class() {
+            /** @var int */
+            public $allCalls = 0;
+
             /** @var int */
             public $allActivosCalls = 0;
 
             /** @var int */
             public $getCalls = 0;
+
+            public function all()
+            {
+                $this->allCalls++;
+
+                return [
+                    (object) ['id' => 3, 'nombre' => 'Color'],
+                    (object) ['id' => 4, 'nombre' => 'Acabado'],
+                    (object) ['id' => 9, 'nombre' => 'Retirado'],
+                ];
+            }
 
             public function all_activos()
             {
@@ -785,21 +824,46 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
             }
         };
 
-        $subject = $this->buildSubject($this->request('/index.php?page=ventas_opcionales'), null, null, null, true, false, $grupoModel);
+        $relModel = new class() {
+            /** @var int */
+            public $mapCalls = 0;
+
+            public function map_for_opcionales(array $ids)
+            {
+                $this->mapCalls++;
+
+                return [1 => [3], 2 => [], 5 => [9, 3]];
+            }
+        };
+
+        $subject = $this->buildSubject(
+            $this->request('/index.php?page=ventas_opcionales'),
+            null,
+            null,
+            null,
+            true,
+            false,
+            $grupoModel,
+            $relModel
+        );
         $subject->resultados = [
-            (object) ['id' => 1, 'id_grupo' => 3],
-            (object) ['id' => 2, 'id_grupo' => null],
-            (object) ['id' => 5, 'id_grupo' => 99],
+            (object) ['id' => 1],
+            (object) ['id' => 2],
+            (object) ['id' => 5],
         ];
 
         $this->invoke($subject, 'load_grupos_cache');
 
-        self::assertSame(1, $grupoModel->allActivosCalls, 'the group map must be loaded exactly once');
+        self::assertSame(1, $relModel->mapCalls, 'the membership map must be resolved from exactly one batched call');
         self::assertSame(0, $grupoModel->getCalls, 'the group column must never do a per-row lookup (no N+1)');
-        self::assertSame('Color', $subject->nombre_grupo_opcional(1));
-        self::assertSame('-', $subject->nombre_grupo_opcional(2), 'an unassigned opcional shows the placeholder');
-        self::assertSame('-', $subject->nombre_grupo_opcional(5), 'an unknown group must not leak');
-        self::assertSame('Color', $subject->nombre_grupo_opcional(1));
+        self::assertSame(['Color'], $subject->nombres_grupo_opcional(1), 'a single membership renders its label');
+        self::assertSame([], $subject->nombres_grupo_opcional(2), 'a loose opcional has no labels');
+        self::assertSame(
+            ['Retirado', 'Color'],
+            $subject->nombres_grupo_opcional(5),
+            'an inactive-group membership still renders (membership_preserve_all)'
+        );
+        self::assertSame([], $subject->nombres_grupo_opcional(99), 'an unknown row must not leak');
     }
 
     public function test_where_id_grupo_treats_sentinel_and_rejects_injection(): void
@@ -1047,6 +1111,9 @@ final class UnifiedListOpcionalStub
     public array $porcentajes = [];
 
     /** @var list<int> */
+    public array $grupos = [];
+
+    /** @var list<int> */
     public array $deleted = [];
 
     /** @var string|null */
@@ -1069,9 +1136,6 @@ final class UnifiedListOpcionalStub
 
     /** @var float|null */
     public $porcentaje = null;
-
-    /** @var int|null */
-    public $id_grupo = null;
 
     private bool $duplicate;
 
@@ -1114,6 +1178,13 @@ final class UnifiedListOpcionalStub
     public function set_porcentaje_tarifa($codtarifa, $porcentaje): bool
     {
         $this->porcentajes[(string) $codtarifa] = (float) $porcentaje;
+
+        return true;
+    }
+
+    public function set_grupos(array $idGrupos): bool
+    {
+        $this->grupos = array_map('intval', array_values($idGrupos));
 
         return true;
     }

@@ -36,10 +36,16 @@ use PHPUnit\Framework\TestCase;
 final class CatalogoOpcionalesHtmxContractTest extends TestCase
 {
     private const LIST_VIEW = 'plugins/catalogo_core/View/ventas_opcionales.html.twig';
+    private const EDIT_VIEW = 'plugins/catalogo_core/View/ventas_opcional.html.twig';
 
     private function listView(): string
     {
         return (string) file_get_contents(FS_FOLDER . '/' . self::LIST_VIEW);
+    }
+
+    private function editView(): string
+    {
+        return (string) file_get_contents(FS_FOLDER . '/' . self::EDIT_VIEW);
     }
 
     /**
@@ -244,24 +250,79 @@ final class CatalogoOpcionalesHtmxContractTest extends TestCase
 
         self::assertStringContainsString('>Grupo</th>', $view, 'the unified list must render a Grupo column header');
         self::assertStringContainsString(
-            'fsc.nombre_grupo_opcional(',
+            'fsc.nombres_grupo_opcional(',
             $view,
-            'the Grupo cell must resolve through the controller-side group map (no etiqueta_grupo() N+1)'
+            'the Grupo cell must resolve through the batched membership map (no etiqueta_grupo() N+1)'
+        );
+        self::assertStringNotContainsString(
+            'nombre_grupo_opcional(',
+            $view,
+            'the single-label accessor must be replaced by the multi-label one'
         );
         self::assertStringNotContainsString(
             'etiqueta_grupo(',
             $view,
             'the list must never call the per-row etiqueta_grupo() lookup'
         );
+        self::assertStringNotContainsString(
+            '.id_grupo',
+            $view,
+            'the Grupo cell must not read the frozen property'
+        );
 
-        // OUM-05 — create modal mode toggle, percentage input and group select.
+        // OUM-05 — create modal mode toggle, percentage input and membership list.
         self::assertStringContainsString('name="tipo_precio"', $view, 'the create modal must offer the price mode');
         self::assertStringContainsString('name="porcentaje"', $view, 'the create modal must accept a percentage');
-        self::assertStringContainsString('name="sid_grupo"', $view, 'the create modal must offer group assignment');
+        self::assertStringContainsString(
+            'name="grupos[]"',
+            $view,
+            'the create modal must offer a checkbox membership list (ui_checkbox_list)'
+        );
+        self::assertStringNotContainsString(
+            'name="sid_grupo"',
+            $view,
+            'the single-group select must be gone'
+        );
         self::assertStringContainsString(
             "x-show=\"tipo_precio === 'porcentaje'\"",
             $view,
             'the percentage block must toggle through Alpine CSP state'
+        );
+    }
+
+    // =====================================================================
+    // OPG-02 / OPG-05 / OUM-05 — edit form membership checkbox list
+    // =====================================================================
+
+    public function test_opcional_edit_view_uses_a_lossless_checkbox_membership_list(): void
+    {
+        $view = $this->editView();
+
+        self::assertStringContainsString(
+            'name="grupos[]"',
+            $view,
+            'the edit form must submit the whole membership set'
+        );
+        self::assertStringContainsString(
+            'fsc.grupos_asignados_ids',
+            $view,
+            'the checked state must come from the current memberships'
+        );
+        self::assertStringContainsString(
+            'fsc.grupos_asignados',
+            $view,
+            'the grouped notice must offer one view-group link per membership'
+        );
+        self::assertStringContainsString(
+            'fsc.opcional.is_grouped()',
+            $view,
+            'grouped gating must be bridge-backed (no id_grupo property)'
+        );
+        self::assertStringNotContainsString('name="sid_grupo"', $view, 'the single-group select must be gone');
+        self::assertStringNotContainsString(
+            '.id_grupo',
+            $view,
+            'the edit form must not read the frozen property'
         );
     }
 }

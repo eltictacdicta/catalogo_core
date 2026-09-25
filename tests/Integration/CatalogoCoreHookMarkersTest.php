@@ -463,6 +463,8 @@ final class HookMarkerHostFsc
     /** @var array<string, array<int, mixed>> */
     private array $lists = [
         'grupos_opcional' => [],
+        'grupos_asignados' => [],
+        'grupos_asignados_ids' => [],
         'familias_asignadas' => [],
         'familias_disponibles' => [],
         'articulos' => [],
@@ -480,7 +482,7 @@ final class HookMarkerHostFsc
     public function __construct(bool $isNew, string $referencia)
     {
         $this->is_new = $isNew;
-        $this->opcional = new HookMarkerHostEntity(['id' => 7, 'id_grupo' => '']);
+        $this->opcional = new HookMarkerHostEntity(['id' => 7]);
         $this->articulo = new HookMarkerHostEntity(['referencia' => $referencia]);
     }
 

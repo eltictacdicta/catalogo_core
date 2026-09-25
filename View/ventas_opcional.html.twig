@@ -118,7 +118,7 @@ $(document).ready(function () {
                 <a href="#articulos" aria-controls="articulos" role="tab" data-toggle="tab">
                     <span class="glyphicon glyphicon-th-list"></span>
                     <span class="hidden-xs">&nbsp;{{ 'optional-articles'|trans }}</span>
-                    {% if not fsc.opcional.id_grupo %}
+                    {% if not fsc.opcional.is_grouped() %}
                     <span class="badge">{{ fsc.articulos|length }}</span>
                     {% endif %}
                 </a>
@@ -187,17 +187,17 @@ $(document).ready(function () {
                                 </div>
                             </div>
                             <div class="row">
-                                <div class="col-sm-6">
+                                <div class="col-sm-12">
                                     <div class="form-group">
                                         {{ 'optional-group'|trans }}:
-                                        <select class="form-control" name="sid_grupo">
-                                            <option value="">{{ 'optional-group-none'|trans }}</option>
+                                        <div>
                                             {% for grupo in fsc.grupos_opcional %}
-                                            <option value="{{ grupo.id }}"{% if fsc.opcional.id_grupo == grupo.id %} selected{% endif %}>
+                                            <label class="checkbox-inline">
+                                                <input type="checkbox" name="grupos[]" value="{{ grupo.id }}"{% if grupo.id in fsc.grupos_asignados_ids %} checked{% endif %}/>
                                                 {{ grupo.nombre }}{% if grupo.exclusivo %} ({{ 'optional-group-exclusive-short'|trans }}){% endif %}
-                                            </option>
+                                            </label>
                                             {% endfor %}
-                                        </select>
+                                        </div>
                                         <p class="help-block">
                                             <a href="index.php?page=ventas_opcional_grupos">{{ 'optional-groups-manage'|trans }}</a>
                                         </p>
@@ -330,12 +330,14 @@ $(document).ready(function () {
             </div>
 
             <div role="tabpanel" class="tab-pane" id="articulos">
-                {% if fsc.opcional.id_grupo %}
+                {% if fsc.opcional.is_grouped() %}
                 <div class="alert alert-info">
                     {{ 'optional-grouped-no-direct-articles'|trans }}
                     <br/>
-                    <a href="index.php?page=ventas_opcional_grupo&id={{ fsc.opcional.id_grupo }}">{{ 'optional-group-view'|trans }}</a>
-                    &nbsp;|&nbsp;
+                    {% for grupo in fsc.grupos_asignados %}
+                    <a href="index.php?page=ventas_opcional_grupo&id={{ grupo.id }}">{{ 'optional-group-view'|trans }}: {{ grupo.nombre }}</a>{% if not loop.last %}&nbsp;|&nbsp;{% endif %}
+                    {% endfor %}
+                    {% if fsc.grupos_asignados|length > 0 %}&nbsp;|&nbsp;{% endif %}
                     <a href="index.php?page=ventas_opcional_grupos">{{ 'optional-groups-manage'|trans }}</a>
                 </div>
                 {% else %}

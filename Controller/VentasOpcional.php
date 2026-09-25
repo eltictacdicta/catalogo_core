@@ -8,6 +8,7 @@ namespace FSFramework\Plugins\catalogo_core\Controller;
 
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
@@ -42,6 +43,10 @@ class VentasOpcional extends PageController
     public array $familias_disponibles = [];
     /** @var array<int, catalogo_opcional_grupo> */
     public array $grupos_opcional = [];
+    /** @var array<int, catalogo_opcional_grupo> Current memberships of the edited opcional (active and inactive). */
+    public array $grupos_asignados = [];
+    /** @var list<int> Checked group ids for the membership checkbox list. */
+    public array $grupos_asignados_ids = [];
     public bool $allow_delete = false;
 
     public function __construct()
@@ -84,15 +89,10 @@ class VentasOpcional extends PageController
             $model = new catalogo_opcional();
             $this->opcional = $model;
             $this->opcional->codigo = $model->get_new_codigo();
-            $idGrupoPreset = $this->request->query->getInt('id_grupo');
-            if ($idGrupoPreset > 0) {
-                $grupo = new catalogo_opcional_grupo();
-                if ($grupo->get($idGrupoPreset)) {
-                    $this->opcional->id_grupo = $idGrupoPreset;
-                }
-            }
             $this->is_new = true;
         }
+
+        $this->loadGruposAsignados();
 
         if (!$this->is_new && $this->opcional !== null && $this->request->query->has('buscar_articulo')) {
             $this->buscarArticulo((string) $this->request->query->get('buscar_articulo', ''));
@@ -118,6 +118,8 @@ class VentasOpcional extends PageController
             $this->articulos = $this->opcional->get_articulos();
             $this->familias_disponibles = $this->buildFamiliasDisponibles();
         }
+
+        $this->loadGruposAsignados();
     }
 
     /**
@@ -179,6 +181,48 @@ class VentasOpcional extends PageController
         $this->grupos_opcional = $grupo->all_activos();
     }
 
+    /**
+     * Builds the membership checkbox list as the union of the active groups and
+     * the opcional's current memberships (lossless: an inactive-group membership
+     * still renders and survives a save). `?id_grupo=<n>` presets the checked set
+     * for a new opcional without writing the model.
+     */
+    private function loadGruposAsignados(): void
+    {
+        $this->grupos_asignados = [];
+        $this->grupos_asignados_ids = [];
+
+        if ($this->opcional === null) {
+            return;
+        }
+
+        if (!$this->is_new) {
+            $this->grupos_asignados = $this->opcional->get_grupos();
+        } else {
+            $idGrupoPreset = $this->request->query->getInt('id_grupo');
+            if ($idGrupoPreset > 0) {
+                $grupo = new catalogo_opcional_grupo();
+                $item = $grupo->get($idGrupoPreset);
+                if ($item) {
+                    $this->grupos_asignados = [$item];
+                }
+            }
+        }
+
+        $known = [];
+        foreach ($this->grupos_opcional as $grupo) {
+            $known[(int) $grupo->id] = true;
+        }
+
+        foreach ($this->grupos_asignados as $grupo) {
+            $this->grupos_asignados_ids[] = (int) $grupo->id;
+            if (!isset($known[(int) $grupo->id])) {
+                $this->grupos_opcional[] = $grupo;
+                $known[(int) $grupo->id] = true;
+            }
+        }
+    }
+
     private function guardarOpcional(Request $request): void
     {
         if (!$this->validateFormToken()) {
@@ -213,17 +257,14 @@ class VentasOpcional extends PageController
 
         $this->opcional->activo = $request->request->has('sactivo');
 
-        $idGrupo = $request->request->getInt('sid_grupo');
-        $this->opcional->id_grupo = $idGrupo > 0 ? $idGrupo : null;
-
         if (!$this->opcional->save()) {
             $this->new_error_msg('No se pudo guardar el opcional.');
             return;
         }
 
-        if ($this->opcional->id_grupo) {
-            $rel = new catalogo_articulo_opcional();
-            $rel->delete_all_from_opcional((int) $this->opcional->id);
+        $grupos = (array) $request->request->all('grupos');
+        if (!$this->opcional->set_grupos($grupos)) {
+            $this->new_error_msg('No se pudieron guardar los grupos del opcional.');
         }
 
         if ($this->opcional->es_precio_porcentaje()) {
@@ -316,7 +357,7 @@ class VentasOpcional extends PageController
             return;
         }
 
-        if ($this->opcional->id_grupo) {
+        if ($this->opcional->is_grouped()) {
             $this->new_error_msg('Este opcional pertenece a un grupo. Asigna el grupo al artículo, no cada variante.');
             return;
         }

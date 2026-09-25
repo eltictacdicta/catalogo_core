@@ -19,6 +19,7 @@
 
 require_once 'plugins/catalogo_core/Init.php';
 require_once 'plugins/catalogo_core/model/core/catalogo_opcional_grupo.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
 require_once 'plugins/catalogo_core/model/tarif_familia.php';
 require_once 'plugins/catalogo_core/model/tarif_opcional.php';
 require_once 'plugins/catalogo_core/model/tarif_opcional_precio.php';
@@ -27,6 +28,7 @@ require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional.php';
 require_once 'plugins/catalogo_core/Services/CaracteristicaResolver.php';
 
 use FSFramework\model\catalogo_opcional_grupo;
+use FSFramework\model\catalogo_opcional_grupo_rel;
 use FSFramework\model\tarif_familia;
 use FSFramework\model\tarif_opcional;
 use FSFramework\model\tarif_opcional_precio;
@@ -84,8 +86,8 @@ trait VentasOpcionalesListTrait
     public array $grupos_opcional = [];
 
     /**
-     * Group label per listed opcional id, resolved from one map (no N+1).
-     * @var array<int, string>
+     * Group labels per listed opcional id, resolved from one batched map (no N+1).
+     * @var array<int, list<string>>
      */
     private array $nombres_grupo_opcional = [];
 
@@ -156,6 +158,17 @@ trait VentasOpcionalesListTrait
     protected function opcional_grupo_model()
     {
         return new catalogo_opcional_grupo();
+    }
+
+    /**
+     * Opcional↔group bridge accessor feeding the batched label map. Overridable
+     * seam so the "Grupo" column is unit-testable without a live database.
+     *
+     * @return catalogo_opcional_grupo_rel
+     */
+    protected function opcional_grupo_rel_model()
+    {
+        return new catalogo_opcional_grupo_rel();
     }
 
     /**
@@ -307,8 +320,13 @@ trait VentasOpcionalesListTrait
     }
 
     /**
-     * Loads the active opcional groups once and builds the per-row label map
-     * so the list never calls `etiqueta_grupo()` per row (design AD-7).
+     * Loads the group catalog once and builds the per-row multi-label map from
+     * a single batched bridge read, so the list never calls `etiqueta_grupo()`
+     * per row (OPG-02, design AD-11).
+     *
+     * Labels are resolved from **all** groups (active and inactive) so a
+     * membership in a deactivated group still renders; the checkbox list keeps
+     * the active-only set (`$this->grupos_opcional`).
      */
     protected function load_grupos_cache(): void
     {
@@ -316,28 +334,48 @@ trait VentasOpcionalesListTrait
         $this->nombres_grupo_opcional = [];
 
         $nombres = [];
-        foreach ($this->opcional_grupo_model()->all_activos() as $grupo) {
-            $this->grupos_opcional[] = $grupo;
+        foreach ($this->opcional_grupo_model()->all() as $grupo) {
             $nombres[(int) $grupo->id] = (string) $grupo->nombre;
         }
+        foreach ($this->opcional_grupo_model()->all_activos() as $grupo) {
+            $this->grupos_opcional[] = $grupo;
+        }
 
+        $ids = [];
         foreach ((array) $this->resultados as $opcional) {
-            $idGrupo = isset($opcional->id_grupo) ? (int) $opcional->id_grupo : 0;
-            $this->nombres_grupo_opcional[(int) $opcional->id] = ($idGrupo > 0 && isset($nombres[$idGrupo]))
-                ? $nombres[$idGrupo]
-                : '-';
+            $id = (int) ($opcional->id ?? 0);
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+
+        if ($ids === []) {
+            return;
+        }
+
+        $map = $this->opcional_grupo_rel_model()->map_for_opcionales($ids);
+        foreach ($ids as $id) {
+            $labels = [];
+            foreach ((array) ($map[$id] ?? []) as $idGrupo) {
+                if (isset($nombres[(int) $idGrupo])) {
+                    $labels[] = $nombres[(int) $idGrupo];
+                }
+            }
+            $this->nombres_grupo_opcional[$id] = $labels;
         }
     }
 
     /**
-     * Group label of a listed opcional, resolved from the one map loaded by
-     * {@see load_grupos_cache()} (no N+1).
+     * Group labels of a listed opcional, resolved from the one batched map
+     * loaded by {@see load_grupos_cache()} (no N+1). Returns an empty list for
+     * a loose row.
      *
      * @param int $id_opcional
+     * @return list<string>
      */
-    public function nombre_grupo_opcional($id_opcional): string
+    public function nombres_grupo_opcional($id_opcional): array
     {
-        return $this->nombres_grupo_opcional[(int) $id_opcional] ?? '-';
+        return $this->nombres_grupo_opcional[(int) $id_opcional] ?? [];
     }
 
     // =====================================================================
@@ -768,11 +806,8 @@ trait VentasOpcionalesListTrait
             }
         }
 
-        // Optional group assignment (mirrors Controller/VentasOpcional.php).
-        $idGrupo = (int) $this->request->request->get(
-            'sid_grupo',
-            (int) $this->request->request->get('id_grupo', 0)
-        );
+        // Group memberships: zero or more checked active groups (ui_checkbox_list).
+        $grupos = (array) $this->request->request->all('grupos');
 
         $opcional->codigo = $codigo;
         $opcional->nombre = $nombre;
@@ -784,7 +819,6 @@ trait VentasOpcionalesListTrait
             : \FSFramework\model\catalogo_opcional::TIPO_PRECIO_FIJO;
         $opcional->porcentaje = $esPorcentaje ? $porcentaje : null;
         $opcional->precio = 0;
-        $opcional->id_grupo = $idGrupo > 0 ? $idGrupo : null;
 
         $tarifaDefecto = '';
         if ($this->tarifa_seleccionada) {
@@ -793,8 +827,12 @@ trait VentasOpcionalesListTrait
             $tarifaDefecto = (string) $this->tarifa_defecto->codtarifa;
         }
 
-        $saved = $this->run_in_transaction(function () use ($opcional, $precios, $esPorcentaje, $porcentaje, $tarifaDefecto): bool {
+        $saved = $this->run_in_transaction(function () use ($opcional, $precios, $esPorcentaje, $porcentaje, $tarifaDefecto, $grupos): bool {
             if (!$opcional->save()) {
+                return false;
+            }
+
+            if (!$opcional->set_grupos($grupos)) {
                 return false;
             }
 
