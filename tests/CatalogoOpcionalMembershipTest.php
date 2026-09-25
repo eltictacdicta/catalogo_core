@@ -463,7 +463,7 @@ final class CatalogoOpcionalMembershipTest extends TestCase
 {
     private const MODEL_RELATIVE = 'plugins/catalogo_core/model/core/catalogo_opcional.php';
 
-    private function opcionalRow(int $id, string $codigo, string $nombre, ?int $idGrupo = null): array
+    private function opcionalRow(int $id, string $codigo, string $nombre): array
     {
         return [
             'id' => $id,
@@ -474,7 +474,6 @@ final class CatalogoOpcionalMembershipTest extends TestCase
             'tipo_precio' => 'fijo',
             'porcentaje' => null,
             'activo' => true,
-            'id_grupo' => $idGrupo,
         ];
     }
 
@@ -497,7 +496,7 @@ final class CatalogoOpcionalMembershipTest extends TestCase
         return new MembershipOpcionalStub($data);
     }
 
-    public function test_add_to_grupo_inserts_bridge_row_and_updates_legacy_projection(): void
+    public function test_add_to_grupo_inserts_the_bridge_row_only(): void
     {
         $db = new MembershipFakeDb(
             [7 => $this->opcionalRow(7, 'OPC1', 'Blanco')],
@@ -507,10 +506,10 @@ final class CatalogoOpcionalMembershipTest extends TestCase
 
         $this->assertTrue($model->add_to_grupo(3));
         $this->assertSame([[7, 3]], $db->pairs());
-        $this->assertSame(3, $model->id_grupo, 'the legacy projection must follow the first membership');
-        $this->assertContains(
-            'UPDATE catalogo_opcionales SET id_grupo = 3 WHERE id = 7;',
-            $db->executed
+        $this->assertSame(
+            [],
+            $db->executedContaining('UPDATE catalogo_opcionales SET id_grupo'),
+            'the frozen column must never be written by a membership write'
         );
     }
 
@@ -558,29 +557,15 @@ final class CatalogoOpcionalMembershipTest extends TestCase
 
         $this->assertTrue($model->remove_from_grupo(3));
         $this->assertSame([[7, 4]], $db->pairs());
-        $this->assertSame(4, $model->id_grupo, 'the projection must move to the remaining membership');
         $this->assertSame(
             0,
             count($db->executedContaining('DELETE FROM catalogo_articulo_opcional')),
             'removing a membership must never recreate/restore direct article relations'
         );
-    }
-
-    public function test_legacy_no_arg_remove_from_grupo_clears_the_projected_group(): void
-    {
-        $db = new MembershipFakeDb(
-            [7 => $this->opcionalRow(7, 'OPC1', 'Blanco', 3)],
-            [3 => $this->grupoRow(3, 'GRP0003', 'Color', 1)],
-            [[7, 3]]
-        );
-        $model = $this->model($db, $this->opcionalRow(7, 'OPC1', 'Blanco', 3));
-
-        $this->assertTrue($model->remove_from_grupo());
-        $this->assertSame([], $db->pairs());
-        $this->assertNull($model->id_grupo);
-        $this->assertContains(
-            'UPDATE catalogo_opcionales SET id_grupo = NULL WHERE id = 7;',
-            $db->executed
+        $this->assertSame(
+            [],
+            $db->executedContaining('UPDATE catalogo_opcionales SET id_grupo'),
+            'removing a membership must not touch the frozen column'
         );
     }
 
@@ -750,31 +735,34 @@ final class CatalogoOpcionalMembershipTest extends TestCase
         );
     }
 
-    public function test_legacy_shims_delegate_to_the_bridge(): void
+    public function test_legacy_single_valued_api_is_removed(): void
     {
-        $db = new MembershipFakeDb(
-            [7 => $this->opcionalRow(7, 'OPC1', 'Blanco', 3)],
-            [3 => $this->grupoRow(3, 'GRP0003', 'Color', 1), 4 => $this->grupoRow(4, 'GRP0004', 'Acabado', 2)],
-            [[7, 3]]
+        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
+
+        foreach (['get_grupo', 'etiqueta_grupo', 'assign_to_grupo'] as $method) {
+            $this->assertFalse(
+                method_exists(\FSFramework\model\catalogo_opcional::class, $method),
+                $method . '() must be removed by the cutover (AD-4/AD-6)'
+            );
+        }
+
+        $remove = new \ReflectionMethod(\FSFramework\model\catalogo_opcional::class, 'remove_from_grupo');
+        $this->assertSame(
+            1,
+            $remove->getNumberOfRequiredParameters(),
+            'remove_from_grupo() must require the group id (arity 0 -> 1)'
         );
-        $model = $this->model($db, $this->opcionalRow(7, 'OPC1', 'Blanco', 3));
-
-        $this->assertSame('Color', $model->etiqueta_grupo());
-        $this->assertSame('Color', (string) $model->get_grupo()->nombre);
-
-        $this->assertTrue($model->assign_to_grupo(4));
-        $this->assertSame([[7, 3], [7, 4]], $db->pairs());
     }
 
-    public function test_save_dual_writes_the_legacy_column_and_the_bridge(): void
+    public function test_save_writes_no_legacy_group_column(): void
     {
         $row = $this->opcionalRow(7, 'OPC1', 'Blanco');
         $db = new MembershipFakeDb(
             [7 => $row],
-            [3 => $this->grupoRow(3, 'GRP0003', 'Color', 1)]
+            [3 => $this->grupoRow(3, 'GRP0003', 'Color', 1)],
+            [[7, 3]]
         );
         $model = $this->model($db, $row);
-        $model->id_grupo = 3;
 
         $this->assertTrue($model->save());
 
@@ -783,28 +771,28 @@ final class CatalogoOpcionalMembershipTest extends TestCase
             static fn (string $sql): bool => str_starts_with($sql, 'UPDATE catalogo_opcionales SET codigo = ')
         ));
         $this->assertCount(1, $saveUpdates);
-        $this->assertStringContainsString('id_grupo = 3', $saveUpdates[0], 'legacy column must keep being written');
-        $this->assertSame([[7, 3]], $db->pairs(), 'the bridge must be reconciled with the legacy value');
-        $this->assertSame(
-            1,
-            $db->countExecuted('DELETE FROM catalogo_articulo_opcional WHERE id_opcional = 7;'),
-            'the grouped => no direct relations side effect must be preserved'
-        );
+        $this->assertStringNotContainsString('id_grupo', $saveUpdates[0], 'the frozen column must not be written');
+        $this->assertSame([[7, 3]], $db->pairs(), 'save() must not reconcile the bridge either');
     }
 
-    public function test_save_with_no_projected_group_clears_the_bridge(): void
+    public function test_save_insert_writes_no_legacy_group_column(): void
     {
-        $row = $this->opcionalRow(7, 'OPC1', 'Blanco', 3);
-        $db = new MembershipFakeDb(
-            [7 => $row],
-            [],
-            [[7, 3]]
-        );
-        $model = $this->model($db, $row);
-        $model->id_grupo = null;
+        $db = new MembershipFakeDb();
+        $model = $this->model($db);
+        $model->codigo = 'OPC9';
+        $model->nombre = 'Nuevo';
+        $model->precio = 0;
+        $model->tipo_precio = 'fijo';
+        $model->activo = true;
 
         $this->assertTrue($model->save());
-        $this->assertSame([], $db->pairs(), 'an ungroup signal must keep both sources in agreement');
+
+        $inserts = array_values(array_filter(
+            $db->executed,
+            static fn (string $sql): bool => str_starts_with($sql, 'INSERT INTO catalogo_opcionales')
+        ));
+        $this->assertCount(1, $inserts);
+        $this->assertStringNotContainsString('id_grupo', $inserts[0], 'the frozen column must not be inserted');
     }
 
     public function test_delete_cascades_the_bridge_rows(): void
@@ -822,7 +810,7 @@ final class CatalogoOpcionalMembershipTest extends TestCase
         $this->assertContains('DELETE FROM catalogo_opcionales WHERE id = 7;', $db->executed);
     }
 
-    public function test_group_delete_cascades_its_memberships_and_keeps_the_legacy_column_consistent(): void
+    public function test_group_delete_cascades_its_memberships_only(): void
     {
         $db = new MembershipFakeDb([], [3 => $this->grupoRow(3, 'GRP0003', 'Color', 1)], [[7, 3], [8, 3], [8, 5]]);
         MembershipGrupoStub::$fakeDb = $db;
@@ -831,7 +819,11 @@ final class CatalogoOpcionalMembershipTest extends TestCase
         $this->assertTrue($grupo->delete());
 
         $this->assertSame([[8, 5]], $db->pairs(), 'only the deleted group memberships are removed');
-        $this->assertContains('UPDATE catalogo_opcionales SET id_grupo = NULL WHERE id_grupo = 3;', $db->executed);
+        $this->assertSame(
+            [],
+            $db->executedContaining('UPDATE catalogo_opcionales SET id_grupo'),
+            'the legacy column update must be gone (AD-7)'
+        );
         $this->assertContains('DELETE FROM catalogo_articulo_opcional_grupo WHERE id_grupo = 3;', $db->executed);
         $this->assertContains('DELETE FROM catalogo_opcional_grupos WHERE id = 3;', $db->executed);
     }
@@ -854,6 +846,30 @@ final class CatalogoOpcionalMembershipTest extends TestCase
             'the filter must not build a predicate on the frozen catalogo_opcionales.id_grupo column'
         );
         $this->assertStringContainsString('r.id_grupo', $where, 'the membership test must hit the bridge column');
+    }
+
+    public function test_model_source_freezes_the_legacy_group_column(): void
+    {
+        $path = FS_FOLDER . '/' . self::MODEL_RELATIVE;
+        $this->assertFileExists($path);
+        $source = (string) file_get_contents($path);
+
+        $this->assertStringNotContainsString('public $id_grupo', $source, 'the property must be removed (AD-6)');
+        $this->assertStringNotContainsString("\$this->id_grupo", $source, 'no code path may read/write the frozen property');
+        $this->assertStringNotContainsString(
+            "data['id_grupo']",
+            $source,
+            'the constructor must not map the frozen column'
+        );
+
+        foreach (['save', 'add_to_grupo', 'set_grupos', 'remove_from_grupo'] as $method) {
+            $body = $this->methodBody($source, $method);
+            $this->assertStringNotContainsString(
+                'id_grupo',
+                $body,
+                $method . '() must not touch the frozen catalogo_opcionales.id_grupo column'
+            );
+        }
     }
 
     private function methodBody(string $source, string $method): string

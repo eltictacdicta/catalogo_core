@@ -22,7 +22,6 @@ class catalogo_opcional extends \fs_model
     public $tipo_precio;
     public $porcentaje;
     public $activo;
-    public $id_grupo;
     /** @var bool Solo relevante al cargar opcionales asignados a un artículo concreto. */
     public $obligatorio_en_articulo = false;
 
@@ -41,9 +40,6 @@ class catalogo_opcional extends \fs_model
                 ? floatval($data['porcentaje'])
                 : null;
             $this->activo = $this->str2bool($data['activo']);
-            $this->id_grupo = isset($data['id_grupo']) && $data['id_grupo'] !== '' && $data['id_grupo'] !== null
-                ? intval($data['id_grupo'])
-                : null;
             if (array_key_exists('obligatorio_en_articulo', $data)) {
                 $this->obligatorio_en_articulo = $this->str2bool($data['obligatorio_en_articulo']);
             } elseif (array_key_exists('obligatorio', $data)) {
@@ -58,29 +54,7 @@ class catalogo_opcional extends \fs_model
             $this->tipo_precio = self::TIPO_PRECIO_FIJO;
             $this->porcentaje = null;
             $this->activo = true;
-            $this->id_grupo = null;
         }
-    }
-
-    /**
-     * @deprecated B1 stage shim — delegates to the bridge; removed by the WU-4 cutover.
-     * @return catalogo_opcional_grupo|false
-     */
-    public function get_grupo()
-    {
-        $grupos = $this->get_grupos();
-
-        return $grupos[0] ?? false;
-    }
-
-    /**
-     * @deprecated B1 stage shim — delegates to the bridge; removed by the WU-4 cutover.
-     */
-    public function etiqueta_grupo(): string
-    {
-        $labels = $this->grupos_labels();
-
-        return $labels[0] ?? '-';
     }
 
     /**
@@ -111,7 +85,7 @@ class catalogo_opcional extends \fs_model
     }
 
     /**
-     * Bridge-backed group labels (multi-membership replacement for the old
+     * Bridge-backed group labels (multi-membership replacement for the removed
      * single-valued etiqueta_grupo()).
      *
      * @return list<string>
@@ -299,8 +273,6 @@ class catalogo_opcional extends \fs_model
             return false;
         }
 
-        $this->syncLegacyProjection();
-
         if (!$wasGrouped) {
             $this->deleteDirectArticleRelations();
         }
@@ -309,36 +281,15 @@ class catalogo_opcional extends \fs_model
     }
 
     /**
-     * @deprecated B1 stage shim — delegates to add_to_grupo(); removed by the WU-4 cutover.
+     * Removes one bridge membership. Never restores direct article relations.
      */
-    public function assign_to_grupo(int $idGrupo): bool
+    public function remove_from_grupo(int $idGrupo): bool
     {
-        return $this->add_to_grupo($idGrupo);
-    }
-
-    /**
-     * Removes one bridge membership (int form) or, when called with no
-     * argument (legacy form), the currently projected group. Never restores
-     * direct article relations.
-     */
-    public function remove_from_grupo(int $idGrupo = 0): bool
-    {
-        if (!$this->id) {
+        if (!$this->id || $idGrupo <= 0) {
             return false;
         }
 
-        if ($idGrupo <= 0) {
-            $idGrupo = (int) $this->id_grupo;
-        }
-
-        $rel = $this->grupo_rel_model();
-        if ($idGrupo > 0) {
-            $rel->remove((int) $this->id, $idGrupo);
-        } else {
-            $rel->delete_all_from_opcional((int) $this->id);
-        }
-
-        $this->syncLegacyProjection();
+        $this->grupo_rel_model()->remove((int) $this->id, $idGrupo);
 
         return true;
     }
@@ -378,8 +329,6 @@ class catalogo_opcional extends \fs_model
             }
         }
 
-        $this->syncLegacyProjection();
-
         if (!$wasGrouped && $target !== []) {
             $this->deleteDirectArticleRelations();
         }
@@ -410,53 +359,6 @@ class catalogo_opcional extends \fs_model
             'SELECT * FROM ' . catalogo_opcional_grupo::TABLE
             . ' WHERE id = ' . $this->intval($idGrupo) . ';'
         );
-    }
-
-    /**
-     * Dual-write (B1 stage-safe): projects the bridge membership into the
-     * frozen `id_grupo` column so not-yet-migrated readers keep working. The
-     * lowest group id wins; no membership projects to NULL.
-     */
-    private function syncLegacyProjection(): void
-    {
-        if (!$this->id) {
-            return;
-        }
-
-        $ids = $this->grupo_ids();
-        $this->id_grupo = $ids === [] ? null : (int) $ids[0];
-
-        $this->db->exec(
-            'UPDATE ' . $this->table_name
-            . ' SET id_grupo = ' . $this->var2str($this->id_grupo)
-            . ' WHERE id = ' . $this->intval($this->id) . ';'
-        );
-    }
-
-    /**
-     * Dual-write (B1 stage-safe): reconciles the bridge with the legacy
-     * `id_grupo` value written by save(), so both sources agree.
-     */
-    private function syncBridgeFromLegacyGroup(): void
-    {
-        if (!$this->id) {
-            return;
-        }
-
-        $idGrupo = is_numeric($this->id_grupo) ? (int) $this->id_grupo : 0;
-        $rel = $this->grupo_rel_model();
-
-        if ($idGrupo <= 0) {
-            $rel->delete_all_from_opcional((int) $this->id);
-            return;
-        }
-
-        if ($rel->group_ids_for_opcional((int) $this->id) === [$idGrupo]) {
-            return;
-        }
-
-        $rel->delete_all_from_opcional((int) $this->id);
-        $rel->add((int) $this->id, $idGrupo);
     }
 
     private function deleteDirectArticleRelations(): void
@@ -673,29 +575,21 @@ class catalogo_opcional extends \fs_model
                 . ', tipo_precio = ' . $this->var2str($this->tipo_precio)
                 . ', porcentaje = ' . $this->var2str($this->porcentaje)
                 . ', activo = ' . $this->var2str($this->activo)
-                . ', id_grupo = ' . $this->var2str($this->id_grupo)
                 . ' WHERE id = ' . $this->intval($this->id) . ';';
         } else {
-            $sql = 'INSERT INTO ' . $this->table_name . ' (codigo, nombre, descripcion, precio, tipo_precio, porcentaje, activo, id_grupo) VALUES ('
+            $sql = 'INSERT INTO ' . $this->table_name . ' (codigo, nombre, descripcion, precio, tipo_precio, porcentaje, activo) VALUES ('
                 . $this->var2str($this->codigo) . ','
                 . $this->var2str($this->nombre) . ','
                 . $this->var2str($this->descripcion) . ','
                 . $this->var2str($this->precio) . ','
                 . $this->var2str($this->tipo_precio) . ','
                 . $this->var2str($this->porcentaje) . ','
-                . $this->var2str($this->activo) . ','
-                . $this->var2str($this->id_grupo) . ');';
+                . $this->var2str($this->activo) . ');';
         }
 
         if ($this->db->exec($sql)) {
             if (is_null($this->id)) {
                 $this->id = $this->db->lastval();
-            }
-
-            $this->syncBridgeFromLegacyGroup();
-
-            if ($this->id_grupo) {
-                $this->deleteDirectArticleRelations();
             }
 
             return true;

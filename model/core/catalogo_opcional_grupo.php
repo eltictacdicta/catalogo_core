@@ -176,12 +176,6 @@ class catalogo_opcional_grupo extends \fs_model
         $this->grupo_rel_model()->delete_all_from_grupo((int) $this->id);
         $this->articulo_opcional_grupo_model()->delete_all_from_grupo((int) $this->id);
 
-        // B1 stage-safe: keep the frozen legacy column consistent for
-        // not-yet-migrated readers.
-        $this->db->exec(
-            'UPDATE catalogo_opcionales SET id_grupo = NULL WHERE id_grupo = ' . $this->intval($this->id) . ';'
-        );
-
         return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
     }
 
