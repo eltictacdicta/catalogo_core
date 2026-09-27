@@ -9,6 +9,7 @@ namespace Tests\CatalogoCore\Services;
 
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelExportService;
 use FSFramework\Plugins\catalogo_core\Services\ArticuloExcelImportWizardService;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -35,6 +36,9 @@ final class ArticuloExcelCaracteristicaTest extends TestCase
     /** @var list<string> */
     private array $tempFixtures = [];
 
+    /** @var array<int, string> */
+    private array $pluginsSnapshot = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -42,6 +46,10 @@ final class ArticuloExcelCaracteristicaTest extends TestCase
         if (!class_exists(\FSFramework\model\articulo::class, false)) {
             require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
         }
+
+        $this->pluginsSnapshot = $GLOBALS['plugins'] ?? [];
+        // CAR-20 (D7): a cold-enabled registry is the fail-closed default.
+        $GLOBALS['plugins'] = [];
     }
 
     protected function tearDown(): void
@@ -52,6 +60,7 @@ final class ArticuloExcelCaracteristicaTest extends TestCase
             }
         }
         $this->tempFixtures = [];
+        $GLOBALS['plugins'] = $this->pluginsSnapshot;
 
         parent::tearDown();
     }
@@ -216,6 +225,94 @@ final class ArticuloExcelCaracteristicaTest extends TestCase
         $this->assertSame('__ignorar__', $mapping[1], 'the colliding definition must not claim headers');
     }
 
+    /**
+     * CAR-17 (owner-disabled scenario) / CAR-20 (a): an importable/exportable
+     * definition whose owning plugin is not enabled contributes no import field,
+     * no alias and no export column, and the base headers stay byte-identical.
+     *
+     * The behavior is INHERITED from the Phase 2 resolver filter: the wizard and
+     * the export service only ever see what `importable_definitions()` /
+     * `exportable_definitions()` return, so a disabled owner never reaches them.
+     * The fixture feeds the resolver output through the real wizard surfaces; if
+     * this fails, the fix belongs in the resolver filter, not in the wizard.
+     */
+    public function test_owner_disabled_definition_contributes_no_import_field_alias_or_export_column(): void
+    {
+        $fixture = $this->resolverFixture();
+
+        // --- Inert period: the owner is disabled (empty registry). ---
+        $importable = $this->resolverWith($fixture)->importable_definitions();
+        $exportable = $this->resolverWith($fixture)->exportable_definitions();
+
+        $this->assertSame(['medidas'], array_column($importable, 'codigo'), 'the inert definition is not importable');
+        $this->assertSame(['medidas'], array_column($exportable, 'codigo'), 'the inert definition is not exportable');
+
+        // Import surfaces: no field, no alias, base catalog byte-identical.
+        $service = new ArticuloExcelImportWizardService($importable);
+        $catalog = $service->fieldCatalog($importable);
+        $this->assertArrayNotHasKey('en_catalogo', $catalog, 'an inert definition contributes no import field');
+        $this->assertArrayHasKey('medidas', $catalog, 'an operator-owned definition stays importable');
+        $this->assertSame(
+            ArticuloExcelImportWizardService::FIELD_CATALOG,
+            array_slice($catalog, 0, count(ArticuloExcelImportWizardService::FIELD_CATALOG), true),
+            'the base field catalog must stay byte-identical'
+        );
+
+        $options = array_column($service->fieldOptions($importable), 'value');
+        $this->assertNotContains('en_catalogo', $options, 'an inert definition contributes no option');
+        $this->assertContains('medidas', $options);
+
+        $aliases = $this->extraFieldAliases($service);
+        $this->assertArrayNotHasKey('en_catalogo', $aliases, 'an inert definition contributes no alias');
+        $this->assertArrayHasKey('medidas', $aliases);
+
+        $mapping = ArticuloExcelImportWizardService::suggestMapping(
+            ['Referencia', 'En Catálogo', 'Medidas'],
+            $aliases
+        );
+        $this->assertSame('referencia', $mapping[0]);
+        $this->assertSame('__ignorar__', $mapping[1], 'the inert header must not be claimed');
+        $this->assertSame('medidas', $mapping[2], 'the operator field still maps');
+
+        // Export: no inert column, base headers byte-identical.
+        $articulos = [[
+            'referencia' => 'REF-1',
+            'descripcion' => 'Artículo',
+            'pvp' => 10.0,
+            'codfamilia' => 'F1',
+            'codfabricante' => '',
+            'codimpuesto' => 'IVA21',
+            'bloqueado' => false,
+        ]];
+        $sheet = $this->exportService()->buildSpreadsheet($articulos, false, 'T1', $exportable)->getActiveSheet();
+        $this->assertSame(
+            ArticuloExcelExportService::EXPORT_HEADERS,
+            [
+                $sheet->getCell('A1')->getValue(),
+                $sheet->getCell('B1')->getValue(),
+                $sheet->getCell('C1')->getValue(),
+                $sheet->getCell('D1')->getValue(),
+                $sheet->getCell('E1')->getValue(),
+                $sheet->getCell('F1')->getValue(),
+                $sheet->getCell('G1')->getValue(),
+            ],
+            'base headers must stay byte-identical with an inert definition present'
+        );
+        $this->assertSame('Medidas', $sheet->getCell('H1')->getValue());
+        $this->assertSame('H', $sheet->getHighestColumn(), 'the inert definition emits no export column');
+
+        // --- Control: re-enabling the owner restores the definition on fresh
+        // resolver instances (D9), proving the empty result above was a real
+        // fail-closed no-op, not a dead fixture. ---
+        $GLOBALS['plugins'] = ['tarifario'];
+        $importableOn = $this->resolverWith($fixture)->importable_definitions();
+        $exportableOn = $this->resolverWith($fixture)->exportable_definitions();
+
+        $this->assertSame(['medidas', 'en_catalogo'], array_column($importableOn, 'codigo'));
+        $this->assertSame(['medidas', 'en_catalogo'], array_column($exportableOn, 'codigo'));
+        $this->assertArrayHasKey('en_catalogo', $service->fieldCatalog($importableOn));
+    }
+
     public function test_unmapped_or_empty_feature_column_is_a_no_op(): void
     {
         $service = new ArticuloExcelImportWizardService([]);
@@ -359,6 +456,83 @@ final class ArticuloExcelCaracteristicaTest extends TestCase
                 $this->saveCalls++;
 
                 return true;
+            }
+        };
+    }
+
+    /**
+     * One operator-owned row (`origen = ''`) plus one plugin-owned row
+     * (`origen = 'tarifario'`), both importable and exportable (CAR-20).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function resolverFixture(): array
+    {
+        return [
+            [
+                'id' => 10,
+                'codigo' => 'medidas',
+                'nombre' => 'Medidas',
+                'tipo' => 'string',
+                'activo' => true,
+                'importable' => true,
+                'exportable' => true,
+                'listable' => true,
+                'orden' => 0,
+                'origen' => '',
+                'valor_defecto' => null,
+            ],
+            [
+                'id' => 20,
+                'codigo' => 'en_catalogo',
+                'nombre' => 'En Catálogo',
+                'tipo' => 'bool',
+                'activo' => true,
+                'importable' => true,
+                'exportable' => true,
+                'listable' => true,
+                'orden' => 1,
+                'origen' => 'tarifario',
+                'valor_defecto' => null,
+            ],
+        ];
+    }
+
+    /**
+     * DB-free resolver whose definition model answers from the fixture and whose
+     * default `ownership()` seam reads `$GLOBALS['plugins']` (the real helper).
+     *
+     * @param list<array<string, mixed>> $fixture
+     */
+    private function resolverWith(array $fixture): CaracteristicaResolver
+    {
+        return new class($fixture) extends CaracteristicaResolver {
+            /** @param list<array<string, mixed>> $rows */
+            public function __construct(private array $rows)
+            {
+            }
+
+            protected function definition_model()
+            {
+                return new class($this->rows) {
+                    /** @param list<array<string, mixed>> $rows */
+                    public function __construct(private array $rows)
+                    {
+                    }
+
+                    /** @return list<array<string, mixed>> */
+                    public function all(bool $onlyActive = false): array
+                    {
+                        if (!$onlyActive) {
+                            return $this->rows;
+                        }
+
+                        return array_values(array_filter(
+                            $this->rows,
+                            static fn (array $definition): bool => (bool) ($definition['activo'] ?? true)
+                        ));
+                    }
+                };
             }
         };
     }

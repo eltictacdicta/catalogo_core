@@ -93,6 +93,59 @@ final class CaracteristicaBoundariesTest extends TestCase
         );
     }
 
+    public function test_no_root_openspec_entry_exists_for_this_change(): void
+    {
+        $this->assertDirectoryDoesNotExist(
+            FS_FOLDER . '/openspec/changes/caracteristicas-plugin-scope',
+            'this change must never create an entry in the repository-root openspec tree'
+        );
+    }
+
+    public function test_ownership_helper_reads_only_origen_and_the_core_registry(): void
+    {
+        $path = FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
+        $this->assertFileExists($path);
+        $source = $this->stripComments((string) file_get_contents($path));
+
+        $this->assertStringContainsString('origen', $source, 'the rule must read the row origen');
+        $this->assertStringContainsString('FSFramework\\Core\\Plugins', $source, 'the rule must use the core registry');
+        $this->assertStringContainsString('Plugins::enabled()', $source);
+
+        $this->assertStringNotContainsString(
+            'FSFramework\\Plugins\\tarifario',
+            $source,
+            'the ownership helper must not import the tarifario namespace'
+        );
+        $this->assertStringNotContainsString("'tarifario'", $source, 'no hardcoded plugin-name literal');
+        $this->assertStringNotContainsString('"tarifario"', $source, 'no hardcoded plugin-name literal');
+    }
+
+    public function test_the_three_wiring_sites_call_the_shared_ownership_rule(): void
+    {
+        $sites = [
+            'Services/CaracteristicaResolver.php',
+            'Controller/VentasCaracteristicas.php',
+            'Services/CaracteristicaValorBatchReader.php',
+        ];
+
+        foreach ($sites as $relative) {
+            $path = FS_FOLDER . '/plugins/catalogo_core/' . $relative;
+            $this->assertFileExists($path, $relative . ' must exist');
+            $source = $this->stripComments((string) file_get_contents($path));
+
+            $this->assertStringContainsString(
+                'CaracteristicaOwnership',
+                $source,
+                $relative . ' must import the shared ownership helper'
+            );
+            $this->assertMatchesRegularExpression(
+                '/ownership\(\)\s*->\s*is_active\(/',
+                $source,
+                $relative . ' must call the shared ownership rule'
+            );
+        }
+    }
+
     public function test_dependency_direction_is_unchanged(): void
     {
         $catalogoIni = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/fsframework.ini');
