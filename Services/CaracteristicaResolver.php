@@ -25,6 +25,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_caracterist
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_caracteristica_global.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_caracteristica_familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_caracteristica_articulo.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
 
 /**
  * Uniform effective-value read path (CAR-06, CAR-07).
@@ -72,6 +73,10 @@ class CaracteristicaResolver
     /**
      * Ordered definitions keyed by codigo (orden ASC, codigo ASC).
      *
+     * CAR-20: a definition whose non-empty `origen` names a disabled plugin is
+     * inert and is dropped exactly like an empty `codigo` row, so `resolve()`,
+     * the flagged helpers and the write-through store all inherit the rule.
+     *
      * @return array<string, array<string, mixed>>
      */
     public function definitions(bool $onlyActive = true): array
@@ -85,6 +90,9 @@ class CaracteristicaResolver
         foreach ((array) $this->definition_model()->all($onlyActive) as $row) {
             $definition = $this->to_definition($row);
             if ($definition['codigo'] === '') {
+                continue;
+            }
+            if (!$this->ownership()->is_active((string) ($definition['origen'] ?? ''))) {
                 continue;
             }
             $map[$definition['codigo']] = $definition;
@@ -452,7 +460,7 @@ class CaracteristicaResolver
     private function to_definition($row): array
     {
         if (is_array($row)) {
-            return $row + ['activo' => true, 'valor_defecto' => null];
+            return $row + ['activo' => true, 'valor_defecto' => null, 'origen' => ''];
         }
 
         return [
@@ -465,6 +473,7 @@ class CaracteristicaResolver
             'exportable' => (bool) ($row->exportable ?? false),
             'listable' => (bool) ($row->listable ?? false),
             'orden' => (int) ($row->orden ?? 0),
+            'origen' => (string) ($row->origen ?? ''),
             'valor_defecto' => $row->valor_defecto ?? null,
         ];
     }
@@ -533,6 +542,17 @@ class CaracteristicaResolver
     protected function definition_model()
     {
         return new \FSFramework\model\catalogo_caracteristica();
+    }
+
+    /**
+     * CAR-20 ownership predicate seam (tests inject a helper with a controlled
+     * enabled set).
+     *
+     * @return CaracteristicaOwnership
+     */
+    protected function ownership()
+    {
+        return new CaracteristicaOwnership();
     }
 
     /**

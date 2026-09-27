@@ -82,33 +82,55 @@ final class CaracteristicaResolverTest extends TestCase
 
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/base/fs_core_log.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
         self::$baseLoaded = true;
     }
 
     /**
      * @param array<int, array<string, mixed>> $definitions
+     * @param array<int, string>               $enabledPlugins enabled set for the ownership seam
      */
-    private function buildResolver(array $definitions): object
+    private function buildResolver(array $definitions, array $enabledPlugins = []): object
     {
         $rows = &$this->rows;
         $familias = &$this->familias;
         $catalog = &$this->catalog;
         $writes = &$this->writes;
 
-        return new class($definitions, $rows, $familias, $catalog, $writes) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver {
+        return new class($definitions, $rows, $familias, $catalog, $writes, $enabledPlugins) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver {
+            /** @param array<int, string> $enabledPlugins */
             public function __construct(
                 private array $defs,
                 private array &$rows,
                 private array &$familias,
                 private array &$catalog,
-                private array &$writes
+                private array &$writes,
+                private array $enabledPlugins
             ) {
             }
 
             protected function definition_model()
             {
                 return new CaracteristicaResolverFakeDefinitionModel($this->defs);
+            }
+
+            protected function ownership()
+            {
+                $enabled = $this->enabledPlugins;
+
+                return new class($enabled) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaOwnership {
+                    /** @param array<int, string> $enabled */
+                    public function __construct(private array $enabled)
+                    {
+                    }
+
+                    /** @return array<int, string> */
+                    protected function enabled_plugins(): array
+                    {
+                        return $this->enabled;
+                    }
+                };
             }
 
             protected function scope_model(string $scope)
@@ -236,6 +258,67 @@ final class CaracteristicaResolverTest extends TestCase
         $inactive['activo'] = false;
         $resolver = $this->buildResolver([$inactive]);
         $this->assertNull($resolver->resolve('color', 'T1', 'REF-1'));
+    }
+
+    // =====================================================================
+    // CAR-20 / CAR-06 — owner-disabled definitions reuse the missing path
+    // =====================================================================
+
+    public function test_owner_disabled_definition_resolves_like_a_missing_or_inactive_one(): void
+    {
+        $rows = [
+            'articulo' => ['T1' => ['REF-1' => [10 => $this->scopeRow(null, 'X', true)]]],
+        ];
+        $this->rows = $rows;
+
+        $inert = $this->definition('color') + ['origen' => 'tarifario'];
+        $inactive = $this->definition('inactiva');
+        $inactive['activo'] = false;
+
+        // 'otra' is simply missing; 'tarifario' is disabled (empty enabled set).
+        $resolver = $this->buildResolver([$inert, $inactive], []);
+
+        $this->assertNull($resolver->resolve('color', 'T1', 'REF-1'), 'inert == no value');
+        $this->assertNull($resolver->resolve('otra', 'T1', 'REF-1'), 'missing == no value');
+        $this->assertNull($resolver->resolve('inactiva', 'T1', 'REF-1'), 'inactive == no value');
+        $this->assertNull($resolver->resolve_bool('color', 'T1', 'REF-1'));
+
+        $this->assertSame($rows, $this->rows, 'no value row may be created or modified by a read');
+        $this->assertSame([], $this->writes);
+    }
+
+    public function test_owner_disabled_definition_is_absent_from_the_flagged_helpers(): void
+    {
+        $flagged = static fn (string $codigo, string $origen): array => [
+            'id' => 10,
+            'codigo' => $codigo,
+            'nombre' => ucfirst($codigo),
+            'tipo' => 'bool',
+            'activo' => true,
+            'importable' => true,
+            'exportable' => true,
+            'listable' => true,
+            'valor_defecto' => null,
+            'origen' => $origen,
+        ];
+
+        $inert = $this->buildResolver([$flagged('apagada', 'tarifario')], []);
+        $this->assertSame([], $inert->listable_definitions(), 'inert emits no listable column');
+        $this->assertSame([], $inert->importable_definitions(), 'inert adds no import field');
+        $this->assertSame([], $inert->exportable_definitions(), 'inert adds no export column');
+
+        $enabled = $this->buildResolver([$flagged('encendida', 'tarifario')], ['tarifario']);
+        $this->assertCount(1, $enabled->listable_definitions(), 'the enabled owner is listable');
+        $this->assertCount(1, $enabled->importable_definitions(), 'the enabled owner is importable');
+        $this->assertCount(1, $enabled->exportable_definitions(), 'the enabled owner is exportable');
+    }
+
+    public function test_operator_owned_definition_stays_active_with_an_empty_registry(): void
+    {
+        $resolver = $this->buildResolver([$this->definition('color', 'string', 'Z')], []);
+
+        $this->assertArrayHasKey('color', $resolver->definitions(), 'origen "" is the unconditional exception');
+        $this->assertSame('Z', $resolver->resolve('color', 'T1', 'REF-1'));
     }
 
     // =====================================================================

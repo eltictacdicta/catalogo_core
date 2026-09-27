@@ -70,6 +70,32 @@ final class CaracteristicaStoreFakeScopeModel
     }
 }
 
+/**
+ * DB-free definition model for the resolver used by the filtering store: it
+ * answers `all()` from an in-memory list so `definitions()` exercises the real
+ * CAR-20 filter.
+ */
+final class CaracteristicaStoreFakeDefinitionModel
+{
+    /** @param array<int, array<string, mixed>> $definitions */
+    public function __construct(private array $definitions)
+    {
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function all(bool $onlyActive = false): array
+    {
+        if (!$onlyActive) {
+            return $this->definitions;
+        }
+
+        return array_values(array_filter(
+            $this->definitions,
+            static fn (array $def): bool => (bool) ($def['activo'] ?? true)
+        ));
+    }
+}
+
 final class CaracteristicaValorStoreTest extends TestCase
 {
     /** @var list<CaracteristicaStoreFakeScopeModel> */
@@ -88,6 +114,8 @@ final class CaracteristicaValorStoreTest extends TestCase
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/base/fs_core_log.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaConfig.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorStore.php';
         self::$baseLoaded = true;
     }
@@ -107,6 +135,84 @@ final class CaracteristicaValorStoreTest extends TestCase
                     'en_catalogo' => ['id' => 10, 'codigo' => 'en_catalogo', 'tipo' => 'bool'],
                     'medidas' => ['id' => 11, 'codigo' => 'medidas', 'tipo' => 'string'],
                 ];
+            }
+
+            protected function scope_model(string $scope)
+            {
+                $keys = match ($scope) {
+                    'familia' => ['codfamilia'],
+                    'articulo' => ['referencia'],
+                    default => [],
+                };
+                $model = new CaracteristicaStoreFakeScopeModel($keys);
+                $this->models[] = $model;
+
+                return $model;
+            }
+
+            protected function catalog_value_id(int $idCaracteristica, string $valor): ?int
+            {
+                return $valor === '1' ? 1 : 2;
+            }
+        };
+    }
+
+    /**
+     * Store whose `definitions()` delegates to the real resolver, so the CAR-20
+     * filter decides whether a codigo is writable.
+     *
+     * @param array<int, array<string, mixed>> $definitions
+     * @param array<int, string>               $enabledPlugins
+     */
+    private function buildFilteringStore(array $definitions, array $enabledPlugins): object
+    {
+        $models = &$this->models;
+
+        return new class($definitions, $enabledPlugins, $models) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore {
+            /** @param array<int, string> $enabledPlugins */
+            public function __construct(
+                private array $defs,
+                private array $enabledPlugins,
+                private array &$models
+            ) {
+            }
+
+            protected function definitions(): array
+            {
+                $defs = $this->defs;
+                $enabled = $this->enabledPlugins;
+
+                $resolver = new class($defs, $enabled) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver {
+                    /** @param array<int, string> $enabledPlugins */
+                    public function __construct(private array $defs, private array $enabledPlugins)
+                    {
+                    }
+
+                    protected function definition_model()
+                    {
+                        return new CaracteristicaStoreFakeDefinitionModel($this->defs);
+                    }
+
+                    protected function ownership()
+                    {
+                        $enabled = $this->enabledPlugins;
+
+                        return new class($enabled) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaOwnership {
+                            /** @param array<int, string> $enabled */
+                            public function __construct(private array $enabled)
+                            {
+                            }
+
+                            /** @return array<int, string> */
+                            protected function enabled_plugins(): array
+                            {
+                                return $this->enabled;
+                            }
+                        };
+                    }
+                };
+
+                return $resolver->definitions();
             }
 
             protected function scope_model(string $scope)
@@ -175,6 +281,37 @@ final class CaracteristicaValorStoreTest extends TestCase
 
         $this->assertFalse($store->assign_bool('articulo', 'T2', ['referencia' => 'REF-1'], 'desconocida', true));
         $this->assertSame([], $this->models, 'an unknown codigo writes nothing');
+    }
+
+    // =====================================================================
+    // CAR-20 (b) — owner-disabled codigo is refused; re-enable restores
+    // =====================================================================
+
+    public function test_owner_disabled_codigo_writes_nothing_and_re_enabling_restores_the_write(): void
+    {
+        $definitions = [
+            ['id' => 10, 'codigo' => 'en_catalogo', 'tipo' => 'bool', 'activo' => true, 'origen' => 'tarifario'],
+        ];
+
+        // Inert period: the owning plugin is disabled, so the codigo is absent.
+        $inert = $this->buildFilteringStore($definitions, []);
+        $this->assertFalse(
+            $inert->assign_bool('articulo', 'T2', ['referencia' => 'REF-1'], 'en_catalogo', true)
+        );
+        $this->assertFalse(
+            $inert->assign_custom('articulo', 'T2', ['referencia' => 'REF-1'], 'en_catalogo', 'XL')
+        );
+        $this->assertFalse($inert->clear('articulo', 'T2', ['referencia' => 'REF-1'], 'en_catalogo'));
+        $this->assertSame([], $this->models, 'an inert codigo must create zero scope models');
+
+        // Re-enable: a fresh store instance restores the write path.
+        $active = $this->buildFilteringStore($definitions, ['tarifario']);
+        $this->assertTrue(
+            $active->assign_bool('articulo', 'T2', ['referencia' => 'REF-1'], 'en_catalogo', true)
+        );
+        $this->assertCount(1, $this->models, 'the re-enabled write creates its scope model');
+        $this->assertCount(1, $this->models[0]->saved, 'exactly one row is written after re-enable');
+        $this->assertSame(1, $this->models[0]->saved[0]['id_valor']);
     }
 
     // =====================================================================

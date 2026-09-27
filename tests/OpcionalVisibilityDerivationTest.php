@@ -57,32 +57,60 @@ final class OpcionalVisibilityDerivationTest extends TestCase
 
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/base/fs_core_log.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
         self::$baseLoaded = true;
     }
 
-    private function buildResolver(OpcionalVisibilitySpyDb $db): object
-    {
+    /**
+     * @param array<int, string> $enabledPlugins enabled set for the ownership seam
+     */
+    private function buildResolver(
+        OpcionalVisibilitySpyDb $db,
+        string $definitionOrigen = '',
+        array $enabledPlugins = []
+    ): object {
         $rows = &$this->rows;
         $familias = &$this->familias;
         $catalog = &$this->catalog;
         $articuloFamilias = &$this->articuloFamilias;
 
-        return new class($db, $rows, $familias, $catalog, $articuloFamilias) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver {
+        return new class($db, $rows, $familias, $catalog, $articuloFamilias, $definitionOrigen, $enabledPlugins) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver {
             private const CARACTERISTICA_ID = 20;
 
+            /** @param array<int, string> $enabledPlugins */
             public function __construct(
                 private OpcionalVisibilitySpyDb $spy,
                 private array &$rows,
                 private array &$familias,
                 private array &$catalog,
-                private array &$articuloFamilias
+                private array &$articuloFamilias,
+                private string $definitionOrigen,
+                private array $enabledPlugins
             ) {
             }
 
             protected function db()
             {
                 return $this->spy;
+            }
+
+            protected function ownership()
+            {
+                $enabled = $this->enabledPlugins;
+
+                return new class($enabled) extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaOwnership {
+                    /** @param array<int, string> $enabled */
+                    public function __construct(private array $enabled)
+                    {
+                    }
+
+                    /** @return array<int, string> */
+                    protected function enabled_plugins(): array
+                    {
+                        return $this->enabled;
+                    }
+                };
             }
 
             protected function definition_model()
@@ -93,6 +121,7 @@ final class OpcionalVisibilityDerivationTest extends TestCase
                     'nombre' => 'En Catalogo',
                     'tipo' => 'bool',
                     'activo' => true,
+                    'origen' => $this->definitionOrigen,
                     'valor_defecto' => null,
                 ]]);
             }
@@ -225,6 +254,39 @@ final class OpcionalVisibilityDerivationTest extends TestCase
         $this->assertNull(
             $resolver->resolve_opcional_visibility(7, 'T9', 'en_catalogo'),
             'no global row means "no value", never FALSE'
+        );
+    }
+
+    // =====================================================================
+    // CAR-20 / CAR-12 — owner-disabled visibility definitions
+    // =====================================================================
+
+    public function test_owner_disabled_visibility_definition_resolves_not_visible_without_writes(): void
+    {
+        $db = new OpcionalVisibilitySpyDb(articles: [7 => ['REF-1']]);
+        $parentRows = [
+            'articulo' => ['T1' => ['REF-1' => [self::CARACTERISTICA_ID => $this->boolRow(true)]]],
+        ];
+        $this->rows = $parentRows;
+
+        // The visibility definition is owned by 'tarifario', which is disabled.
+        $inert = $this->buildResolver($db, 'tarifario', []);
+        $this->assertNull(
+            $inert->resolve_opcional_visibility(7, 'T1', 'en_catalogo'),
+            'an inert visibility definition resolves "not visible" through the no-value contract'
+        );
+        $this->assertNull(
+            $inert->resolve_opcional_visibility(7, 'T3', 'en_catalogo'),
+            'every tarifa resolves the same way while the owner is disabled'
+        );
+
+        $this->assertSame($parentRows, $this->rows, 'resolving must not write a value row');
+
+        // Re-enabling the owner restores the derivation on a fresh instance.
+        $enabled = $this->buildResolver($db, 'tarifario', ['tarifario']);
+        $this->assertTrue(
+            $enabled->resolve_opcional_visibility(7, 'T1', 'en_catalogo'),
+            're-enabling the owner makes the parent-driven visibility effective again'
         );
     }
 
