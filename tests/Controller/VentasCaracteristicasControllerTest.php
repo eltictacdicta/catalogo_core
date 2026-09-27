@@ -292,6 +292,242 @@ final class VentasCaracteristicasControllerTest extends TestCase
         $this->assertSame(1, $store->calls[0]['args'][4]);
     }
 
+    // =====================================================================
+    // CAR-18 — owner-disabled definitions: listing hidden + actions refused
+    // =====================================================================
+
+    public function test_inert_definitions_are_absent_from_the_panel_listing(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        $controller = $this->panelController(new PanelFixtureDefinitionModel(
+            $recorder,
+            $this->fixtureDefinitions($recorder)
+        ));
+        $controller->exposeLoadDefiniciones();
+
+        $this->assertSame(
+            ['medidas'],
+            array_map(static fn ($def): string => (string) $def->codigo, $controller->definiciones),
+            'an owner-disabled definition must not appear in the panel listing'
+        );
+    }
+
+    public function test_operator_owned_definition_stays_listed_and_writable(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        $controller = $this->panelController(new PanelFixtureDefinitionModel(
+            $recorder,
+            $this->fixtureDefinitions($recorder)
+        ));
+        $controller->exposeLoadDefiniciones();
+
+        $this->assertSame(
+            ['medidas'],
+            array_map(static fn ($def): string => (string) $def->codigo, $controller->definiciones)
+        );
+
+        $controller->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', [
+            'codigo' => 'medidas',
+            'nombre' => 'Medidas',
+            'tipo' => 'string',
+        ]);
+        $controller->exposeDispatch('save_definition');
+
+        $this->assertSame(1, $recorder->saves, 'an operator-owned definition must stay writable');
+    }
+
+    public function test_save_definition_refuses_an_inert_target_and_persists_nothing(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        $controller = $this->panelController(new PanelFixtureDefinitionModel(
+            $recorder,
+            $this->fixtureDefinitions($recorder)
+        ));
+        $controller->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', [
+            'codigo' => 'en_catalogo',
+            'nombre' => 'Mutated',
+            'tipo' => 'bool',
+        ]);
+        $controller->exposeDispatch('save_definition');
+
+        $this->assertSame(0, $recorder->saves, 'an inert definition must not be saved');
+        $this->assertNotSame('', $controller->lastError, 'the refusal must be reported');
+    }
+
+    public function test_toggle_flag_refuses_an_inert_target_and_persists_nothing(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        $controller = $this->panelController(new PanelFixtureDefinitionModel(
+            $recorder,
+            $this->fixtureDefinitions($recorder)
+        ));
+        $controller->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', [
+            'codigo' => 'en_catalogo',
+            'field' => 'activo',
+        ]);
+        $controller->exposeDispatch('toggle_flag');
+
+        $this->assertSame(0, $recorder->saves, 'an inert definition flag must not be saved');
+        $this->assertNotSame('', $controller->lastError, 'the refusal must be reported');
+    }
+
+    public function test_delete_definition_refuses_an_inert_target_and_persists_nothing(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        // The inert row is made deletable on purpose: the guard must refuse it
+        // before the permission/deletability checks, not because of them.
+        $controller = $this->panelController(new PanelFixtureDefinitionModel(
+            $recorder,
+            $this->fixtureDefinitions($recorder, true)
+        ));
+        $controller->allow_delete = true;
+        $controller->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', [
+            'codigo' => 'en_catalogo',
+        ]);
+        $controller->exposeDispatch('delete_definition');
+
+        $this->assertSame(0, $recorder->deletes, 'an inert definition must not be deleted');
+        $this->assertNotSame('', $controller->lastError, 'the refusal must be reported');
+    }
+
+    public function test_save_catalogo_valor_refuses_an_inert_target_and_persists_nothing(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        $definitions = new PanelFixtureDefinitionModel($recorder, $this->fixtureDefinitions($recorder));
+        $controller = $this->panelController($definitions, new PanelFixtureValorModel($recorder));
+        $controller->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', [
+            'id_caracteristica' => '20',
+            'valor' => 'X',
+        ]);
+        $controller->exposeDispatch('save_catalogo_valor');
+
+        $this->assertSame(0, $recorder->saves, 'a value of an inert definition must not be saved');
+        $this->assertNotSame('', $controller->lastError, 'the refusal must be reported');
+
+        // The `codigo` fallback resolves the same target and must be refused too.
+        $recorder2 = new PanelPersistenceRecorder();
+        $definitions2 = new PanelFixtureDefinitionModel($recorder2, $this->fixtureDefinitions($recorder2));
+        $controller2 = $this->panelController($definitions2, new PanelFixtureValorModel($recorder2));
+        $controller2->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', [
+            'codigo' => 'en_catalogo',
+            'valor' => 'X',
+        ]);
+        $controller2->exposeDispatch('save_catalogo_valor');
+
+        $this->assertSame(0, $recorder2->saves, 'the codigo fallback must resolve and refuse the inert target');
+        $this->assertNotSame('', $controller2->lastError);
+    }
+
+    public function test_delete_catalogo_valor_refuses_an_inert_target_and_persists_nothing(): void
+    {
+        require_once FS_FOLDER . '/src/Controller/PageController.php';
+        require_once FS_FOLDER . '/' . self::CONTROLLER;
+
+        $recorder = new PanelPersistenceRecorder();
+        $definitions = new PanelFixtureDefinitionModel($recorder, $this->fixtureDefinitions($recorder));
+        $valorModel = new PanelFixtureValorModel($recorder, [
+            new PanelFixtureValor(['id' => 1, 'id_caracteristica' => 20, 'valor' => 'X'], $recorder),
+        ]);
+
+        $controller = $this->panelController($definitions, $valorModel);
+        $controller->allow_delete = true;
+        $controller->request = Request::create('/index.php?page=ventas_caracteristicas', 'POST', ['id' => '1']);
+        $controller->exposeDispatch('delete_catalogo_valor');
+
+        $this->assertSame(0, $recorder->deletes, 'a value of an inert definition must not be deleted');
+        $this->assertNotSame('', $controller->lastError, 'the refusal must be reported');
+    }
+
+    /**
+     * @return list<PanelFixtureDefinition>
+     */
+    private function fixtureDefinitions(PanelPersistenceRecorder $recorder, ?bool $inertDeletable = null): array
+    {
+        return [
+            new PanelFixtureDefinition(
+                ['id' => 10, 'codigo' => 'medidas', 'nombre' => 'Medidas', 'tipo' => 'string', 'origen' => ''],
+                $recorder
+            ),
+            new PanelFixtureDefinition(
+                ['id' => 20, 'codigo' => 'en_catalogo', 'nombre' => 'En Catálogo', 'tipo' => 'bool', 'origen' => 'tarifario'],
+                $recorder,
+                $inertDeletable
+            ),
+        ];
+    }
+
+    private function panelController(
+        object $definitionModel,
+        ?object $valorModel = null
+    ): object {
+        return new class($definitionModel, $valorModel) extends \FSFramework\Plugins\catalogo_core\Controller\VentasCaracteristicas {
+            public string $lastError = '';
+
+            public function __construct(
+                private object $definitionModel,
+                private ?object $valorModel
+            ) {
+            }
+
+            public function exposeDispatch(string $action): void
+            {
+                $this->dispatch_action($action);
+            }
+
+            public function exposeLoadDefiniciones(): void
+            {
+                $this->load_definiciones();
+            }
+
+            protected function caracteristica_model()
+            {
+                return $this->definitionModel;
+            }
+
+            protected function valor_model()
+            {
+                return $this->valorModel ?? new PanelFixtureValorModel(new PanelPersistenceRecorder());
+            }
+
+            protected function validateFormToken(): bool
+            {
+                return true;
+            }
+
+            protected function puede_gestionar(string $action, string $codigo, string $codtarifa = ''): bool
+            {
+                return true;
+            }
+
+            public function new_message(string $msg): void
+            {
+            }
+
+            public function new_error_msg(string $msg): void
+            {
+                $this->lastError = $msg;
+            }
+        };
+    }
+
     private function assignmentController(PanelSpyValorStore $store, bool $csrf, bool $allowed): object
     {
         return new class($store, $csrf, $allowed) extends \FSFramework\Plugins\catalogo_core\Controller\VentasCaracteristicas {
@@ -434,5 +670,229 @@ final class PanelSpyCaracteristica
         $this->deleted = true;
 
         return true;
+    }
+}
+
+/**
+ * Shared write counter for the panel fixtures: any definition or value save /
+ * delete routes through it, so a test can assert that nothing persisted.
+ */
+final class PanelPersistenceRecorder
+{
+    public int $saves = 0;
+
+    public int $deletes = 0;
+}
+
+/**
+ * Definition entity double with the public shape the panel mutates.
+ */
+final class PanelFixtureDefinition
+{
+    public $id;
+
+    public $codigo;
+
+    public $nombre;
+
+    public $tipo;
+
+    public $activo = true;
+
+    public $importable = false;
+
+    public $exportable = false;
+
+    public $listable = false;
+
+    public $orden = 0;
+
+    public $origen = '';
+
+    public $valor_defecto = null;
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function __construct(
+        array $data,
+        private PanelPersistenceRecorder $recorder,
+        private ?bool $deletable = null
+    ) {
+        $this->id = $data['id'] ?? null;
+        $this->codigo = $data['codigo'] ?? null;
+        $this->nombre = $data['nombre'] ?? null;
+        $this->tipo = $data['tipo'] ?? null;
+        $this->activo = $data['activo'] ?? true;
+        $this->importable = $data['importable'] ?? false;
+        $this->exportable = $data['exportable'] ?? false;
+        $this->listable = $data['listable'] ?? false;
+        $this->orden = $data['orden'] ?? 0;
+        $this->origen = (string) ($data['origen'] ?? '');
+        $this->valor_defecto = $data['valor_defecto'] ?? null;
+    }
+
+    public function is_deletable(): bool
+    {
+        return $this->deletable ?? (trim((string) $this->origen) === '');
+    }
+
+    public function save(): bool
+    {
+        $this->recorder->saves++;
+
+        return true;
+    }
+
+    public function delete(): bool
+    {
+        $this->recorder->deletes++;
+
+        return true;
+    }
+}
+
+/**
+ * Definition-model double: repository for `get`, `get_by_id` and `all`, and the
+ * blank entity the panel mutates for a new definition.
+ */
+final class PanelFixtureDefinitionModel
+{
+    /** @var array<string, PanelFixtureDefinition> */
+    private array $byCode = [];
+
+    /** @var array<int, PanelFixtureDefinition> */
+    private array $byId = [];
+
+    /**
+     * @param list<PanelFixtureDefinition> $definitions
+     */
+    public function __construct(
+        private PanelPersistenceRecorder $recorder,
+        private array $definitions = []
+    ) {
+        foreach ($definitions as $definition) {
+            if ($definition->codigo !== null) {
+                $this->byCode[(string) $definition->codigo] = $definition;
+            }
+            if ($definition->id !== null) {
+                $this->byId[(int) $definition->id] = $definition;
+            }
+        }
+    }
+
+    public function get($codigo)
+    {
+        return $this->byCode[(string) $codigo] ?? false;
+    }
+
+    public function get_by_id($id)
+    {
+        return $this->byId[(int) $id] ?? false;
+    }
+
+    public function all($onlyActive = false)
+    {
+        return array_values($this->definitions);
+    }
+
+    public function is_deletable(): bool
+    {
+        return true;
+    }
+
+    public function save(): bool
+    {
+        $this->recorder->saves++;
+
+        return true;
+    }
+
+    public function delete(): bool
+    {
+        $this->recorder->deletes++;
+
+        return true;
+    }
+}
+
+/**
+ * Predefined-value entity double.
+ */
+final class PanelFixtureValor
+{
+    public $id;
+
+    public $id_caracteristica;
+
+    public $valor;
+
+    public $orden = 0;
+
+    public $activo = true;
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function __construct(array $data, private PanelPersistenceRecorder $recorder)
+    {
+        $this->id = $data['id'] ?? null;
+        $this->id_caracteristica = $data['id_caracteristica'] ?? null;
+        $this->valor = $data['valor'] ?? '';
+        $this->orden = $data['orden'] ?? 0;
+        $this->activo = $data['activo'] ?? true;
+    }
+
+    public function delete(): bool
+    {
+        $this->recorder->deletes++;
+
+        return true;
+    }
+}
+
+/**
+ * Predefined-value-model double: repository for `get` plus the blank entity the
+ * panel mutates for a new value.
+ */
+final class PanelFixtureValorModel
+{
+    /** @var array<int, PanelFixtureValor> */
+    private array $byId = [];
+
+    /**
+     * @param list<PanelFixtureValor> $values
+     */
+    public function __construct(
+        private PanelPersistenceRecorder $recorder,
+        array $values = []
+    ) {
+        foreach ($values as $value) {
+            $this->byId[(int) $value->id] = $value;
+        }
+    }
+
+    public function get($id)
+    {
+        return $this->byId[(int) $id] ?? false;
+    }
+
+    public function save(): bool
+    {
+        $this->recorder->saves++;
+
+        return true;
+    }
+
+    public function delete(): bool
+    {
+        $this->recorder->deletes++;
+
+        return true;
+    }
+
+    public function all_from_caracteristica($idCaracteristica)
+    {
+        return [];
     }
 }

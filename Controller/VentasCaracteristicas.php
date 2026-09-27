@@ -22,6 +22,7 @@ namespace FSFramework\Plugins\catalogo_core\Controller;
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_caracteristica.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_caracteristica_valor.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Event/CaracteristicaPermissionFilterEvent.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorStore.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
@@ -30,6 +31,7 @@ require_once FS_FOLDER . '/src/Controller/PageController.php';
 use FSFramework\Controller\PageController;
 use FSFramework\Event\FSEventDispatcher;
 use FSFramework\Plugins\catalogo_core\Event\CaracteristicaPermissionFilterEvent;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaOwnership;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 
 /**
@@ -119,7 +121,14 @@ class VentasCaracteristicas extends PageController
 
     protected function load_definiciones(): void
     {
-        $this->definiciones = (array) $this->caracteristica_model()->all();
+        $definiciones = (array) $this->caracteristica_model()->all();
+
+        // CAR-20 (D4): an owner-disabled definition is inert and must not be
+        // listed. The view stays a pure renderer of this filtered list.
+        $this->definiciones = array_values(array_filter(
+            $definiciones,
+            fn ($def): bool => $this->ownership()->is_active((string) ($def->origen ?? ''))
+        ));
     }
 
     protected function load_valores_seleccionados(): void
@@ -154,6 +163,11 @@ class VentasCaracteristicas extends PageController
         $codigo = trim((string) $this->request->request->get('codigo', ''));
 
         $existing = $codigo !== '' ? $this->caracteristica_model()->get($codigo) : false;
+        if ($existing && $this->definition_is_inert($existing)) {
+            $this->new_error_msg('No se puede modificar una característica registrada por un plugin desactivado.');
+            return;
+        }
+
         $definition = $existing ?: $this->caracteristica_model();
 
         $tipo = (string) $this->request->request->get('tipo', $definition->tipo ?? 'string');
@@ -204,6 +218,11 @@ class VentasCaracteristicas extends PageController
             return;
         }
 
+        if ($this->definition_is_inert($definition)) {
+            $this->new_error_msg('No se puede eliminar una característica registrada por un plugin desactivado.');
+            return;
+        }
+
         if (!$this->puede_gestionar(
             CaracteristicaPermissionFilterEvent::ACTION_DELETE_DEFINITION,
             $codigo
@@ -247,6 +266,11 @@ class VentasCaracteristicas extends PageController
             return;
         }
 
+        if ($this->definition_is_inert($definition)) {
+            $this->new_error_msg('No se puede modificar una característica registrada por un plugin desactivado.');
+            return;
+        }
+
         $definition->{$field} = !$definition->{$field};
 
         if ($definition->save()) {
@@ -270,11 +294,22 @@ class VentasCaracteristicas extends PageController
 
         $valor = $this->valor_model();
         $idCaracteristica = (int) $this->request->request->get('id_caracteristica', 0);
+        $definition = false;
         if ($idCaracteristica <= 0) {
             $codigo = (string) $this->request->request->get('codigo', '');
             $definition = $codigo !== '' ? $this->caracteristica_model()->get($codigo) : false;
             $idCaracteristica = $definition && $definition->id !== null ? (int) $definition->id : 0;
+        } else {
+            // Resolve the target so an owner-disabled definition can be refused
+            // before the value is persisted.
+            $definition = $this->caracteristica_model()->get_by_id($idCaracteristica);
         }
+
+        if ($definition && $this->definition_is_inert($definition)) {
+            $this->new_error_msg('No se puede modificar una característica registrada por un plugin desactivado.');
+            return;
+        }
+
         $valor->id_caracteristica = $idCaracteristica;
         $valor->valor = (string) $this->request->request->get('valor', '');
         $valor->orden = (int) $this->request->request->get('orden', 0);
@@ -303,6 +338,13 @@ class VentasCaracteristicas extends PageController
         $valor = $this->valor_model()->get($id);
         if (!$valor) {
             $this->new_error_msg('Valor no encontrado.');
+            return;
+        }
+
+        $idCaracteristica = (int) ($valor->id_caracteristica ?? 0);
+        $definition = $idCaracteristica > 0 ? $this->caracteristica_model()->get_by_id($idCaracteristica) : false;
+        if ($definition && $this->definition_is_inert($definition)) {
+            $this->new_error_msg('No se puede eliminar un valor de una característica registrada por un plugin desactivado.');
             return;
         }
 
@@ -479,5 +521,27 @@ class VentasCaracteristicas extends PageController
     protected function valor_store()
     {
         return new \FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore();
+    }
+
+    /**
+     * CAR-20 ownership predicate seam (tests inject a helper with a controlled
+     * enabled set).
+     *
+     * @return CaracteristicaOwnership
+     */
+    protected function ownership()
+    {
+        return new CaracteristicaOwnership();
+    }
+
+    /**
+     * CAR-20 (D6): a definition whose non-empty `origen` names a disabled plugin
+     * is inert; every direct mutating action must refuse it.
+     *
+     * @param object $definition
+     */
+    private function definition_is_inert($definition): bool
+    {
+        return !$this->ownership()->is_active((string) ($definition->origen ?? ''));
     }
 }
