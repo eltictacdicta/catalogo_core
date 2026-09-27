@@ -68,10 +68,15 @@ final class BackfillFakeDb extends \fs_db2
             return in_array($m[2], $this->columns[$m[1]] ?? [], true) ? [['Field' => $m[2]]] : [];
         }
 
-        if (preg_match("/^SELECT id FROM catalogo_caracteristicas WHERE codigo = '(.+?)' LIMIT 1;?$/i", $sql, $m)) {
+        // Tolerates both the legacy `SELECT id` and the CAR-20-aware
+        // `SELECT id, origen` shapes so the fixture stays valid across the fix.
+        if (preg_match("/^SELECT id(?:, origen)? FROM catalogo_caracteristicas WHERE codigo = '(.+?)' LIMIT 1;?$/i", $sql, $m)) {
             foreach ($this->tables['catalogo_caracteristicas'] ?? [] as $row) {
                 if ((string) $row['codigo'] === $m[1]) {
-                    return [['id' => (int) $row['id']]];
+                    return [[
+                        'id' => (int) $row['id'],
+                        'origen' => (string) ($row['origen'] ?? ''),
+                    ]];
                 }
             }
 
@@ -336,8 +341,8 @@ final class CaracteristicaBackfillTest extends TestCase
     {
         return [
             'catalogo_caracteristicas' => [
-                ['id' => 10, 'codigo' => 'en_catalogo'],
-                ['id' => 11, 'codigo' => 'en_tarifa'],
+                ['id' => 10, 'codigo' => 'en_catalogo', 'origen' => ''],
+                ['id' => 11, 'codigo' => 'en_tarifa', 'origen' => ''],
             ],
             'catalogo_caracteristica_valores' => [
                 ['id' => 101, 'id_caracteristica' => 10, 'valor' => '1'],
@@ -507,6 +512,108 @@ final class CaracteristicaBackfillTest extends TestCase
         $this->assertSame([], $this->executes($db), 'a missing definition must short-circuit the whole backfill');
     }
 
+    // =====================================================================
+    // CAR-20 — an inert definition must not be written (W1)
+    // =====================================================================
+
+    /**
+     * The migration runs on every boot while the definitions and their legacy
+     * values persist, so a disabled owner leaves them inert without the boot
+     * short-circuiting. It must therefore skip inert definitions before any
+     * INSERT and resume normally once the owner is enabled, with no write
+     * having occurred during the inert period.
+     */
+    public function test_inert_definition_is_not_written_and_re_enabling_backfills_normally(): void
+    {
+        $tables = $this->baseTables();
+        $tables['catalogo_caracteristicas'] = [
+            ['id' => 10, 'codigo' => 'en_catalogo', 'origen' => 'tarifario'],
+            ['id' => 11, 'codigo' => 'en_tarifa', 'origen' => 'tarifario'],
+        ];
+        $tables['tarif_articulo_precios'] = [
+            ['referencia' => 'A1', 'codtarifa' => 'T1', 'en_catalogo' => 1, 'en_tarifa' => 1],
+        ];
+
+        $this->withEnabledPlugins([], function () use ($tables): void {
+            $inertDb = $this->newDb($tables);
+            CaracteristicaBackfillMigration::migrateIfNeeded($inertDb);
+
+            $this->assertSame(
+                [],
+                $this->executes($inertDb),
+                'no INSERT may be emitted for an inert definition'
+            );
+            $this->assertSame(
+                [],
+                $inertDb->tables['catalogo_caracteristica_articulo'],
+                'no feature value row may be written during the inert period'
+            );
+        });
+
+        $this->withEnabledPlugins(['tarifario'], function () use ($tables): void {
+            $enabledDb = $this->newDb($tables);
+            CaracteristicaBackfillMigration::migrateIfNeeded($enabledDb);
+
+            $this->assertNotSame(
+                [],
+                $this->executes($enabledDb),
+                'the definition must backfill normally once its owner is enabled'
+            );
+            $this->assertSame(
+                101,
+                $this->valueFor($enabledDb->tables['catalogo_caracteristica_articulo'], 'A1', 'T1', 10),
+                'the re-enabled owner backfills from the untouched legacy row'
+            );
+        });
+    }
+
+    public function test_operator_owned_definition_backfills_with_an_empty_registry(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_articulo_precios'] = [
+            ['referencia' => 'A1', 'codtarifa' => 'T1', 'en_catalogo' => 1, 'en_tarifa' => 0],
+        ];
+
+        $this->withEnabledPlugins([], function () use ($tables): void {
+            $db = $this->newDb($tables);
+            CaracteristicaBackfillMigration::migrateIfNeeded($db);
+
+            $this->assertSame(
+                101,
+                $this->valueFor($db->tables['catalogo_caracteristica_articulo'], 'A1', 'T1', 10),
+                'an operator-owned definition (origen = "") stays active with an empty registry'
+            );
+        });
+    }
+
+    public function test_only_the_inert_definition_is_skipped(): void
+    {
+        $tables = $this->baseTables();
+        $tables['catalogo_caracteristicas'] = [
+            ['id' => 10, 'codigo' => 'en_catalogo', 'origen' => ''],
+            ['id' => 11, 'codigo' => 'en_tarifa', 'origen' => 'tarifario'],
+        ];
+        $tables['tarif_articulo_precios'] = [
+            ['referencia' => 'A1', 'codtarifa' => 'T1', 'en_catalogo' => 1, 'en_tarifa' => 1],
+        ];
+
+        $this->withEnabledPlugins([], function () use ($tables): void {
+            $db = $this->newDb($tables);
+            CaracteristicaBackfillMigration::migrateIfNeeded($db);
+
+            $rows = $db->tables['catalogo_caracteristica_articulo'];
+            $this->assertSame(
+                101,
+                $this->valueFor($rows, 'A1', 'T1', 10),
+                'the operator-owned definition still backfills'
+            );
+            $this->assertNull(
+                $this->valueFor($rows, 'A1', 'T1', 11),
+                'the inert definition writes nothing'
+            );
+        });
+    }
+
     public function test_init_wires_the_backfill_into_init_and_upgrade(): void
     {
         $src = (string) file_get_contents(FS_FOLDER . '/' . self::INIT);
@@ -521,6 +628,29 @@ final class CaracteristicaBackfillTest extends TestCase
             $src,
             'Init must require the backfill service'
         );
+    }
+
+    /**
+     * Runs `$run` with a controlled framework enabled-plugin registry and
+     * restores the previous value afterwards (the registry is read by the real
+     * `CaracteristicaOwnership`).
+     *
+     * @param list<string> $plugins
+     */
+    private function withEnabledPlugins(array $plugins, callable $run): void
+    {
+        $previous = $GLOBALS['plugins'] ?? null;
+
+        try {
+            $GLOBALS['plugins'] = $plugins;
+            $run();
+        } finally {
+            if ($previous === null) {
+                unset($GLOBALS['plugins']);
+            } else {
+                $GLOBALS['plugins'] = $previous;
+            }
+        }
     }
 
     /**

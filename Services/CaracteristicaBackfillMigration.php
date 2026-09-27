@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core\Services;
 
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
+
 /**
  * Idempotent supersession backfill (CAR-13).
  *
@@ -25,6 +27,12 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  * again from tarifario's boot once its definitions exist. It short-circuits
  * when either definition (or its `'1'`/`'0'` catalog value) is absent, so the
  * cold-boot order cannot corrupt anything.
+ *
+ * CAR-20: it runs on every boot while the definitions and their legacy values
+ * persist, so a disabled owner leaves them inert **without** the boot
+ * short-circuiting. Such a definition is skipped before any `INSERT` — the
+ * inert period stays write-free, and enabling the owner again lets a later run
+ * backfill normally (additive-only, never destructive).
  *
  * `tarif_familia_ext` is a retired read-only surface without visibility
  * columns (design §8.6 divergence 1): its clause is introspection-guarded and
@@ -338,36 +346,66 @@ final class CaracteristicaBackfillMigration
      * Returns null when either definition (or a value) is absent, so the
      * whole backfill short-circuits until tarifario registers them.
      *
+     * CAR-20: a definition whose non-empty `origen` names a plugin that is not
+     * enabled is inert and is skipped (never contributed to `$flags`), so no
+     * `INSERT` is attempted for it while its owner is disabled. The enabled set
+     * is request-stable (D9), so one helper instance serves the whole run.
+     *
      * @return list<array{codigo: string, id: int, one: int, zero: int}>|null
      */
     private static function flag_definitions(\fs_db2 $db): ?array
     {
         $flags = [];
         foreach (self::FLAG_CODIGOS as $codigo) {
-            $id = self::definition_id($db, $codigo);
-            if ($id === null) {
+            $definition = self::definition_row($db, $codigo);
+            if ($definition === null) {
                 return null;
             }
 
-            $one = self::catalog_value_id($db, $id, '1');
-            $zero = self::catalog_value_id($db, $id, '0');
+            if (!self::ownership()->is_active($definition['origen'])) {
+                continue;
+            }
+
+            $one = self::catalog_value_id($db, $definition['id'], '1');
+            $zero = self::catalog_value_id($db, $definition['id'], '0');
             if ($one === null || $zero === null) {
                 return null;
             }
 
-            $flags[] = ['codigo' => $codigo, 'id' => $id, 'one' => $one, 'zero' => $zero];
+            $flags[] = ['codigo' => $codigo, 'id' => $definition['id'], 'one' => $one, 'zero' => $zero];
         }
 
         return $flags;
     }
 
-    private static function definition_id(\fs_db2 $db, string $codigo): ?int
+    /**
+     * Enabled-plugin ownership seam (CAR-20, D1). Reads only the row's
+     * `origen` and the framework registry — no plugin name is hardcoded.
+     */
+    private static function ownership(): CaracteristicaOwnership
+    {
+        return new CaracteristicaOwnership();
+    }
+
+    /**
+     * Resolves one definition row (id + owning-plugin `origen`) by codigo.
+     *
+     * @return array{id: int, origen: string}|null
+     */
+    private static function definition_row(\fs_db2 $db, string $codigo): ?array
     {
         $data = (array) $db->select(
-            'SELECT id FROM catalogo_caracteristicas WHERE codigo = ' . self::quote($codigo) . ' LIMIT 1;'
+            'SELECT id, origen FROM catalogo_caracteristicas WHERE codigo = ' . self::quote($codigo) . ' LIMIT 1;'
         );
 
-        return $data === [] ? null : (int) $data[0]['id'];
+        if ($data === []) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $data[0]['id'],
+            'origen' => (string) ($data[0]['origen'] ?? ''),
+        ];
     }
 
     private static function catalog_value_id(\fs_db2 $db, int $idCaracteristica, string $valor): ?int
