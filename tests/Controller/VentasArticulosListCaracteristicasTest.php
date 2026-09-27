@@ -13,6 +13,7 @@ use PHPUnit\Framework\TestCase;
 require_once FS_FOLDER . '/base/fs_model.php';
 require_once FS_FOLDER . '/base/fs_core_log.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloTarifaPrecioBatchReader.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorBatchReader.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/extras/VentasArticulosListTrait.php';
 
@@ -97,9 +98,54 @@ final class VentasArticulosListCaracteristicasTest extends TestCase
         self::$baseLoaded = true;
     }
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // CAR-20 fail-closed default: no plugin is enabled unless a test says so.
+        global $plugins;
+        $plugins = [];
+    }
+
     private function host(): ListCaracteristicasHost
     {
         return new ListCaracteristicasHost();
+    }
+
+    /**
+     * Operator-created row (`origen = ''`): always active.
+     *
+     * @return array<string, mixed>
+     */
+    private static function operator_definition_row(): array
+    {
+        return [
+            'id' => 10,
+            'codigo' => 'medidas',
+            'nombre' => 'Medidas',
+            'tipo' => 'string',
+            'orden' => 1,
+            'valor_defecto' => null,
+            'origen' => '',
+        ];
+    }
+
+    /**
+     * Plugin-owned row: inert while its owner is disabled.
+     *
+     * @return array<string, mixed>
+     */
+    private static function inert_definition_row(int $id = 20, string $codigo = 'en_catalogo'): array
+    {
+        return [
+            'id' => $id,
+            'codigo' => $codigo,
+            'nombre' => 'Plugin ' . $codigo,
+            'tipo' => 'bool',
+            'orden' => 2,
+            'valor_defecto' => null,
+            'origen' => 'tarifario',
+        ];
     }
 
     // =====================================================================
@@ -161,6 +207,124 @@ final class VentasArticulosListCaracteristicasTest extends TestCase
             $small->queries,
             $large->queries,
             'the query count must not grow with N'
+        );
+    }
+
+    // =====================================================================
+    // CAR-16 — owner-disabled (inert) definition emits no column
+    // =====================================================================
+
+    public function test_inert_listable_definition_emits_no_column_and_base_headers_stay_intact(): void
+    {
+        $reader = $this->mixedReader(2, [
+            self::operator_definition_row(),
+            self::inert_definition_row(),
+        ]);
+
+        $codigos = array_column($reader->columns(), 'codigo');
+        $this->assertSame(
+            ['medidas'],
+            $codigos,
+            'an owner-disabled listable definition must emit no column'
+        );
+
+        // CAR-16: the base header strings and their relative order stay byte-identical.
+        $view = (string) file_get_contents(FS_FOLDER . '/' . self::VIEW);
+        $theadStart = strpos($view, '<thead>');
+        $theadEnd = strpos($view, '</thead>');
+        $this->assertNotFalse($theadStart);
+        $this->assertNotFalse($theadEnd);
+        $thead = substr($view, (int) $theadStart, (int) $theadEnd - (int) $theadStart);
+
+        $positions = [];
+        foreach (self::BASE_HEADERS as $header) {
+            $pos = strpos($thead, $header);
+            $this->assertNotFalse($pos, 'base header missing from thead: ' . $header);
+            $positions[] = $pos;
+        }
+
+        $sorted = $positions;
+        sort($sorted);
+        $this->assertSame($sorted, $positions, 'base header relative order must not change');
+    }
+
+    public function test_enabling_the_owner_restores_the_listable_column(): void
+    {
+        global $plugins;
+        $plugins = ['tarifario'];
+
+        $reader = $this->mixedReader(2, [
+            self::operator_definition_row(),
+            self::inert_definition_row(),
+        ]);
+
+        $codigos = array_column($reader->columns(), 'codigo');
+        $this->assertSame(
+            ['medidas', 'en_catalogo'],
+            $codigos,
+            'enabling the owner must restore the column on a fresh reader instance'
+        );
+    }
+
+    public function test_feature_query_count_is_constant_across_page_size_and_inert_row_count(): void
+    {
+        $rowsWithOneInert = [
+            self::operator_definition_row(),
+            self::inert_definition_row(),
+        ];
+        $rowsWithManyInert = [
+            self::operator_definition_row(),
+            self::inert_definition_row(20, 'en_catalogo'),
+            self::inert_definition_row(21, 'en_tarifa'),
+            self::inert_definition_row(22, 'otra_caracteristica'),
+            self::inert_definition_row(23, 'otra_mas'),
+        ];
+
+        $small = $this->mixedReader(2, $rowsWithOneInert);
+        $large = $this->mixedReader(10, $rowsWithOneInert);
+        $inertHeavy = $this->mixedReader(2, $rowsWithManyInert);
+
+        $small->for_referencias(['R1', 'R2'], 'T1');
+        $large->for_referencias(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10'], 'T1');
+        $inertHeavy->for_referencias(['R1', 'R2'], 'T1');
+
+        $smallQueries = $small->queryCount();
+        $this->assertGreaterThan(0, $smallQueries, 'the reader must actually query');
+        $this->assertSame($smallQueries, $large->queryCount(), 'the query count must not grow with N');
+        $this->assertSame(
+            $smallQueries,
+            $inertHeavy->queryCount(),
+            'inert rows must be filtered in PHP without adding a query'
+        );
+
+        // `for_referencias()` inherits the same filter as `columns()`.
+        $values = $small->for_referencias(['R1', 'R2'], 'T1');
+        $this->assertSame(['medidas'], array_keys($values['R1']), 'inert codigos must be absent from the value map');
+    }
+
+    public function test_no_tarifa_selected_emits_no_feature_column_for_inert_definitions(): void
+    {
+        $host = $this->host();
+        $host->tarifa_seleccionada = null;
+        $host->reader->cols = [
+            ['codigo' => 'medidas', 'nombre' => 'Medidas', 'tipo' => 'string'],
+            ['codigo' => 'en_catalogo', 'nombre' => 'En Catálogo', 'tipo' => 'bool'],
+        ];
+
+        $this->assertSame(
+            [],
+            $host->listable_caracteristicas(),
+            'no selected tarifa must emit no feature column, even with plugin-owned definitions'
+        );
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $definitionRows
+     */
+    private function mixedReader(int $pageSize, array $definitionRows): ListCaracteristicasMixedDefinitionReader
+    {
+        return new ListCaracteristicasMixedDefinitionReader(
+            new ListCaracteristicasDefinitionRowsDb($pageSize, $definitionRows)
         );
     }
 
@@ -339,5 +503,92 @@ final class ListCaracteristicasQueryCountingReader extends CaracteristicaValorBa
     protected function db()
     {
         return $this->db;
+    }
+}
+
+/**
+ * DB double returning caller-supplied definition rows (mixed active/inert) and
+ * counting every SELECT. The real ownership helper is used through the default
+ * seam, so the CAR-20 filter depends on `$GLOBALS['plugins']`.
+ */
+final class ListCaracteristicasDefinitionRowsDb
+{
+    public int $queries = 0;
+
+    /**
+     * @param array<int, array<string, mixed>> $definitionRows
+     */
+    public function __construct(private int $n, private array $definitionRows)
+    {
+    }
+
+    public function var2str($val)
+    {
+        if (is_array($val)) {
+            return implode(',', array_map(fn ($v) => $this->var2str($v), $val));
+        }
+        if ($val === null) {
+            return 'NULL';
+        }
+        if (is_bool($val)) {
+            return $val ? '1' : '0';
+        }
+        if (is_int($val) || is_float($val)) {
+            return (string) $val;
+        }
+
+        return "'" . addslashes((string) $val) . "'";
+    }
+
+    public function select($sql, $params = [])
+    {
+        $this->queries++;
+        $sql = (string) $sql;
+
+        if (str_contains($sql, 'FROM catalogo_caracteristicas')) {
+            return $this->definitionRows;
+        }
+        if (str_contains($sql, 'FROM catalogo_caracteristica_valores')) {
+            return [['id' => 1, 'id_caracteristica' => 10, 'valor' => '1']];
+        }
+        if (str_contains($sql, 'FROM articulos')) {
+            $rows = [];
+            for ($i = 1; $i <= $this->n; $i++) {
+                $rows[] = ['referencia' => 'R' . $i, 'codfamilia' => 'F1'];
+            }
+
+            return $rows;
+        }
+        if (str_contains($sql, 'FROM familias')) {
+            return [['codfamilia' => 'F1', 'madre' => null]];
+        }
+        if (str_contains($sql, 'FROM catalogo_caracteristica_articulo')) {
+            return [];
+        }
+        if (str_contains($sql, 'FROM catalogo_caracteristica_familia')) {
+            return [];
+        }
+        if (str_contains($sql, 'FROM catalogo_caracteristica_global')) {
+            return [];
+        }
+
+        return [];
+    }
+}
+
+final class ListCaracteristicasMixedDefinitionReader extends CaracteristicaValorBatchReader
+{
+    public function __construct(private ListCaracteristicasDefinitionRowsDb $db)
+    {
+    }
+
+    protected function db()
+    {
+        return $this->db;
+    }
+
+    public function queryCount(): int
+    {
+        return $this->db->queries;
     }
 }

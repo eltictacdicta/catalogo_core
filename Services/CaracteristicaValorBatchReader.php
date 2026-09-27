@@ -20,6 +20,8 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core\Services;
 
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
+
 /**
  * Batched read of the `listable` feature columns for a page (CAR-16).
  *
@@ -118,7 +120,7 @@ class CaracteristicaValorBatchReader
      */
     private function definition_rows(?array $codigos): array
     {
-        $sql = 'SELECT id, codigo, nombre, tipo, orden, valor_defecto FROM catalogo_caracteristicas'
+        $sql = 'SELECT id, codigo, nombre, tipo, orden, valor_defecto, origen FROM catalogo_caracteristicas'
             . ' WHERE activo = TRUE';
         if ($codigos === null) {
             $sql .= ' AND listable = TRUE';
@@ -127,7 +129,15 @@ class CaracteristicaValorBatchReader
         }
         $sql .= ' ORDER BY orden ASC, codigo ASC;';
 
-        return (array) $this->db()->select($sql);
+        $rows = (array) $this->db()->select($sql);
+
+        // CAR-20 (D5): one PHP pass over the single existing fetch. The enabled
+        // set is runtime-only and not expressible in SQL, so inert rows are
+        // dropped here; no per-row query and no extra round-trip is issued.
+        return array_values(array_filter(
+            $rows,
+            fn (array $row): bool => $this->ownership()->is_active((string) ($row['origen'] ?? ''))
+        ));
     }
 
     /**
@@ -326,5 +336,16 @@ class CaracteristicaValorBatchReader
     protected function db()
     {
         return new \fs_db2();
+    }
+
+    /**
+     * CAR-20 ownership predicate seam (tests inject a helper with a controlled
+     * enabled set).
+     *
+     * @return CaracteristicaOwnership
+     */
+    protected function ownership()
+    {
+        return new CaracteristicaOwnership();
     }
 }
