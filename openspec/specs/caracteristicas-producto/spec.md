@@ -180,6 +180,12 @@ The scope walk MUST stop at the first scope that yields a value; a value found a
 `articulo` scope MUST NOT be overridden by a `global` row. A family-scope row on
 a nearer ancestor MUST win over a row on a farther ancestor.
 
+A definition that is inert under CAR-20 MUST resolve to "no value" (`null`)
+through exactly the same contract as a missing definition or an inactive
+(`activo = FALSE`) definition: no new return value, no new error and no write.
+
+(Previously: the precedence rules were unchanged, but the resolution contract did not state that an owner-disabled definition reuses the missing/inactive `null` path.)
+
 #### Scenario: Product scope wins over family and global
 
 - GIVEN a value at articulo scope, a different one at familia scope and a third at global scope
@@ -223,6 +229,14 @@ a nearer ancestor MUST win over a row on a farther ancestor.
 - GIVEN a product with no `codfamilia` and a global-scope value for the tarifa
 - WHEN the effective value is resolved
 - THEN the global value is returned without error
+- Test: `plugins/catalogo_core/tests/CaracteristicaResolverTest.php`
+
+#### Scenario: Owner-disabled definition resolves like a missing or inactive one
+
+- GIVEN a definition whose owning plugin is not enabled, alongside a missing definition and an inactive definition
+- WHEN the effective value is resolved for each for a product and tarifa
+- THEN all three return "no value" (`null`) with no distinct return value and no new error
+- AND no value row is created or modified
 - Test: `plugins/catalogo_core/tests/CaracteristicaResolverTest.php`
 
 ### Requirement: CAR-07 — Reads never persist
@@ -335,9 +349,14 @@ MUST be a targeted idempotent upsert (`INSERT … WHERE NOT EXISTS (codigo = ?)`
 NOT `seed_if_empty()`, and MUST run on **both** fresh installs and existing
 installs (from `init()` and `upgrade()`), seeding the bool predefined pair.
 `origen` MUST persist the registering plugin name. A definition with a non-empty
-`origen` MUST NOT be deletable but MAY be deactivated and reactivated. `tarifario`
+`origen` MUST NOT be deletable but MAY be deactivated and reactivated. A
+definition whose non-empty `origen` names a plugin that is not enabled MUST be
+inert under CAR-20 — hidden, not resolvable and not writable — while remaining
+non-deletable; re-enabling the owning plugin MUST restore it unchanged. `tarifario`
 registration MUST be guarded by `class_exists()` plus a static guard and MUST be
 re-attempted from `upgrade()` so boot order cannot skip it.
+
+(Previously: non-deletability was stated only for registration; the enabled-scope rule linking `origen` to the owner plugin's enabled state was absent.)
 
 #### Scenario: Fresh install registers all three defaults
 
@@ -375,6 +394,14 @@ re-attempted from `upgrade()` so boot order cannot skip it.
 - THEN no fatal occurs and both bool defaults are registered exactly once
 - Test: `plugins/tarifario/tests/CaracteristicaDefaultsRegistrationTest.php`
 
+#### Scenario: A plugin-owned definition is inert while its owner is disabled
+
+- GIVEN a definition whose non-empty `origen` names a plugin that is not enabled
+- WHEN the definition is registered and then read
+- THEN it remains non-deletable and is treated as inert under CAR-20
+- AND enabling the owning plugin makes it active again unchanged
+- Test: `plugins/catalogo_core/tests/CaracteristicaOwnershipTest.php`
+
 ### Requirement: CAR-12 — D12 opcional visibility derivation
 
 Opcionals MUST NOT own `en_catalogo`/`en_tarifa` flags. An opcional's effective
@@ -384,6 +411,13 @@ opcional is attached to several parents, it is visible if **any** parent is
 visible. Parent resolution is: article-attached → that article's effective value
 (article → family → global); family-assigned → that family's effective value
 (family walk with `madre`); unassigned → the global scope value.
+
+When the catalog/tarifa visibility definitions are inert under CAR-20 (their
+owning plugin is not enabled), the derived visibility MUST resolve to "not
+visible" through the existing "no value" contract, with no new return value and no
+write performed by the resolution.
+
+(Previously: the derivation contract did not state the owner-disabled outcome; the owner-disabled path is now pinned to the existing not-visible contract.)
 
 #### Scenario: Opcional follows its single parent product
 
@@ -419,6 +453,14 @@ visible. Parent resolution is: article-attached → that article's effective val
 - WHEN the derived visibility is compared after the backfill
 - THEN both sets are identical
 - Test: `plugins/catalogo_core/tests/OpcionalVisibilityParityTest.php`
+
+#### Scenario: Owner-disabled visibility definitions resolve not visible
+
+- GIVEN the catalog/tarifa visibility definitions owned by a plugin that is not enabled
+- WHEN an opcional's catalog or tarifa visibility is resolved for any tarifa
+- THEN it resolves "not visible" through the existing no-value contract, with no new return value
+- AND no value row is written during the resolution
+- Test: `plugins/catalogo_core/tests/OpcionalVisibilityDerivationTest.php`
 
 ### Requirement: CAR-13 — Legacy visibility supersession backfill
 
@@ -604,6 +646,12 @@ escaped value or a neutral placeholder when there is no value. The values MUST b
 resolved with one batched read per page (no per-row query, no N+1), and the
 existing base header strings and their order MUST stay byte-identical.
 
+A definition that is inert under CAR-20 MUST emit no column, and excluding it MUST
+NOT change the number of feature queries issued for the page (the query count
+stays independent of the number of products).
+
+(Previously: only active `listable` definitions were addressed; the owner-disabled case and its constant query count were not stated.)
+
 #### Scenario: Columns render after the per-tarifa columns
 
 - GIVEN two `listable` definitions and a page of products with a selected tarifa
@@ -633,6 +681,14 @@ existing base header strings and their order MUST stay byte-identical.
 - THEN no `listable` feature column is emitted
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticulosListCaracteristicasTest.php`
 
+#### Scenario: Owner-disabled listable definition emits no column
+
+- GIVEN a `listable` definition whose owning plugin is not enabled and a selected tarifa
+- WHEN the product list renders that page
+- THEN no column is emitted for that definition
+- AND the number of feature queries stays independent of the number of products
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticulosListCaracteristicasTest.php`
+
 ### Requirement: CAR-17 — `importable`/`exportable` feature columns
 
 Excel export/import MUST gain dynamic feature columns driven by the flags,
@@ -646,6 +702,12 @@ the matching or the persistence of the base fields. A feature definition whose
 `codigo` collides with a base field key MUST be skipped on every wizard surface
 (catalog, options, aliases and feature persistence): the base catalog entry stays
 authoritative and the colliding definition contributes nothing.
+
+A definition that is inert under CAR-20 MUST contribute no import field (and no
+resulting alias) and no export column, and excluding it MUST leave the base headers
+byte-identical.
+
+(Previously: only the additive flag-driven behavior was stated; the owner-disabled definition contributing nothing was not.)
 
 #### Scenario: Export appends feature columns only
 
@@ -670,6 +732,14 @@ authoritative and the colliding definition contributes nothing.
 - AND the colliding definition contributes no option, no alias and no feature value
 - Test: `plugins/catalogo_core/tests/Services/ArticuloExcelCaracteristicaTest.php`, `plugins/catalogo_core/tests/Services/ArticuloExcelFeaturePersistenciaTest.php`
 
+#### Scenario: Owner-disabled definition contributes no import field or export column
+
+- GIVEN an `importable` and/or `exportable` definition whose owning plugin is not enabled
+- WHEN the wizard field catalog and options and the Excel export are built
+- THEN the definition contributes no import field, no alias and no export column
+- AND the base headers stay byte-identical
+- Test: `plugins/catalogo_core/tests/Services/ArticuloExcelCaracteristicaTest.php`
+
 ### Requirement: CAR-18 — Feature management panel
 
 `catalogo_core` MUST serve a `ventas_caracteristicas` page (modern controller +
@@ -679,6 +749,18 @@ predefined value management, and value assignment at the three scopes including
 "all products". Every mutating action MUST validate CSRF before touching any
 model, MUST gate deletion and global/family assignment through the permission
 mechanism, and a CSRF failure or denied permission MUST persist nothing.
+
+A definition that is inert under CAR-20 MUST NOT be listed, and every direct
+mutating action targeting it (definition save/edit, flag toggle, value assignment
+or delete) MUST be refused/ignored and MUST persist nothing, including when the
+request arrives directly by POST or URL rather than through the rendered listing.
+
+> **Recorded observation (out of scope).** A non-empty `origen` already makes a
+> definition non-deletable (CAR-11), so the panel renders no delete button for any
+> plugin-owned row today. This change records that observation; it does not alter
+> the delete-button rendering, and deletion of definitions is out of scope.
+
+(Previously: the panel contract did not scope the listing or the direct actions by the definition's owning-plugin enabled state, and the delete-button observation was not recorded.)
 
 #### Scenario: Panel serves definitions and assignments
 
@@ -715,6 +797,15 @@ mechanism, and a CSRF failure or denied permission MUST persist nothing.
 - THEN the delete is refused and the deactivation persists
 - Test: `plugins/catalogo_core/tests/Controller/VentasCaracteristicasControllerTest.php`
 
+#### Scenario: Owner-disabled definitions are hidden and their direct actions refused
+
+- GIVEN a definition whose owning plugin is not enabled
+- WHEN the panel listing is rendered and, separately, a CSRF-valid authorized POST targets that definition's save/edit, flag toggle, value assignment or delete action
+- THEN the definition does not appear in the listing
+- AND each direct action persists nothing and is refused/ignored
+- AND no value row or definition row is written
+- Test: `plugins/catalogo_core/tests/Controller/VentasCaracteristicasControllerTest.php`
+
 ### Requirement: CAR-19 — Plugin-local boundaries
 
 The capability MUST be entirely plugin-local: no file in `base/`, `src/`,
@@ -723,6 +814,12 @@ created in the repository-root `openspec/`. `catalogo_core` MUST NOT gain a
 dependency on `tarifario`; `tarifario` keeps depending on `catalogo_core`. The
 existing frozen hook markers, locked classes and table names touched by this
 change MUST remain valid, and no new Composer dependency MAY be introduced.
+
+The enabled-plugin ownership rule (CAR-20) MUST derive its decision solely from the
+definition's `origen` and the framework enabled-plugin registry, and MUST NOT
+reference the `tarifario` namespace or hardcode any plugin name.
+
+(Previously: the ownership rule and its boundary condition (registry + `origen`, no tarifario coupling, no hardcoded plugin name) were not stated.)
 
 #### Scenario: No core change and no core openspec entry
 
@@ -737,3 +834,82 @@ change MUST remain valid, and no new Composer dependency MAY be introduced.
 - WHEN the dependency declarations are inspected
 - THEN tarifario requires catalogo_core and catalogo_core requires neither tarifario nor a new Composer package
 - Test: `plugins/catalogo_core/tests/CaracteristicaBoundariesTest.php`
+
+#### Scenario: Ownership check introduces no tarifario coupling or hardcoded plugin name
+
+- GIVEN the applied ownership rule
+- WHEN its source, imports and dependency declarations are inspected
+- THEN it reads only the definition's `origen` and the framework enabled-plugin registry
+- AND it contains no tarifario namespace reference and no hardcoded plugin name
+- Test: `plugins/catalogo_core/tests/CaracteristicaBoundariesTest.php`
+### Requirement: CAR-20 — Enabled-plugin ownership scope
+
+A feature definition is **active** when its `origen` is empty (operator-created) or
+when its non-empty `origen` names a plugin that the framework's enabled-plugin
+registry reports as enabled. A definition whose non-empty `origen` names a plugin
+that is not enabled MUST be **inert across the whole feature system**:
+
+- it MUST be absent from the management panel listing;
+- it MUST contribute no `listable` product-list column, no `importable` field and
+  no `exportable` column;
+- it MUST resolve to "no value" (`null`) through the resolver, exactly like a
+  missing or inactive definition.
+
+The ownership rule MUST be plugin-agnostic: it MUST derive its decision solely from
+the definition's `origen` and the framework enabled-plugin registry, and MUST NOT
+reference the `tarifario` namespace or hardcode any plugin name. It MUST NOT
+introduce a `catalogo_core → tarifario` dependency.
+
+Inert MUST be non-destructive. Definition rows and their assigned values MUST be
+preserved and MUST NOT be written, deleted or mutated while the definition is
+inert. Re-enabling the owning plugin MUST restore the definition and its assigned
+values unchanged, with no writes having occurred during the inert period.
+
+Operator-created definitions (`origen = ''`) MUST remain active, listed, resolvable
+and writable regardless of any plugin's state.
+
+The rule MUST fail closed: when the enabled-plugin registry cannot be consulted,
+plugin-owned definitions MUST be treated as inert, and `origen = ''` definitions
+are the only unconditional exception.
+
+#### Scenario: Owner disabled makes the definition inert everywhere
+
+- GIVEN a definition with a non-empty `origen` whose owning plugin is not enabled
+- WHEN the management panel lists definitions
+- THEN the definition is absent from the listing
+- AND it contributes no import field and no export column
+- AND it produces no `listable` product-list column
+- AND `resolve()` returns `null` for it
+- Test: `plugins/catalogo_core/tests/CaracteristicaOwnershipTest.php`, `plugins/catalogo_core/tests/Controller/VentasCaracteristicasControllerTest.php`, `plugins/catalogo_core/tests/CaracteristicaResolverTest.php`, `plugins/catalogo_core/tests/Controller/VentasArticulosListCaracteristicasTest.php`
+
+#### Scenario: Re-enabling the owner restores the definition and its values unchanged
+
+- GIVEN a plugin-owned definition with assigned values while the owning plugin is disabled (the inert period)
+- WHEN the owning plugin is enabled again
+- THEN the definition and its assigned values are returned byte-identically to their pre-inert state
+- AND no definition row or value row was written, deleted or mutated during the inert period
+- Test: `plugins/catalogo_core/tests/CaracteristicaOwnershipTest.php`, `plugins/catalogo_core/tests/CaracteristicaValorStoreTest.php`
+
+#### Scenario: Operator-created definition is unaffected by plugin state
+
+- GIVEN a definition with `origen = ''`
+- WHEN every plugin's enabled state changes
+- THEN the definition remains listed, resolvable and writable
+- Test: `plugins/catalogo_core/tests/CaracteristicaOwnershipTest.php`
+
+#### Scenario: Registry unavailable fails closed for plugin-owned definitions
+
+- GIVEN the enabled-plugin registry cannot be consulted (no enabled set is available)
+- WHEN definitions are read
+- THEN every non-empty `origen` definition is treated as inert
+- AND only `origen = ''` definitions remain active
+- Test: `plugins/catalogo_core/tests/CaracteristicaOwnershipTest.php`
+
+#### Scenario: Ownership check uses the framework registry with no tarifario coupling
+
+- GIVEN the ownership rule
+- WHEN its inputs, imports and dependency declarations are inspected
+- THEN it reads only the definition's `origen` and the framework enabled-plugin registry
+- AND no `catalogo_core → tarifario` dependency is introduced and no plugin name is hardcoded
+- Test: `plugins/catalogo_core/tests/CaracteristicaBoundariesTest.php`
+
