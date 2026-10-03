@@ -495,6 +495,43 @@ class catalogo_opcional extends \fs_model
         return new catalogo_articulo_opcional();
     }
 
+    /**
+     * Flow-condition model accessor. Overridable seam so the FLC-09 cascade is
+     * unit-testable without a live database.
+     */
+    protected function flujo_condicion_model()
+    {
+        return new catalogo_flujo_condicion();
+    }
+
+    /**
+     * Flow-action model accessor. Overridable seam so the FLC-09 cascade is
+     * unit-testable without a live database.
+     */
+    protected function flujo_accion_model()
+    {
+        return new catalogo_flujo_accion();
+    }
+
+    /**
+     * FLC-09 app-side cascade: drop every flow condition and action that
+     * references this opcional by (tipo, código). The flow models are
+     * plugin-local; the availability guard keeps a missing class from fataling
+     * the delete path.
+     */
+    private function deleteFlujoSubjectReferences(): void
+    {
+        $codigo = (string) $this->codigo;
+
+        if (class_exists(catalogo_flujo_condicion::class)) {
+            $this->flujo_condicion_model()->delete_all_from_sujeto('opcional', $codigo);
+        }
+
+        if (class_exists(catalogo_flujo_accion::class)) {
+            $this->flujo_accion_model()->delete_all_from_sujeto('opcional', $codigo);
+        }
+    }
+
     private function grupo_exists(int $idGrupo): bool
     {
         return (bool) $this->db->select(
@@ -780,6 +817,8 @@ class catalogo_opcional extends \fs_model
         if ($this->id) {
             $this->grupo_rel_model()->delete_all_from_opcional((int) $this->id);
         }
+
+        $this->deleteFlujoSubjectReferences();
 
         return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
     }
