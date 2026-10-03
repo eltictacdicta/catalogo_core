@@ -36,10 +36,20 @@ row MUST still default to `0 / TRUE / FALSE / FALSE`. In addition, every
 the existing per-tarifa columns (after `Catálogo`, before `Stock`), resolved with
 one batched read per page and never with a per-row query. The base columns and
 their order MUST NOT change.
-(Previously: `en_tarifa`/`en_catalogo` were read directly from
-`tarif_articulo_precios`, and no feature columns existed.)
 
-_Strength: MUST._
+The `en_tarifa` / `en_catalogo` visibility header and its per-row cells MUST
+render ONLY while that visibility characteristic definition is active for the
+current plugin set (per `visibility-characteristic-gating`); when a visibility
+definition is inactive, its `Tarifa`/`Catálogo` header and cells MUST NOT render,
+while the per-tarifa `precio`/`activo` columns and the `listable` append/order
+rule remain unchanged. This gate applies identically in both
+`FS_CATALOGO_CARACTERISTICAS_READ_THROUGH` modes.
+(Previously: `en_tarifa`/`en_catalogo` were read directly from
+`tarif_articulo_precios`, and no feature columns existed. This change: the two
+visibility characteristic columns became conditional on their definition's
+active state; the multitarifa `precio`/`activo` columns stay unconditional.)
+
+_Strength: MUST / MUST NOT._
 
 #### Scenario: Rows render
 
@@ -68,6 +78,14 @@ _Strength: MUST._
 - WHEN the list renders
 - THEN the feature values are read with a query count independent of N
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticulosListCaracteristicasTest.php`
+
+#### Scenario: Visibility columns absent while the definition is inactive
+
+- GIVEN the `en_tarifa` and/or `en_catalogo` definition inactive for the current plugin set
+- WHEN the list renders
+- THEN no corresponding `Tarifa`/`Catálogo` header and no corresponding per-row cell is emitted
+- AND the per-tarifa `precio`/`activo` columns and operator-owned `listable` columns still render with their relative order unchanged
+- Test: `plugins/catalogo_core/tests/Controller/VentasArticulosListCaracteristicasTest.php` (seeded off)
 
 ### Requirement: ALC-03 — Quick-create prices
 
