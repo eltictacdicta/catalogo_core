@@ -15,6 +15,7 @@ require_once FS_FOLDER . '/base/fs_core_log.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloTarifaPrecioBatchReader.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaOwnership.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorBatchReader.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/extras/VentasArticulosListTrait.php';
 
 /**
@@ -58,6 +59,11 @@ final class ListCaracteristicasHost
 
     public ListCaracteristicasFakeBatchReader $reader;
 
+    /** @var list<string> */
+    public array $activeVisibility = ['en_catalogo', 'en_tarifa'];
+
+    public int $accessorCalls = 0;
+
     public function __construct()
     {
         $this->reader = new ListCaracteristicasFakeBatchReader();
@@ -68,6 +74,32 @@ final class ListCaracteristicasHost
     protected function caracteristica_batch_reader(): CaracteristicaValorBatchReader
     {
         return $this->reader;
+    }
+
+    protected function caracteristica_resolver(): \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver
+    {
+        return new ListCaracteristicasVisibilityResolver($this->activeVisibility, $this);
+    }
+}
+
+/**
+ * DB-free resolver double: answers the active-visibility accessor from the
+ * host fixture and counts how often it is evaluated.
+ */
+final class ListCaracteristicasVisibilityResolver extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver
+{
+    /**
+     * @param list<string> $codigos
+     */
+    public function __construct(private array $codigos, private ListCaracteristicasHost $host)
+    {
+    }
+
+    public function active_visibility_codigos(): array
+    {
+        $this->host->accessorCalls++;
+
+        return $this->codigos;
     }
 }
 
@@ -185,6 +217,38 @@ final class VentasArticulosListCaracteristicasTest extends TestCase
         $host->reader->cols = [['codigo' => 'en_catalogo', 'nombre' => 'En Catálogo', 'tipo' => 'bool']];
 
         $this->assertSame([], $host->listable_caracteristicas());
+    }
+
+    // =====================================================================
+    // VCG-01 — visibilidad_activa() controller/trait seam
+    // =====================================================================
+
+    public function test_visibilidad_activa_returns_the_accessor_list(): void
+    {
+        $host = $this->host();
+        $host->activeVisibility = ['en_catalogo', 'en_tarifa'];
+
+        $this->assertSame(['en_catalogo', 'en_tarifa'], $host->visibilidad_activa());
+    }
+
+    public function test_visibilidad_activa_memoizes_the_accessor_once(): void
+    {
+        $host = $this->host();
+        $host->activeVisibility = ['en_tarifa'];
+
+        $host->visibilidad_activa();
+        $host->visibilidad_activa();
+        $host->visibilidad_activa();
+
+        $this->assertSame(1, $host->accessorCalls, 'the accessor must be evaluated once per request');
+    }
+
+    public function test_visibilidad_activa_is_empty_without_active_codigos(): void
+    {
+        $host = $this->host();
+        $host->activeVisibility = [];
+
+        $this->assertSame([], $host->visibilidad_activa());
     }
 
     // =====================================================================

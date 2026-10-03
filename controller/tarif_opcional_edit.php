@@ -333,6 +333,32 @@ class tarif_opcional_edit extends fbase_controller
     }
 
     /**
+     * Memoized active visibility codigos for the request (VCG-01). The detail
+     * view gate reads it through {@see visibilidad_activa()}.
+     *
+     * @var list<string>|null
+     */
+    private ?array $visibilidad_activa_cache = null;
+
+    /**
+     * VCG-01: active visibility characteristic codigos for this request.
+     *
+     * Memoized per request so the detail view gate evaluates the resolver once.
+     * Driven by the definition activity (CAR-20), never by the read-through
+     * flag (VCG-06).
+     *
+     * @return list<string>
+     */
+    public function visibilidad_activa(): array
+    {
+        if ($this->visibilidad_activa_cache === null) {
+            $this->visibilidad_activa_cache = $this->opcional_visibility_resolver()->active_visibility_codigos();
+        }
+
+        return $this->visibilidad_activa_cache;
+    }
+
+    /**
      * Carga los precios del opcional en todas las tarifas.
      *
      * Master `activa` comes from the per-tarifa master via effective(); a

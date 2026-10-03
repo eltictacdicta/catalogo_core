@@ -18,6 +18,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class CaracteristicaResolverFakeDefinitionModel
 {
+    /** Definition-table read counter (query-count proxy; reset per test). */
+    public static int $allCalls = 0;
+
     /** @param array<int, array<string, mixed>> $definitions */
     public function __construct(private array $definitions)
     {
@@ -26,6 +29,8 @@ final class CaracteristicaResolverFakeDefinitionModel
     /** @return array<int, array<string, mixed>> */
     public function all(bool $onlyActive = false): array
     {
+        self::$allCalls++;
+
         if (!$onlyActive) {
             return $this->definitions;
         }
@@ -319,6 +324,96 @@ final class CaracteristicaResolverTest extends TestCase
 
         $this->assertArrayHasKey('color', $resolver->definitions(), 'origen "" is the unconditional exception');
         $this->assertSame('Z', $resolver->resolve('color', 'T1', 'REF-1'));
+    }
+
+    // =====================================================================
+    // VCG-01 — active visibility codigos derived from definitions() (CAR-20)
+    // =====================================================================
+
+    public function test_active_visibility_codigos_returns_only_enabled_owner_codigos(): void
+    {
+        $catalogo = $this->definition('en_catalogo', 'bool') + ['origen' => 'tarifario'];
+        $tarifa = $this->definition('en_tarifa', 'bool') + ['origen' => 'tarifario'];
+
+        $resolver = $this->buildResolver([$catalogo, $tarifa], ['tarifario']);
+
+        $this->assertSame(
+            ['en_catalogo', 'en_tarifa'],
+            $resolver->active_visibility_codigos(),
+            'the enabled owner returns exactly its two visibility codigos, in canonical order'
+        );
+        $this->assertTrue($resolver->is_visibility_active('en_catalogo'));
+        $this->assertTrue($resolver->is_visibility_active('en_tarifa'));
+    }
+
+    public function test_active_visibility_codigos_empty_when_owner_disabled(): void
+    {
+        $catalogo = $this->definition('en_catalogo', 'bool') + ['origen' => 'tarifario'];
+        $tarifa = $this->definition('en_tarifa', 'bool') + ['origen' => 'tarifario'];
+
+        $resolver = $this->buildResolver([$catalogo, $tarifa], []);
+
+        $this->assertSame([], $resolver->active_visibility_codigos(), 'a disabled owner hides both codigos');
+        $this->assertFalse($resolver->is_visibility_active('en_catalogo'));
+        $this->assertFalse($resolver->is_visibility_active('en_tarifa'));
+    }
+
+    public function test_active_visibility_codigos_ignores_operator_owned_rows(): void
+    {
+        // An operator-owned codigo is active for CAR-20 but is not a visibility codigo.
+        $operator = $this->definition('medidas', 'string');
+        $enabled = $this->definition('en_catalogo', 'bool') + ['origen' => 'tarifario'];
+
+        $resolver = $this->buildResolver([$operator, $enabled], ['tarifario']);
+
+        $this->assertSame(
+            ['en_catalogo'],
+            $resolver->active_visibility_codigos(),
+            'only the canonical visibility codigos are returned; other active rows are ignored'
+        );
+    }
+
+    public function test_is_visibility_active_rejects_unknown_and_inert_codigos(): void
+    {
+        $inert = $this->definition('en_tarifa', 'bool') + ['origen' => 'tarifario'];
+        $operator = $this->definition('medidas', 'string');
+
+        $disabled = $this->buildResolver([$inert, $operator], []);
+        $this->assertFalse($disabled->is_visibility_active('en_tarifa'), 'an inert definition is not active');
+        $this->assertFalse($disabled->is_visibility_active('en_catalogo'), 'a missing definition is not active');
+        $this->assertFalse($disabled->is_visibility_active('medidas'), 'a non-visibility codigo is never active');
+        $this->assertFalse($disabled->is_visibility_active('desconocido'), 'an unknown codigo is never active');
+
+        $enabled = $this->buildResolver([$inert, $operator], ['tarifario']);
+        $this->assertTrue($enabled->is_visibility_active('en_tarifa'));
+        $this->assertFalse($enabled->is_visibility_active('en_catalogo'));
+        $this->assertFalse($enabled->is_visibility_active('medidas'));
+    }
+
+    public function test_active_visibility_codigos_reads_definitions_once(): void
+    {
+        CaracteristicaResolverFakeDefinitionModel::$allCalls = 0;
+
+        $catalogo = $this->definition('en_catalogo', 'bool') + ['origen' => 'tarifario'];
+        $tarifa = $this->definition('en_tarifa', 'bool') + ['origen' => 'tarifario'];
+        $resolver = $this->buildResolver([$catalogo, $tarifa], ['tarifario']);
+
+        $this->assertSame(['en_catalogo', 'en_tarifa'], $resolver->active_visibility_codigos());
+        $this->assertSame(
+            1,
+            CaracteristicaResolverFakeDefinitionModel::$allCalls,
+            'one definition read serves the whole request'
+        );
+
+        $resolver->active_visibility_codigos();
+        $resolver->is_visibility_active('en_tarifa');
+        $resolver->is_visibility_active('en_catalogo');
+
+        $this->assertSame(
+            1,
+            CaracteristicaResolverFakeDefinitionModel::$allCalls,
+            'the accessor reuses the memoized definitions() map: no extra query'
+        );
     }
 
     // =====================================================================

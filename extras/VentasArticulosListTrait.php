@@ -24,10 +24,12 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/tarif_articulo_precio.php
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloTarifaPrecioBatchReader.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaValorBatchReader.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaConfig.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CaracteristicaResolver.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoCurrencyFormatter.php';
 
 use FSFramework\Plugins\catalogo_core\Services\ArticuloTarifaPrecioBatchReader;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaConfig;
+use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorBatchReader;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoCurrencyFormatter;
 
@@ -96,6 +98,14 @@ trait VentasArticulosListTrait
      */
     private array $articulo_visibility_features = [];
 
+    /**
+     * Memoized active visibility codigos for the request (VCG-01). The template
+     * gate reads it through {@see visibilidad_activa()}.
+     *
+     * @var list<string>|null
+     */
+    private ?array $visibilidad_activa_cache = null;
+
     // =====================================================================
     // Seams
     // =====================================================================
@@ -136,6 +146,15 @@ trait VentasArticulosListTrait
     protected function idioma_model()
     {
         return new \FSFramework\model\catalogo_idioma();
+    }
+
+    /**
+     * Caracteristica resolver seam (VCG-01). Overridable so the visibility
+     * gate is unit-testable without a live database.
+     */
+    protected function caracteristica_resolver(): CaracteristicaResolver
+    {
+        return new CaracteristicaResolver();
     }
 
     // =====================================================================
@@ -358,6 +377,25 @@ trait VentasArticulosListTrait
         }
 
         return (bool) $this->articulo_tarifa_row($referencia)[$codigo];
+    }
+
+    /**
+     * VCG-01: active visibility characteristic codigos for this request.
+     *
+     * Memoized per request, so the template gate (`'en_tarifa' in
+     * fsc.visibilidad_activa`) evaluates the resolver at most once regardless of
+     * the rendered row count. Driven by the definition activity (CAR-20), never
+     * by the read-through flag (VCG-06).
+     *
+     * @return list<string>
+     */
+    public function visibilidad_activa(): array
+    {
+        if ($this->visibilidad_activa_cache === null) {
+            $this->visibilidad_activa_cache = $this->caracteristica_resolver()->active_visibility_codigos();
+        }
+
+        return $this->visibilidad_activa_cache;
     }
 
     /**

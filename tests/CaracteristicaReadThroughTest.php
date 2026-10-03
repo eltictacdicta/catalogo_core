@@ -76,6 +76,11 @@ final class ReadThroughListHost
 
     public ReadThroughFeatureReader $featureReader;
 
+    /** @var list<string> */
+    public array $activeVisibility = ['en_catalogo', 'en_tarifa'];
+
+    public int $visibilityResolverCalls = 0;
+
     public function __construct()
     {
         $this->featureReader = new ReadThroughFeatureReader();
@@ -96,6 +101,32 @@ final class ReadThroughListHost
     protected function caracteristica_read_through(): bool
     {
         return $this->readThrough;
+    }
+
+    protected function caracteristica_resolver(): \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver
+    {
+        return new ReadThroughVisibilityResolver($this->activeVisibility, $this);
+    }
+}
+
+/**
+ * DB-free resolver double for the read-mode uniformity contract (VCG-06): its
+ * active-visibility answer never consults the read-through flag.
+ */
+final class ReadThroughVisibilityResolver extends \FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver
+{
+    /**
+     * @param list<string> $codigos
+     */
+    public function __construct(private array $codigos, private ReadThroughListHost $host)
+    {
+    }
+
+    public function active_visibility_codigos(): array
+    {
+        $this->host->visibilityResolverCalls++;
+
+        return $this->codigos;
     }
 }
 
@@ -337,6 +368,26 @@ final class CaracteristicaReadThroughTest extends TestCase
         $this->assertTrue($host->articulo_en_tarifa_flag('A'), 'flag on follows the resolver value');
         $this->assertFalse($host->articulo_en_catalogo('A'), 'flag on follows the resolver value');
         $this->assertFalse($host->articulo_en_tarifa_flag('MISSING'), 'a missing resolver value resolves to FALSE');
+    }
+
+    // =====================================================================
+    // VCG-06 — the activity gate is uniform across read modes
+    // =====================================================================
+
+    public function test_visibilidad_activa_is_uniform_across_read_modes(): void
+    {
+        $on = $this->host();
+        $on->readThrough = true;
+
+        $off = $this->host();
+        $off->readThrough = false;
+
+        $this->assertSame(['en_catalogo', 'en_tarifa'], $on->visibilidad_activa());
+        $this->assertSame(
+            $on->visibilidad_activa(),
+            $off->visibilidad_activa(),
+            'the gate list must not depend on FS_CATALOGO_CARACTERISTICAS_READ_THROUGH'
+        );
     }
 
     // =====================================================================
