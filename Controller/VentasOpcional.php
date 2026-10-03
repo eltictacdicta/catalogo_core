@@ -367,10 +367,13 @@ class VentasOpcional extends PageController
         $defaultCode = $this->effective_default_code();
         $idiomaNombres = (array) $request->request->all('idioma_nombre');
         $idiomaDescripciones = (array) $request->request->all('idioma_descripcion');
-        if ($defaultCode !== '' && array_key_exists($defaultCode, $idiomaNombres)) {
-            $this->opcional->nombre = (string) $idiomaNombres[$defaultCode];
-            $this->opcional->descripcion = (string) ($idiomaDescripciones[$defaultCode] ?? '');
+        if ($defaultCode === '' || !array_key_exists($defaultCode, $idiomaNombres)) {
+            $this->new_error_msg('Falta el nombre del idioma por defecto.');
+            return;
         }
+
+        $this->opcional->nombre = (string) $idiomaNombres[$defaultCode];
+        $this->opcional->descripcion = (string) ($idiomaDescripciones[$defaultCode] ?? '');
 
         $tipoPrecio = (string) $request->request->get('stipo_precio', catalogo_opcional::TIPO_PRECIO_FIJO);
         $this->opcional->tipo_precio = $tipoPrecio === catalogo_opcional::TIPO_PRECIO_PORCENTAJE

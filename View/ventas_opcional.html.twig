@@ -260,7 +260,7 @@ $(document).ready(function () {
                                 <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
                             </a>
                             {% endif %}
-                            <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
+                            <button class="btn btn-sm btn-primary" type="submit" onclick="if(this.form.reportValidity()){this.disabled=true;this.form.requestSubmit();}">
                                 <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
                             </button>
                         </div>

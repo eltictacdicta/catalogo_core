@@ -103,6 +103,25 @@ final class VentasOpcionalIdiomaTest extends TestCase
         $this->assertNotSame('', $controller->lastError);
     }
 
+    public function test_save_is_rejected_when_the_default_language_name_is_absent(): void
+    {
+        $controller = $this->makeController(true);
+        $request = Request::create('/index.php?page=ventas_opcional&id=5', 'POST', [
+            'save_opcional' => '1',
+            'scodigo' => 'OPC0005',
+            'stipo_precio' => 'fijo',
+            'sprecio' => '0',
+            'idioma_nombre' => ['en' => 'Hello'],
+            'idioma_descripcion' => ['en' => 'Desc EN'],
+        ]);
+        $controller->exposeGuardar($request);
+
+        $spy = $controller->spy();
+        $this->assertSame(0, $spy->saveCalls, 'a save without the default-language name key must not persist');
+        $this->assertSame([], $spy->idiomaCalls, 'no language row may be written');
+        $this->assertStringContainsString('idioma por defecto', $controller->lastError);
+    }
+
     private function request(): Request
     {
         return Request::create('/index.php?page=ventas_opcional&id=5', 'POST', [
