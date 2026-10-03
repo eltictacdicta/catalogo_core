@@ -431,66 +431,74 @@ final class VentasArticulosListCaracteristicasTest extends TestCase
         $this->assertLessThan($stock, $featureTh, 'feature columns must render before Stock');
         $this->assertGreaterThan($catalogo, $featureTh, 'feature columns must render after Catálogo');
 
-        // Inside the per-tarifa conditional block.
+        // Inside the per-tarifa conditional block: its matching `{% endif %}`
+        // is the last one before the Stock header (nested gates included).
         $blockStart = strpos($view, '{% if fsc.tarifa_seleccionada %}');
-        $blockEnd = strpos($view, '{% endif %}', $blockStart);
+        $this->assertNotFalse($blockStart);
+        $blockEnd = strrpos(substr($view, 0, (int) $stock), '{% endif %}');
+        $this->assertNotFalse($blockEnd);
+        $this->assertGreaterThan($blockStart, $blockEnd);
         $this->assertLessThan($blockEnd, $featureTh, 'feature columns must live inside the per-tarifa block');
     }
 
-    public function test_empty_state_colspan_matches_the_rendered_column_count(): void
+    // =====================================================================
+    // VCG-02 — visibility columns are gated on the active set
+    // =====================================================================
+
+    public function test_visibility_headers_and_cells_are_gated_on_the_active_set(): void
     {
         $view = (string) file_get_contents(FS_FOLDER . '/' . self::VIEW);
 
-        [$fixed, $tarifaOnly] = $this->theadColumnCounts($view);
-
-        $this->assertSame(7, $fixed, 'five base columns plus Stock and Actions');
-        $this->assertSame(4, $tarifaOnly, 'Tarifa price, Activo, Tarifa and Catálogo');
-
-        $expected = 'colspan="{{ ' . $fixed
-            . ' + (fsc.tarifa_seleccionada ? ' . $tarifaOnly
-            . ' + fsc.listable_caracteristicas()|length : 0) }}"';
-
-        $this->assertStringContainsString(
-            $expected,
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}\s*<th class=\"text-center\" width=\"70\">Tarifa<\/th>\s*\{%\s*endif\s*%\}/",
             $view,
-            'the empty-state colspan must match the rendered column count in both tarifa states'
+            'the Tarifa header must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*<th class=\"text-center\" width=\"70\">Catálogo<\/th>\s*\{%\s*endif\s*%\}/",
+            $view,
+            'the Catálogo header must be gated on the active visibility set'
+        );
+
+        // Each visibility cell is wrapped by its gate and keeps its value helper.
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}\s*<td class=\"text-center\">.*?fsc\.articulo_en_tarifa_flag\(articulo\.referencia\).*?<\/td>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the Tarifa cell must be gated and keep its value helper'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*<td class=\"text-center\">.*?fsc\.articulo_en_catalogo\(articulo\.referencia\).*?<\/td>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the Catálogo cell must be gated and keep its value helper'
+        );
+
+        // The always-rendered per-tarifa cells stay ungated.
+        $this->assertMatchesRegularExpression(
+            "/<td class=\"text-center\">\s*\{% if fsc\.articulo_activo_tarifa\(articulo\.referencia\) %\}/s",
+            $view,
+            'the Activo per-tarifa cell must stay ungated'
+        );
+        $this->assertMatchesRegularExpression(
+            "/<td class=\"text-right\">\s*\{% if fsc\.get_precio_articulo_tarifa\(articulo\.referencia\) > 0 %\}/s",
+            $view,
+            'the per-tarifa price cell must stay ungated'
         );
     }
 
-    /**
-     * Derives the rendered column counts from the view markup: the headers that
-     * always render and the ones that only render when a tarifa is selected,
-     * excluding the variable feature loop (which stays as the `length` term).
-     *
-     * @return array{0: int, 1: int}
-     */
-    private function theadColumnCounts(string $view): array
+    public function test_empty_state_colspan_follows_the_active_visibility_set(): void
     {
-        $theadStart = strpos($view, '<thead>');
-        $theadEnd = strpos($view, '</thead>');
-        $this->assertNotFalse($theadStart);
-        $this->assertNotFalse($theadEnd);
-        $thead = substr($view, (int) $theadStart, (int) $theadEnd - (int) $theadStart);
+        $view = (string) file_get_contents(FS_FOLDER . '/' . self::VIEW);
 
-        $ifStart = strpos($thead, '{% if fsc.tarifa_seleccionada %}');
-        $ifEnd = strpos($thead, '{% endif %}');
-        $this->assertNotFalse($ifStart);
-        $this->assertNotFalse($ifEnd);
-
-        $before = substr($thead, 0, (int) $ifStart);
-        $conditional = substr($thead, (int) $ifStart, (int) $ifEnd - (int) $ifStart);
-        $after = substr($thead, (int) $ifEnd);
-
-        $loopStart = strpos($conditional, '{% for ');
-        $loopEnd = strpos($conditional, '{% endfor %}');
-        $this->assertNotFalse($loopStart);
-        $this->assertNotFalse($loopEnd);
-        $loop = substr($conditional, (int) $loopStart, (int) $loopEnd - (int) $loopStart + strlen('{% endfor %}'));
-
-        return [
-            substr_count($before, '<th ') + substr_count($after, '<th '),
-            substr_count(str_replace($loop, '', $conditional), '<th '),
-        ];
+        $this->assertStringContainsString(
+            'colspan="{{ 7 + (fsc.tarifa_seleccionada ? 2 + fsc.visibilidad_activa|length + fsc.listable_caracteristicas()|length : 0) }}"',
+            $view,
+            'the empty-state colspan must count the always-on per-tarifa columns plus the active visibility set'
+        );
+        $this->assertStringNotContainsString(
+            'fsc.tarifa_seleccionada ? 4 +',
+            $view,
+            'the constant per-tarifa term must be gone'
+        );
     }
 }
 

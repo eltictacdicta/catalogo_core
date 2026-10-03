@@ -38,6 +38,7 @@
                         </label>
                      </div>
                   </div>
+                  {% if 'en_tarifa' in fsc.visibilidad_activa %}
                   <div class="col-sm-3">
                      <div class="checkbox">
                         <label>
@@ -47,6 +48,8 @@
                         </label>
                      </div>
                   </div>
+                  {% endif %}
+                  {% if 'en_catalogo' in fsc.visibilidad_activa %}
                   <div class="col-sm-3">
                      <div class="checkbox">
                         <label>
@@ -56,6 +59,7 @@
                         </label>
                      </div>
                   </div>
+                  {% endif %}
                   <div class="col-sm-3 text-right">
                      <input type="hidden" name="guardar_precio_tab" value="1"/>
                      <input type="hidden" name="codtarifa" value="{{ tarifa.codtarifa }}"/>

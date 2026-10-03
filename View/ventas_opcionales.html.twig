@@ -389,13 +389,17 @@
                   {% endif %}
                </th>
                <th class="text-center">Estado</th>
+               {% if 'en_tarifa' in fsc.visibilidad_activa %}
                <th class="text-center">
                   Tarifa
                   {% if fsc.tarifa_seleccionada %}
                   <small class="text-muted">({{ fsc.tarifa_seleccionada.nombre }})</small>
                   {% endif %}
                </th>
+               {% endif %}
+               {% if 'en_catalogo' in fsc.visibilidad_activa %}
                <th class="text-center">Catálogo</th>
+               {% endif %}
                <th class="text-right"></th>
             </tr>
          </thead>
@@ -464,6 +468,7 @@
                      <button type="submit" class="btn btn-xs btn-primary" title="Guardar estado en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}"><span class="glyphicon glyphicon-floppy-disk"></span></button>
                   </form>
                </td>
+               {% if 'en_tarifa' in fsc.visibilidad_activa %}
                <td class="text-center">
                   {# "Tarifa" (export inclusion) is derived from the parent product's
                      effective en_tarifa feature value (D12/OUM-03): read-only, no toggle. #}
@@ -473,6 +478,8 @@
                   <span class="label label-default" title="No incluida en el export de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">No</span>
                   {% endif %}
                </td>
+               {% endif %}
+               {% if 'en_catalogo' in fsc.visibilidad_activa %}
                <td class="text-center">
                   {# "Catálogo" is derived from the parent product's effective
                      en_catalogo feature value (D12/OUM-03): read-only, no toggle. #}
@@ -482,6 +489,7 @@
                   <span class="label label-default" title="Oculto en el catálogo de {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">No</span>
                   {% endif %}
                </td>
+               {% endif %}
                <td class="text-right">
                   <div class="btn-group btn-group-xs">
                       <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" class="btn btn-info cancel_clickable" title="Precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">

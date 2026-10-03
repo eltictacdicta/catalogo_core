@@ -392,6 +392,18 @@ final class CatalogoArticuloHookOwnershipTest extends TestCase
             'The en_catalogo control must render the resolver-derived visibility'
         );
 
+        // VCG-03: each visibility control is wrapped by its active-set gate.
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}.*?name=\"en_tarifa\".*?visibilidad\[tarifa\.codtarifa\]\.en_tarifa.*?<\/div>\s*\{%\s*endif\s*%\}/s",
+            $rows,
+            'The en_tarifa control must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}.*?name=\"en_catalogo\".*?visibilidad\[tarifa\.codtarifa\]\.en_catalogo.*?<\/div>\s*\{%\s*endif\s*%\}/s",
+            $rows,
+            'The en_catalogo control must be gated on the active visibility set'
+        );
+
         // The dropped legacy per-tarifa columns are never read by the partial.
         $this->assertStringNotContainsString(
             'precio.en_tarifa',
