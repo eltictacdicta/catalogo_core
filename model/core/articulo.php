@@ -1062,6 +1062,7 @@ class articulo extends \fs_model
     public function delete()
     {
         $this->clean_cache();
+        $this->deleteFlujoAssignments();
 
         $sql = "DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
         $sql .= "DELETE FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
@@ -1072,6 +1073,29 @@ class articulo extends \fs_model
         }
 
         return FALSE;
+    }
+
+    /**
+     * Flow-assignment model accessor. Overridable seam so the FLC-09 cascade is
+     * unit-testable without a live database.
+     */
+    protected function flujo_articulo_model()
+    {
+        return new catalogo_flujo_articulo();
+    }
+
+    /**
+     * FLC-09 app-side cascade: drop the flow assignments that reference this
+     * article by `referencia`. The flow model is plugin-local; the availability
+     * guard keeps a missing class from fataling the delete path.
+     */
+    private function deleteFlujoAssignments(): void
+    {
+        if (!class_exists(catalogo_flujo_articulo::class)) {
+            return;
+        }
+
+        $this->flujo_articulo_model()->delete_all_from_referencia((string) $this->referencia);
     }
 
     /**

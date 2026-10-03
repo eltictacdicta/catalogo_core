@@ -256,4 +256,55 @@ final class InitOpcionalesTablesTest extends TestCase
             'init() must ensure the bridge next to ensureArticuloOpcionalGrupoTable()'
         );
     }
+
+    /** Models added to the boot list by the opcionales-versatilidad change. */
+    private const VERSATILIDAD_MODELS = [
+        'catalogo_opcional_idioma' => 'catalogo_opcional_idiomas.xml',
+        'catalogo_flujo' => 'catalogo_flujos.xml',
+        'catalogo_flujo_condicion' => 'catalogo_flujo_condiciones.xml',
+        'catalogo_flujo_accion' => 'catalogo_flujo_acciones.xml',
+        'catalogo_flujo_articulo' => 'catalogo_flujo_articulos.xml',
+        'catalogo_flujo_familia' => 'catalogo_flujo_familias.xml',
+    ];
+
+    public function test_ensure_catalog_tables_includes_the_versatilidad_models(): void
+    {
+        $method = $this->methodSource(
+            $this->initSource(),
+            'private static function ensureCatalogTables(): void'
+        );
+
+        foreach (array_keys(self::VERSATILIDAD_MODELS) as $model) {
+            $this->assertStringContainsString(
+                "'" . $model . "'",
+                $method,
+                'ensureCatalogTables() must ensure ' . $model
+            );
+        }
+
+        // catalogo_flujo before its dependent condition/action/assignment rows.
+        $posFlujo = strpos($method, "'catalogo_flujo'");
+        $this->assertNotFalse($posFlujo);
+        foreach (['catalogo_flujo_condicion', 'catalogo_flujo_accion', 'catalogo_flujo_articulo', 'catalogo_flujo_familia'] as $child) {
+            $this->assertLessThan(
+                (int) strpos($method, "'" . $child . "'"),
+                $posFlujo,
+                'catalogo_flujo must be ensured before ' . $child
+            );
+        }
+    }
+
+    public function test_versatilidad_models_and_xmls_exist_at_catalogo_core_paths(): void
+    {
+        foreach (self::VERSATILIDAD_MODELS as $model => $xml) {
+            $this->assertFileExists(
+                FS_FOLDER . '/plugins/catalogo_core/model/core/' . $model . '.php',
+                $model . '.php must exist in catalogo_core'
+            );
+            $this->assertFileExists(
+                FS_FOLDER . '/plugins/catalogo_core/model/table/' . $xml,
+                $xml . ' must exist in catalogo_core'
+            );
+        }
+    }
 }

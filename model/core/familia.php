@@ -194,11 +194,36 @@ class familia extends \fs_model
     public function delete()
     {
         $this->clean_cache();
+        $this->deleteFlujoAssignments();
+
         $sql = "DELETE FROM " . $this->table_name . self::PK_WHERE . $this->var2str($this->codfamilia) . ";"
             . " " . self::SQL_UPDATE . $this->table_name . " SET madre = " . $this->var2str($this->madre)
             . " WHERE madre = " . $this->var2str($this->codfamilia) . ";";
 
         return $this->db->exec($sql);
+    }
+
+    /**
+     * Flow-assignment model accessor. Overridable seam so the FLC-09 cascade is
+     * unit-testable without a live database.
+     */
+    protected function flujo_familia_model()
+    {
+        return new catalogo_flujo_familia();
+    }
+
+    /**
+     * FLC-09 app-side cascade: drop the flow assignments that reference this
+     * family by `codfamilia`. The flow model is plugin-local; the availability
+     * guard keeps a missing class from fataling the delete path.
+     */
+    private function deleteFlujoAssignments(): void
+    {
+        if (!class_exists(catalogo_flujo_familia::class)) {
+            return;
+        }
+
+        $this->flujo_familia_model()->delete_all_from_familia((string) $this->codfamilia);
     }
 
     /**

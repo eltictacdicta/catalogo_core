@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Nombre y descripción multiidioma de un opcional.
+    Espejo de articulo_descripciones: clave natural (codigo, codidioma) y
+    cascada al borrar el opcional.
+-->
+<tabla>
+    <columna>
+        <nombre>id</nombre>
+        <tipo>serial</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codigo</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codidioma</nombre>
+        <tipo>character varying(5)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>nombre</nombre>
+        <tipo>character varying(100)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>descripcion</nombre>
+        <tipo>text</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_opcional_idiomas_pkey</nombre>
+        <consulta>PRIMARY KEY (id)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>catalogo_opcional_idiomas_unique</nombre>
+        <consulta>UNIQUE (codigo, codidioma)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_opcional_idiomas_opcionales</nombre>
+        <consulta>FOREIGN KEY (codigo)
+            REFERENCES catalogo_opcionales (codigo)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

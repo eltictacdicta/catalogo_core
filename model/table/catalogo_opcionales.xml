@@ -51,6 +51,23 @@
         <tipo>integer</tipo>
         <nulo>YES</nulo>
     </columna>
+    <columna>
+        <nombre>cantidad_min</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>1</defecto>
+    </columna>
+    <columna>
+        <nombre>cantidad_max</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>1</defecto>
+    </columna>
+    <columna>
+        <nombre>imagen</nombre>
+        <tipo>character varying(255)</tipo>
+        <nulo>YES</nulo>
+    </columna>
     <restriccion>
         <nombre>catalogo_opcionales_pkey</nombre>
         <consulta>PRIMARY KEY (id)</consulta>

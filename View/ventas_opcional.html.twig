@@ -1,4 +1,9 @@
 {{ include('header.html.twig') }}
+{% import 'Macro/Htmx.html.twig' as htmx %}
+
+{#- htmx 4 boot (OVE-04): inherited CSRF headers and a script-free swap posture
+    for the image upload/replace/remove flow. -#}
+{{ htmx.boot({'allowScriptTags': false}) }}
 
 {% if fsc.opcional %}
 <script type="text/javascript">
@@ -73,6 +78,16 @@ $(document).ready(function () {
 
     $('input[name="stipo_precio"]').on('change', toggleTipoPrecio);
     toggleTipoPrecio();
+
+    function toggleIdiomaPanels() {
+        var selected = $('#codidioma_selector').val();
+        $('.idioma-panel').each(function () {
+            $(this).toggle($(this).data('codidioma') === selected);
+        });
+    }
+
+    $('#codidioma_selector').on('change', toggleIdiomaPanels);
+    toggleIdiomaPanels();
 });
 </script>
 
@@ -212,6 +227,41 @@ $(document).ready(function () {
                                     </div>
                                 </div>
                             </div>
+                            {% if fsc.idiomas|length > 0 %}
+                            <div class="row">
+                                <div class="col-sm-12">
+                                    <div class="panel panel-info">
+                                        <div class="panel-heading">
+                                            <h3 class="panel-title">{{ 'optional-languages'|trans|default('Idiomas') }}</h3>
+                                        </div>
+                                        <div class="panel-body">
+                                            <div class="form-group">
+                                                <label for="codidioma_selector">{{ 'language'|trans|default('Idioma') }}</label>
+                                                <select class="form-control" id="codidioma_selector" name="codidioma_selector">
+                                                    {% for idioma in fsc.idiomas %}
+                                                    <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <p class="help-block">{{ 'optional-languages-help'|trans|default('El nombre y la descripción base se usan cuando un idioma no tiene valores propios.') }}</p>
+                                            </div>
+                                            {% for idioma in fsc.idiomas %}
+                                            {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
+                                            <div class="idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} style="display:none;"{% endif %}>
+                                                <div class="form-group">
+                                                    {{ 'optional-name'|trans }} ({{ idioma.nombre }}):
+                                                    <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]" value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100" autocomplete="off"/>
+                                                </div>
+                                                <div class="form-group">
+                                                    {{ 'optional-description'|trans }} ({{ idioma.nombre }}):
+                                                    <textarea class="form-control" name="idioma_descripcion[{{ idioma.codidioma }}]" rows="3">{{ idioma_row ? idioma_row.descripcion : '' }}</textarea>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
                             <div class="row">
                                 <div class="col-sm-12">
                                     <div class="checkbox">
@@ -232,6 +282,39 @@ $(document).ready(function () {
                         </div>
                     </div>
                 </form>
+
+                {% if not fsc.is_new %}
+                <div class="panel panel-default" id="opcional-imagen">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">{{ 'optional-image'|trans|default('Imagen') }}</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% if fsc.opcional.imagen_url() %}
+                        <div class="thumbnail" style="display:inline-block;margin-right:10px;">
+                            <img src="{{ fsc.opcional.imagen_url() }}" alt="{{ fsc.opcional.nombre }}" style="max-height:120px;"/>
+                        </div>
+                        <form hx-post="{{ fsc.url() }}&id={{ fsc.opcional.id }}"
+                              hx-target="#opcional-imagen" hx-swap="outerHTML" hx-select="#opcional-imagen">
+                            {{ csrf_field() }}
+                            <input type="hidden" name="delete_opcional_imagen" value="1"/>
+                            <button type="submit" class="btn btn-sm btn-danger" hx-confirm="{{ 'delete'|trans }}">
+                                <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
+                            </button>
+                        </form>
+                        {% endif %}
+                        <form hx-post="{{ fsc.url() }}&id={{ fsc.opcional.id }}"
+                              hx-target="#opcional-imagen" hx-swap="outerHTML" hx-select="#opcional-imagen"
+                              hx-encoding="multipart/form-data">
+                            {{ csrf_field() }}
+                            <input type="hidden" name="upload_opcional_imagen" value="1"/>
+                            <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif,image/webp"/>
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <span class="glyphicon glyphicon-upload"></span>&nbsp; {{ 'upload'|trans }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
             </div>
 
             {% if not fsc.is_new %}
