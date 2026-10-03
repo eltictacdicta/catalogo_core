@@ -16,6 +16,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_idioma.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/OpcionalImagenService.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/extras/CaracteristicaHookContextTrait.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
@@ -26,6 +27,7 @@ use FSFramework\model\catalogo_lista_precio;
 use FSFramework\model\catalogo_opcional;
 use FSFramework\model\catalogo_opcional_grupo;
 use FSFramework\model\catalogo_opcional_familia;
+use FSFramework\Plugins\catalogo_core\Services\OpcionalImagenService;
 use Symfony\Component\HttpFoundation\Request;
 
 class VentasOpcional extends PageController
@@ -121,6 +123,10 @@ class VentasOpcional extends PageController
             $this->removeArticulo($this->request);
         } elseif ($this->request->request->has('delete') && $this->allow_delete) {
             $this->eliminarOpcional($this->request);
+        } elseif ($this->request->request->has('upload_opcional_imagen')) {
+            $this->subirImagenOpcional($this->request);
+        } elseif ($this->request->request->has('delete_opcional_imagen')) {
+            $this->eliminarImagenOpcional($this->request);
         }
 
         if ($this->opcional !== null && !$this->is_new) {
@@ -506,6 +512,98 @@ class VentasOpcional extends PageController
         }
 
         $this->new_error_msg('No se pudo eliminar el opcional.');
+    }
+
+    /**
+     * Image service seam. Overridable so the upload/replace/remove flow is
+     * unit-testable against a temporary directory instead of the repository's
+     * `imgs/opcionales/`.
+     */
+    protected function opcional_imagen_service(): OpcionalImagenService
+    {
+        return new OpcionalImagenService();
+    }
+
+    /**
+     * Stores the single opcional image (OVE-04). The client filename is never
+     * trusted; the previous physical file is deleted only after the new bare
+     * filename is persisted, and the just-written file is rolled back when the
+     * model save fails.
+     */
+    private function subirImagenOpcional(Request $request): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if ($this->opcional === null || $this->is_new) {
+            $this->new_error_msg('Guarda el opcional antes de subir una imagen.');
+            return;
+        }
+
+        if (
+            !isset($_FILES['imagen'])
+            || !is_array($_FILES['imagen'])
+            || (int) ($_FILES['imagen']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+        ) {
+            $this->new_error_msg('Error al subir la imagen.');
+            return;
+        }
+
+        $service = $this->opcional_imagen_service();
+        $filename = $service->upload((string) $this->opcional->codigo, $_FILES['imagen']);
+        if ($filename === null) {
+            $this->new_error_msg('Error al guardar la imagen. Asegúrate de que sea un archivo de imagen válido (JPG, PNG, GIF o WEBP).');
+            return;
+        }
+
+        $previous = trim((string) $this->opcional->imagen);
+        $this->opcional->imagen = $filename;
+
+        if (!$this->opcional->save()) {
+            $service->delete_file($filename);
+            $this->new_error_msg('No se pudo guardar la imagen del opcional.');
+            return;
+        }
+
+        if ($previous !== '' && $previous !== $filename) {
+            $service->delete_file($previous);
+        }
+
+        $this->new_message('Imagen subida correctamente.');
+    }
+
+    /**
+     * Removes the opcional image: clears the column first, then deletes the
+     * physical file (OVE-04).
+     */
+    private function eliminarImagenOpcional(Request $request): void
+    {
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        if ($this->opcional === null || $this->is_new) {
+            $this->new_error_msg('Opcional no encontrado.');
+            return;
+        }
+
+        $filename = trim((string) $this->opcional->imagen);
+        if ($filename === '') {
+            $this->new_error_msg('El opcional no tiene imagen.');
+            return;
+        }
+
+        $this->opcional->imagen = null;
+        if (!$this->opcional->save()) {
+            $this->new_error_msg('No se pudo eliminar la imagen del opcional.');
+            return;
+        }
+
+        $this->opcional_imagen_service()->delete_file($filename);
+        $this->new_message('Imagen eliminada correctamente.');
     }
 
     private function buscarArticulo(string $query): void
