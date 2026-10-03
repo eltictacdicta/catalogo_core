@@ -75,6 +75,40 @@ class catalogo_flujo_accion extends \fs_model
         return $list;
     }
 
+    /**
+     * FLC-07: cycle path that this pending action would close, or null when the
+     * resulting graph stays acyclic.
+     *
+     * @return list<string>|null
+     */
+    protected function pending_cycle(): ?array
+    {
+        $conditions = (array) $this->db->select('SELECT * FROM ' . catalogo_flujo_condicion::TABLE . ';');
+        $actions = (array) $this->db->select('SELECT * FROM ' . self::TABLE . ';');
+
+        $actions = catalogo_flujo::merge_pending_row($actions, [
+            'id' => $this->id,
+            'id_flujo' => $this->id_flujo,
+            'sujeto_tipo' => $this->sujeto_tipo,
+            'sujeto_codigo' => $this->sujeto_codigo,
+        ]);
+
+        return catalogo_flujo::detect_cycle($conditions, $actions);
+    }
+
+    /**
+     * FLC-09 app-side cascade: removes every action that references the deleted
+     * subject by (tipo, código). No DB FK across subject parents.
+     */
+    public function delete_all_from_sujeto(string $sujetoTipo, string $codigo): bool
+    {
+        return (bool) $this->db->exec(
+            'DELETE FROM ' . $this->table_name
+            . ' WHERE sujeto_tipo = ' . $this->var2str(strtolower(trim($sujetoTipo)))
+            . ' AND sujeto_codigo = ' . $this->var2str(trim($codigo)) . ';'
+        );
+    }
+
     public function exists()
     {
         if (is_null($this->id)) {
@@ -117,6 +151,12 @@ class catalogo_flujo_accion extends \fs_model
     public function save()
     {
         if (!$this->test()) {
+            return false;
+        }
+
+        $cycle = $this->pending_cycle();
+        if ($cycle !== null) {
+            $this->new_error_msg('Ciclo de flujo detectado al guardar la acción: ' . implode(' -> ', $cycle));
             return false;
         }
 

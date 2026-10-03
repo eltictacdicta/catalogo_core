@@ -206,4 +206,132 @@ class catalogo_flujo extends \fs_model
 
         return $list;
     }
+
+    /**
+     * Replaces the row with the same id inside $rows, or appends the pending row.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, mixed> $pending
+     * @return list<array<string, mixed>>
+     */
+    public static function merge_pending_row(array $rows, array $pending): array
+    {
+        $id = $pending['id'] ?? null;
+        if ($id !== null && $id !== '') {
+            foreach ($rows as $index => $row) {
+                if ((string) ($row['id'] ?? '') === (string) $id) {
+                    $rows[$index] = $pending;
+
+                    return array_values($rows);
+                }
+            }
+        }
+
+        $rows[] = $pending;
+
+        return array_values($rows);
+    }
+
+    /**
+     * FLC-07 / AD-6: an edge S1 -> S2 exists when a flow acts on S2 and is
+     * conditioned by S1. Returns the cycle path (subject nodes) or null.
+     *
+     * @param array<int, array<string, mixed>> $conditions
+     * @param array<int, array<string, mixed>> $actions
+     * @return list<string>|null
+     */
+    public static function detect_cycle(array $conditions, array $actions): ?array
+    {
+        $byFlow = [];
+        foreach ($conditions as $row) {
+            $flow = (int) ($row['id_flujo'] ?? 0);
+            $node = self::subject_node($row);
+            if ($flow > 0 && $node !== null) {
+                $byFlow[$flow]['cond'][] = $node;
+            }
+        }
+        foreach ($actions as $row) {
+            $flow = (int) ($row['id_flujo'] ?? 0);
+            $node = self::subject_node($row);
+            if ($flow > 0 && $node !== null) {
+                $byFlow[$flow]['act'][] = $node;
+            }
+        }
+
+        $edges = [];
+        foreach ($byFlow as $parts) {
+            foreach ($parts['cond'] ?? [] as $from) {
+                foreach ($parts['act'] ?? [] as $to) {
+                    $edges[$from][$to] = true;
+                }
+            }
+        }
+
+        return self::find_cycle($edges);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function subject_node(array $row): ?string
+    {
+        $codigo = trim((string) ($row['sujeto_codigo'] ?? ''));
+        if ($codigo === '') {
+            return null;
+        }
+
+        $tipo = strtolower(trim((string) ($row['sujeto_tipo'] ?? '')));
+
+        return $tipo . ':' . $codigo;
+    }
+
+    /**
+     * @param array<string, array<string, bool>> $edges
+     * @return list<string>|null
+     */
+    private static function find_cycle(array $edges): ?array
+    {
+        $state = [];
+        $stack = [];
+        foreach (array_keys($edges) as $node) {
+            $cycle = self::dfs_cycle((string) $node, $edges, $state, $stack);
+            if ($cycle !== null) {
+                return $cycle;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, array<string, bool>> $edges
+     * @param array<string, int> $state
+     * @param list<string> $stack
+     * @return list<string>|null
+     */
+    private static function dfs_cycle(string $node, array $edges, array &$state, array &$stack): ?array
+    {
+        $state[$node] = 1;
+        $stack[] = $node;
+
+        foreach (array_keys($edges[$node] ?? []) as $next) {
+            $nextState = $state[$next] ?? 0;
+            if ($nextState === 1) {
+                $index = array_search($next, $stack, true);
+                if ($index !== false) {
+                    return array_slice($stack, (int) $index);
+                }
+            } elseif ($nextState === 0) {
+                $cycle = self::dfs_cycle((string) $next, $edges, $state, $stack);
+                if ($cycle !== null) {
+                    return $cycle;
+                }
+            }
+        }
+
+        array_pop($stack);
+        $state[$node] = 2;
+
+        return null;
+    }
 }
