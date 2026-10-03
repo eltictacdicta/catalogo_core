@@ -100,12 +100,12 @@ models are usable, and boot ensures them.
 - NEW/updated tests
 
 **Tasks**:
-- [ ] `WU-1.T1` RED: `tests/CatalogoOpcionalVersatilidadTest.php` — defaults `cantidad_min = 1` / `cantidad_max = 1`; `cantidad_max < 1` and `cantidad_min > cantidad_max` rejected; `imagen` bare filename + `imagen_url()`.
-- [ ] `WU-1.T2` RED: `tests/CatalogoFlujoModelTest.php` — unique `codigo`; unknown operator/action/tipo rejected; AND/OR preserved; article-delete cascade.
-- [ ] `WU-1.T3` RED: `tests/Services/CatalogLegacyTableMigrationTest.php` — new tables created idempotently; column-add guarded.
-- [ ] `WU-1.T4` RED: `tests/InitOpcionalesTablesTest.php` — boot ensures the new models.
-- [ ] `WU-1.T5` GREEN: write the XML schemas (PG + MySQL variants), models, migration method, `Init` list.
-- [ ] `WU-1.T6` REFACTOR: re-run the WU-1 suites green.
+- [x] `WU-1.T1` RED: `tests/CatalogoOpcionalVersatilidadTest.php` — defaults `cantidad_min = 1` / `cantidad_max = 1`; `cantidad_max < 1` and `cantidad_min > cantidad_max` rejected; `imagen` bare filename + `imagen_url()`.
+- [x] `WU-1.T2` RED: `tests/CatalogoFlujoModelTest.php` — unique `codigo`; unknown operator/action/tipo rejected; AND/OR preserved; article-delete cascade.
+- [x] `WU-1.T3` RED: `tests/Services/CatalogLegacyTableMigrationTest.php` — new tables created idempotently; column-add guarded.
+- [x] `WU-1.T4` RED: `tests/InitOpcionalesTablesTest.php` — boot ensures the new models.
+- [x] `WU-1.T5` GREEN: write the XML schemas (PG + MySQL variants), models, migration method, `Init` list.
+- [x] `WU-1.T6` REFACTOR: re-run the WU-1 suites green.
 
 **Verification**: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'CatalogoOpcionalVersatilidadTest|CatalogoFlujoModelTest|CatalogLegacyTableMigrationTest|InitOpcionalesTablesTest'`
 
@@ -121,10 +121,10 @@ chain; empty pair removes the row.
 **Files**: `model/core/catalogo_opcional.php`, `model/core/catalogo_opcional_idioma.php`, `Controller/VentasOpcional.php`, `View/ventas_opcional.html.twig`, tests.
 
 **Tasks**:
-- [ ] `WU-2.T1` RED: `tests/CatalogoOpcionalIdiomaTest.php` — requested wins; default fallback; base fallback; empty pair deletes.
-- [ ] `WU-2.T2` RED: `tests/Controller/VentasOpcionalIdiomaTest.php` — editor language selector + CSRF save.
-- [ ] `WU-2.T3` GREEN: implement accessors + editor language block.
-- [ ] `WU-2.T4` REFACTOR: re-run green.
+- [x] `WU-2.T1` RED: `tests/CatalogoOpcionalIdiomaTest.php` — requested wins; default fallback; base fallback; empty pair deletes.
+- [x] `WU-2.T2` RED: `tests/Controller/VentasOpcionalIdiomaTest.php` — editor language selector + CSRF save.
+- [x] `WU-2.T3` GREEN: implement accessors + editor language block.
+- [x] `WU-2.T4` REFACTOR: re-run green.
 
 **Verification**: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'CatalogoOpcionalIdiomaTest|VentasOpcionalIdiomaTest'`
 
@@ -140,10 +140,10 @@ the article mechanics.
 **Files**: NEW `Services/OpcionalImagenService.php`, `Controller/VentasOpcional.php`, `View/ventas_opcional.html.twig`, tests.
 
 **Tasks**:
-- [ ] `WU-3.T1` RED: `tests/OpcionalImagenServiceTest.php` — MIME allow-list; bare filename returned; base64 path; physical delete.
-- [ ] `WU-3.T2` RED: `tests/Controller/VentasOpcionalImagenTest.php` — replace deletes the previous file; CSRF-guarded.
-- [ ] `WU-3.T3` GREEN: implement service + editor image block.
-- [ ] `WU-3.T4` REFACTOR: re-run green.
+- [x] `WU-3.T1` RED: `tests/OpcionalImagenServiceTest.php` — MIME allow-list; bare filename returned; base64 path; physical delete.
+- [x] `WU-3.T2` RED: `tests/Controller/VentasOpcionalImagenTest.php` — replace deletes the previous file; CSRF-guarded.
+- [x] `WU-3.T3` GREEN: implement service + editor image block.
+- [x] `WU-3.T4` REFACTOR: re-run green.
 
 **Verification**: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'OpcionalImagenServiceTest|VentasOpcionalImagenTest'`
 
@@ -158,10 +158,10 @@ the article mechanics.
 **Files**: `model/core/catalogo_flujo*.php`, NEW `Services/FlujoResolver.php`, tests.
 
 **Tasks**:
-- [ ] `WU-4.T1` RED: `tests/FlujoResolverTest.php` — active-only; article/family scope; order (family → article, prioridad, id); read-only.
-- [ ] `WU-4.T2` RED: `tests/CatalogoFlujoCycleTest.php` — direct cycle rejected at save.
-- [ ] `WU-4.T3` GREEN: implement resolver + cycle DFS + app-side cascade.
-- [ ] `WU-4.T4` REFACTOR: re-run green.
+- [x] `WU-4.T1` RED: `tests/FlujoResolverTest.php` — active-only; article/family scope; order (family → article, prioridad, id); read-only.
+- [x] `WU-4.T2` RED: `tests/CatalogoFlujoCycleTest.php` — direct cycle rejected at save.
+- [x] `WU-4.T3` GREEN: implement resolver + cycle DFS + app-side cascade.
+- [x] `WU-4.T4` REFACTOR: re-run green.
 
 **Verification**: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'CatalogoFlujoCycleTest|FlujoResolverTest'`
 
@@ -177,11 +177,11 @@ reporting.
 **Files**: NEW `Services/OpcionalExcelExportService.php`, `Services/OpcionalExcelImportWizardService.php`, tests.
 
 **Tasks**:
-- [ ] `WU-5.T1` RED: `tests/OpcionalExcelExportTest.php` — new columns present, default language first, read-only.
-- [ ] `WU-5.T2` RED: `tests/OpcionalExcelImportWizardTest.php` — idempotent update; orphan reported; base64 image.
-- [ ] `WU-5.T3` RED: `tests/FlujoExcelImportTest.php` — flow import idempotent by código; orphan subject reported.
-- [ ] `WU-5.T4` GREEN: implement the two services.
-- [ ] `WU-5.T5` REFACTOR: re-run green.
+- [x] `WU-5.T1` RED: `tests/OpcionalExcelExportTest.php` — new columns present, default language first, read-only.
+- [x] `WU-5.T2` RED: `tests/OpcionalExcelImportWizardTest.php` — idempotent update; orphan reported; base64 image.
+- [x] `WU-5.T3` RED: `tests/FlujoExcelImportTest.php` — flow import idempotent by código; orphan subject reported.
+- [x] `WU-5.T4` GREEN: implement the two services.
+- [x] `WU-5.T5` REFACTOR: re-run green.
 
 **Verification**: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --filter 'OpcionalExcelExportTest|OpcionalExcelImportWizardTest|FlujoExcelImportTest'`
 
@@ -191,10 +191,10 @@ reporting.
 
 ## WU-6 — Verification and boundary audit (no production change)
 
-- [ ] `WU-6.T1` `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` — all green.
-- [ ] `WU-6.T2` `ddev exec php vendor/bin/phpunit` — root suites green.
-- [ ] `WU-6.T3` `ddev exec composer phpstan` — no new errors.
-- [ ] `WU-6.T4` Boundary audit: the diff contains none of the concurrent change's
+- [x] `WU-6.T1` `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` — all green.
+- [x] `WU-6.T2` `ddev exec php vendor/bin/phpunit` — root suites green.
+- [x] `WU-6.T3` `ddev exec composer phpstan` — no new errors.
+- [x] `WU-6.T4` Boundary audit: the diff contains none of the concurrent change's
       files and no core `openspec/` entry (`tests/CatalogoOpcionalVersatilidadBoundaryTest.php`).
 - [ ] `WU-6.T5` Manual smoke checklist: create/edit opcional (qty, image, two
       languages), create a flow, export and re-import.
@@ -216,13 +216,13 @@ reporting.
 
 ## Success criteria (mirror of proposal/specs/design)
 
-- [ ] `cantidad_min`/`cantidad_max` default 1, validated (`min >= 0`, `max >= 1`,
+- [x] `cantidad_min`/`cantidad_max` default 1, validated (`min >= 0`, `max >= 1`,
       `min <= max`), honored loose and grouped.
-- [ ] Single image stored as a bare filename, served from `imgs/opcionales/`,
+- [x] Single image stored as a bare filename, served from `imgs/opcionales/`,
       upload/replace/remove reusing the article mechanics.
-- [ ] `nombre`/`descripcion` resolve per language with the article fallback
+- [x] `nombre`/`descripcion` resolve per language with the article fallback
       chain; empty pair removes the row.
-- [ ] Flows reference by código, are assignable to articles/families, exposed
+- [x] Flows reference by código, are assignable to articles/families, exposed
       read-only and ordered (family → article, prioridad, id); cycles rejected.
-- [ ] Opcionales and flows export/import by código, idempotent, orphan-reported.
-- [ ] Additive migration only; concurrent-change files and core `openspec/` untouched.
+- [x] Opcionales and flows export/import by código, idempotent, orphan-reported.
+- [x] Additive migration only; concurrent-change files and core `openspec/` untouched.
