@@ -47,6 +47,19 @@ final class VentasOpcionalIdiomaTest extends TestCase
         $this->assertStringNotContainsString('|raw', $view);
     }
 
+    public function test_view_removes_the_duplicated_base_name_and_description_inputs(): void
+    {
+        $view = (string) file_get_contents(FS_FOLDER . '/' . self::VIEW);
+
+        $this->assertStringNotContainsString('name="snombre"', $view, 'the base name input must be removed (GDI-11 mirror)');
+        $this->assertStringNotContainsString('name="sdescripcion"', $view, 'the base description input must be removed (GDI-11 mirror)');
+        $this->assertStringContainsString(
+            '{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %}',
+            $view,
+            'the configured-default language name input must be required'
+        );
+    }
+
     public function test_guardar_opcional_validates_csrf_before_persisting_languages(): void
     {
         $source = (string) file_get_contents(FS_FOLDER . '/' . self::CONTROLLER);
@@ -64,15 +77,19 @@ final class VentasOpcionalIdiomaTest extends TestCase
         $this->assertStringContainsString('set_idioma(', $idiomas);
     }
 
-    public function test_valid_csrf_save_persists_per_language_values(): void
+    public function test_valid_csrf_save_mirrors_the_default_language_into_the_base(): void
     {
         $controller = $this->makeController(true);
         $controller->exposeGuardar($this->request());
 
         $spy = $controller->spy();
         $this->assertSame(1, $spy->saveCalls, 'the base opcional must be saved once');
+        $this->assertSame('Hola', $spy->nombre, 'the default language mirrors into the base name');
+        $this->assertSame('Desc ES', $spy->descripcion, 'the default language mirrors into the base description');
+
+        $cods = array_map(static fn (array $call): string => $call[0], $spy->idiomaCalls);
+        $this->assertSame(['en'], $cods, 'only non-default languages are written through set_idioma()');
         $this->assertContains(['en', 'Hello', 'Desc EN'], $spy->idiomaCalls);
-        $this->assertContains(['es', 'Hola', 'Desc ES'], $spy->idiomaCalls);
     }
 
     public function test_invalid_csrf_persists_nothing(): void
@@ -91,8 +108,6 @@ final class VentasOpcionalIdiomaTest extends TestCase
         return Request::create('/index.php?page=ventas_opcional&id=5', 'POST', [
             'save_opcional' => '1',
             'scodigo' => 'OPC0005',
-            'snombre' => 'Base',
-            'sdescripcion' => 'Base desc',
             'stipo_precio' => 'fijo',
             'sprecio' => '0',
             'idioma_nombre' => ['en' => 'Hello', 'es' => 'Hola'],
@@ -180,6 +195,9 @@ final class VentasOpcionalIdiomaTest extends TestCase
                 $this->csrfValid = $csrfValid;
                 $this->opcional = $spyModel;
                 $this->lista_precio_defecto = 'DEFAULT';
+                // Mirrors loadIdiomas(): the editor also primes the effective
+                // default so guardarOpcional() knows which language is the base.
+                $this->codidioma_edit = 'es';
             }
 
             public function spy(): object

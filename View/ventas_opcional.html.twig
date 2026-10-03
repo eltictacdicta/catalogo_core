@@ -163,14 +163,6 @@ $(document).ready(function () {
                             <div class="row">
                                 <div class="col-sm-12">
                                     <div class="form-group">
-                                        {{ 'optional-name'|trans }}:
-                                        <input class="form-control" type="text" name="snombre" value="{{ fsc.opcional.nombre }}" maxlength="100" required autocomplete="off"/>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-sm-12">
-                                    <div class="form-group">
                                         {{ 'optional-price-type'|trans }}:
                                         <div>
                                             <label class="radio-inline">
@@ -219,14 +211,6 @@ $(document).ready(function () {
                                     </div>
                                 </div>
                             </div>
-                            <div class="row">
-                                <div class="col-sm-12">
-                                    <div class="form-group">
-                                        {{ 'optional-description'|trans }}:
-                                        <textarea class="form-control" name="sdescripcion" rows="3">{{ fsc.opcional.descripcion }}</textarea>
-                                    </div>
-                                </div>
-                            </div>
                             {% if fsc.idiomas|length > 0 %}
                             <div class="row">
                                 <div class="col-sm-12">
@@ -242,14 +226,14 @@ $(document).ready(function () {
                                                     <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}</option>
                                                     {% endfor %}
                                                 </select>
-                                                <p class="help-block">{{ 'optional-languages-help'|trans|default('El nombre y la descripción base se usan cuando un idioma no tiene valores propios.') }}</p>
+                                                <p class="help-block">{{ 'optional-languages-help'|trans|default('El idioma por defecto se guarda en el nombre y la descripción base; los demás idiomas tienen sus propios valores.') }}</p>
                                             </div>
                                             {% for idioma in fsc.idiomas %}
                                             {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
                                             <div class="idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} style="display:none;"{% endif %}>
                                                 <div class="form-group">
                                                     {{ 'optional-name'|trans }} ({{ idioma.nombre }}):
-                                                    <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]" value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100" autocomplete="off"/>
+                                                    <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]"{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %} value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100" autocomplete="off"/>
                                                 </div>
                                                 <div class="form-group">
                                                     {{ 'optional-description'|trans }} ({{ idioma.nombre }}):

@@ -142,20 +142,32 @@ class catalogo_opcional extends \fs_model
         }
 
         $model = $this->idioma_model();
+
+        // Mirror semantics: the configured default language IS the base column,
+        // so it must resolve straight to the base and never read a (possibly
+        // stale) default-language child row.
+        $defaultCode = $this->effective_default_code();
+        if ($defaultCode !== '' && $defaultCode === $codidioma) {
+            return $base;
+        }
+
         $row = $model->get_by_opcional_idioma($this->codigo, $codidioma);
         if ($row) {
             return (string) ($row->$field ?? '');
         }
 
-        $defaultCode = (string) $this->language_registry()->get_effective_default_code();
-        if ($defaultCode !== '' && $defaultCode !== $codidioma) {
-            $defaultRow = $model->get_by_opcional_idioma($this->codigo, $defaultCode);
-            if ($defaultRow) {
-                return (string) ($defaultRow->$field ?? '');
-            }
-        }
-
+        // A non-default language with no row falls back to the base (which
+        // carries the configured default).
         return $base;
+    }
+
+    /**
+     * Effective default language code, resolved through the overridable
+     * registry seam so the mirror branch is unit-testable without a database.
+     */
+    private function effective_default_code(): string
+    {
+        return (string) $this->language_registry()->get_effective_default_code();
     }
 
     /**
@@ -175,6 +187,12 @@ class catalogo_opcional extends \fs_model
     /**
      * Upsert del nombre/descripción de un idioma (GDI-13).
      *
+     * Mirror semantics (maintainer-approved): the configured-default language is
+     * stored in the base columns `nombre`/`descripcion`, not in a child row, so
+     * `search()`, `ORDER BY nombre` and tpvmod name-based dedupe keep working.
+     * Writing the effective default code mirrors into the base columns and
+     * persists through `save()`; any other code upserts a child row.
+     *
      * Un par vacío (nombre Y descripción vacíos) significa "ausente" y elimina
      * la fila a través de `catalogo_opcional_idioma::save()`; nunca se almacena
      * una fila totalmente vacía.
@@ -184,6 +202,10 @@ class catalogo_opcional extends \fs_model
         $codidioma = trim((string) $codidioma);
         if ($this->codigo === null || $this->codigo === '' || $codidioma === '') {
             return false;
+        }
+
+        if ($codidioma === $this->effective_default_code()) {
+            return $this->mirror_default_idioma((string) $nombre, (string) $descripcion);
         }
 
         $row = $this->idioma_model()->get_by_opcional_idioma($this->codigo, $codidioma);
@@ -197,6 +219,30 @@ class catalogo_opcional extends \fs_model
         $row->descripcion = (string) $descripcion;
 
         return (bool) $row->save();
+    }
+
+    /**
+     * Mirrors the default language into the base `nombre`/`descripcion` and
+     * persists. `save()` -> `test()` owns the required non-empty name rule; when
+     * the save is rejected the previous base values are restored so a failed
+     * write never leaves the in-memory row ahead of the database.
+     */
+    private function mirror_default_idioma(string $nombre, string $descripcion): bool
+    {
+        $prevNombre = $this->nombre;
+        $prevDescripcion = $this->descripcion;
+
+        $this->nombre = $nombre;
+        $this->descripcion = $descripcion;
+
+        if ($this->save()) {
+            return true;
+        }
+
+        $this->nombre = $prevNombre;
+        $this->descripcion = $prevDescripcion;
+
+        return false;
     }
 
     /**

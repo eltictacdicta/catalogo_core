@@ -53,7 +53,7 @@ class VentasOpcional extends PageController
     public array $grupos_asignados_ids = [];
     /** @var array<int, \FSFramework\model\catalogo_idioma> Active languages for the selector. */
     public array $idiomas = [];
-    /** @var array<string, \FSFramework\model\catalogo_opcional_idioma> Existing rows keyed by codidioma. */
+    /** @var array<string, object|array<string, mixed>> Editor prefill keyed by codidioma. */
     public array $idiomas_opcional = [];
     /** @var string Language preselected in the editor selector. */
     public string $codidioma_edit = '';
@@ -219,8 +219,11 @@ class VentasOpcional extends PageController
     }
 
     /**
-     * Indexes the opcional's existing language rows by `codidioma` so the editor
-     * can prefill each per-language input.
+     * Prefills the editor uniformly: every active language gets an entry whose
+     * `nombre`/`descripcion` the view can read directly. Under mirror semantics
+     * the configured default lives in the base columns, so its slot is always
+     * built from the base (never from a stale child row); every other language
+     * comes from its own child row.
      */
     private function loadIdiomasOpcional(): void
     {
@@ -238,14 +241,39 @@ class VentasOpcional extends PageController
         foreach ($this->opcional->get_idiomas() as $row) {
             $this->idiomas_opcional[(string) $row->codidioma] = $row;
         }
+
+        $defaultCode = $this->effective_default_code();
+        if ($defaultCode !== '') {
+            $this->idiomas_opcional[$defaultCode] = [
+                'codidioma' => $defaultCode,
+                'nombre' => (string) $this->opcional->nombre,
+                'descripcion' => (string) $this->opcional->descripcion,
+            ];
+        }
+    }
+
+    /**
+     * Resolves the effective default language code. When the editor has already
+     * primed `codidioma_edit` (via `loadIdiomas()`), that value is authoritative;
+     * otherwise the registry resolves it. Overridable seam for DB-free tests.
+     */
+    protected function effective_default_code(): string
+    {
+        if ($this->codidioma_edit !== '') {
+            return $this->codidioma_edit;
+        }
+
+        return (string) $this->idioma_registry_model()->get_effective_default_code();
     }
 
     /**
      * Persists the per-language name/description inputs (`idioma_nombre[cod]` /
-     * `idioma_descripcion[cod]`). Runs only after the CSRF check in
-     * `guardarOpcional()`. An empty pair clears the row inside the model.
+     * `idioma_descripcion[cod]`) for the non-default languages. Runs only after
+     * the CSRF check in `guardarOpcional()`. The configured default is mirrored
+     * into the base columns by `guardarOpcional()` before `save()`, so it is
+     * intentionally skipped here; an empty pair clears the row inside the model.
      */
-    private function guardarIdiomas(Request $request): bool
+    private function guardarIdiomas(Request $request, string $defaultCode): bool
     {
         if ($this->opcional === null) {
             return true;
@@ -258,6 +286,10 @@ class VentasOpcional extends PageController
         foreach ($nombres as $codidioma => $nombre) {
             $codidioma = trim((string) $codidioma);
             if ($codidioma === '') {
+                continue;
+            }
+
+            if ($codidioma === $defaultCode) {
                 continue;
             }
 
@@ -327,8 +359,19 @@ class VentasOpcional extends PageController
         }
 
         $this->opcional->codigo = $codigo;
-        $this->opcional->nombre = (string) $request->request->get('snombre', '');
-        $this->opcional->descripcion = (string) $request->request->get('sdescripcion', '');
+
+        // Mirror semantics: the base columns are the configured-default language.
+        // The default slot of the language inputs is the one and only source for
+        // the base name/description; setting it before save() lets test() enforce
+        // the required non-empty name and writes the mirrored base.
+        $defaultCode = $this->effective_default_code();
+        $idiomaNombres = (array) $request->request->all('idioma_nombre');
+        $idiomaDescripciones = (array) $request->request->all('idioma_descripcion');
+        if ($defaultCode !== '' && array_key_exists($defaultCode, $idiomaNombres)) {
+            $this->opcional->nombre = (string) $idiomaNombres[$defaultCode];
+            $this->opcional->descripcion = (string) ($idiomaDescripciones[$defaultCode] ?? '');
+        }
+
         $tipoPrecio = (string) $request->request->get('stipo_precio', catalogo_opcional::TIPO_PRECIO_FIJO);
         $this->opcional->tipo_precio = $tipoPrecio === catalogo_opcional::TIPO_PRECIO_PORCENTAJE
             ? catalogo_opcional::TIPO_PRECIO_PORCENTAJE
@@ -354,7 +397,7 @@ class VentasOpcional extends PageController
             $this->new_error_msg('No se pudieron guardar los grupos del opcional.');
         }
 
-        if (!$this->guardarIdiomas($request)) {
+        if (!$this->guardarIdiomas($request, $defaultCode)) {
             $this->new_error_msg('No se pudieron guardar los idiomas del opcional.');
         }
 
