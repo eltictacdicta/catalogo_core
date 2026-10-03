@@ -14,6 +14,8 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_op
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_idioma.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/extras/CaracteristicaHookContextTrait.php';
 require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
@@ -47,6 +49,12 @@ class VentasOpcional extends PageController
     public array $grupos_asignados = [];
     /** @var list<int> Checked group ids for the membership checkbox list. */
     public array $grupos_asignados_ids = [];
+    /** @var array<int, \FSFramework\model\catalogo_idioma> Active languages for the selector. */
+    public array $idiomas = [];
+    /** @var array<string, \FSFramework\model\catalogo_opcional_idioma> Existing rows keyed by codidioma. */
+    public array $idiomas_opcional = [];
+    /** @var string Language preselected in the editor selector. */
+    public string $codidioma_edit = '';
     public bool $allow_delete = false;
 
     public function __construct()
@@ -73,6 +81,7 @@ class VentasOpcional extends PageController
         $this->loadListaPrecioDefault();
         $this->loadFamilias();
         $this->loadGruposOpcional();
+        $this->loadIdiomas();
 
         $id = $this->request->query->getInt('id');
         if ($id > 0) {
@@ -93,6 +102,7 @@ class VentasOpcional extends PageController
         }
 
         $this->loadGruposAsignados();
+        $this->loadIdiomasOpcional();
 
         if (!$this->is_new && $this->opcional !== null && $this->request->query->has('buscar_articulo')) {
             $this->buscarArticulo((string) $this->request->query->get('buscar_articulo', ''));
@@ -120,6 +130,7 @@ class VentasOpcional extends PageController
         }
 
         $this->loadGruposAsignados();
+        $this->loadIdiomasOpcional();
     }
 
     /**
@@ -179,6 +190,76 @@ class VentasOpcional extends PageController
     {
         $grupo = new catalogo_opcional_grupo();
         $this->grupos_opcional = $grupo->all_activos();
+    }
+
+    /**
+     * Language registry seam. Overridable so the editor language block can be
+     * exercised without a database.
+     */
+    protected function idioma_registry_model()
+    {
+        return new \FSFramework\model\catalogo_idioma();
+    }
+
+    /**
+     * Loads the active languages and the language preselected in the selector.
+     */
+    private function loadIdiomas(): void
+    {
+        $registry = $this->idioma_registry_model();
+        $registry->ensure_defaults();
+        $this->idiomas = $registry->all_activos();
+        $this->codidioma_edit = (string) $registry->get_effective_default_code();
+    }
+
+    /**
+     * Indexes the opcional's existing language rows by `codidioma` so the editor
+     * can prefill each per-language input.
+     */
+    private function loadIdiomasOpcional(): void
+    {
+        $this->idiomas_opcional = [];
+
+        if (
+            $this->opcional === null
+            || $this->is_new
+            || $this->opcional->codigo === null
+            || $this->opcional->codigo === ''
+        ) {
+            return;
+        }
+
+        foreach ($this->opcional->get_idiomas() as $row) {
+            $this->idiomas_opcional[(string) $row->codidioma] = $row;
+        }
+    }
+
+    /**
+     * Persists the per-language name/description inputs (`idioma_nombre[cod]` /
+     * `idioma_descripcion[cod]`). Runs only after the CSRF check in
+     * `guardarOpcional()`. An empty pair clears the row inside the model.
+     */
+    private function guardarIdiomas(Request $request): bool
+    {
+        if ($this->opcional === null) {
+            return true;
+        }
+
+        $nombres = (array) $request->request->all('idioma_nombre');
+        $descripciones = (array) $request->request->all('idioma_descripcion');
+
+        $ok = true;
+        foreach ($nombres as $codidioma => $nombre) {
+            $codidioma = trim((string) $codidioma);
+            if ($codidioma === '') {
+                continue;
+            }
+
+            $descripcion = (string) ($descripciones[$codidioma] ?? '');
+            $ok = $this->opcional->set_idioma($codidioma, (string) $nombre, $descripcion) && $ok;
+        }
+
+        return $ok;
     }
 
     /**
@@ -265,6 +346,10 @@ class VentasOpcional extends PageController
         $grupos = (array) $request->request->all('grupos');
         if (!$this->opcional->set_grupos($grupos)) {
             $this->new_error_msg('No se pudieron guardar los grupos del opcional.');
+        }
+
+        if (!$this->guardarIdiomas($request)) {
+            $this->new_error_msg('No se pudieron guardar los idiomas del opcional.');
         }
 
         if ($this->opcional->es_precio_porcentaje()) {
