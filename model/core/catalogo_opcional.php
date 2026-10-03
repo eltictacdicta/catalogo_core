@@ -818,9 +818,15 @@ class catalogo_opcional extends \fs_model
             $this->grupo_rel_model()->delete_all_from_opcional((int) $this->id);
         }
 
+        if (!$this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';')) {
+            return false;
+        }
+
+        // FLC-09: only a successful owning DELETE may drop the flow references,
+        // so a failed delete leaves the flow definitions intact.
         $this->deleteFlujoSubjectReferences();
 
-        return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
+        return true;
     }
 
     public function all($offset = 0, $limit = FS_ITEM_LIMIT)

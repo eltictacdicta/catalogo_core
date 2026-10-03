@@ -102,6 +102,73 @@ final class OpcionalExcelImportWizardTest extends TestCase
         $this->assertSame(0, $opcional->updateCalls);
     }
 
+    public function test_failing_flow_child_write_rolls_back_and_reports_non_success(): void
+    {
+        $wizard = new OpcionalExcelImportWizardService();
+        $wizard->setFlowSeams(
+            new class {
+                public function get_by_codigo($codigo)
+                {
+                    return false;
+                }
+            },
+            static fn (string $tipo, string $codigo): bool => true,
+            static fn (): object => new class {
+                public string $codigo = '';
+                public string $nombre = '';
+                public string $descripcion = '';
+                public bool $activo = true;
+                public int $prioridad = 0;
+
+                public function save()
+                {
+                    return true;
+                }
+            },
+            static fn ($flujo, array $conditions, array $actions, array $articulos, array $familias): bool => false
+        );
+
+        $db = new class {
+            public int $begins = 0;
+            public int $commits = 0;
+            public int $rollbacks = 0;
+
+            public function begin_transaction(): bool
+            {
+                $this->begins++;
+
+                return true;
+            }
+
+            public function commit(): bool
+            {
+                $this->commits++;
+
+                return true;
+            }
+
+            public function rollback(): bool
+            {
+                $this->rollbacks++;
+
+                return true;
+            }
+        };
+        $wizard->setFlowDb($db);
+
+        $result = $wizard->apply_flujo_row(['codigo' => 'F1', 'nombre' => 'Con fallo']);
+
+        $this->assertNotContains(
+            $result['status'],
+            ['created', 'updated'],
+            'a failed child write must never be reported as a successful import'
+        );
+        $this->assertSame(1, $db->begins, 'the replacement must open a transaction');
+        $this->assertSame(0, $db->commits, 'a failed child write must not commit');
+        $this->assertSame(1, $db->rollbacks, 'a failed child write must roll back the replacement');
+        $this->assertNotSame([], $wizard->rejectedRows(), 'the failed import must be recorded as a rejected row');
+    }
+
     /**
      * @param array<string, bool> $idiomas code => exists
      * @param array<string, bool> $grupos code => exists

@@ -194,13 +194,20 @@ class familia extends \fs_model
     public function delete()
     {
         $this->clean_cache();
-        $this->deleteFlujoAssignments();
 
         $sql = "DELETE FROM " . $this->table_name . self::PK_WHERE . $this->var2str($this->codfamilia) . ";"
             . " " . self::SQL_UPDATE . $this->table_name . " SET madre = " . $this->var2str($this->madre)
             . " WHERE madre = " . $this->var2str($this->codfamilia) . ";";
 
-        return $this->db->exec($sql);
+        if (!$this->db->exec($sql)) {
+            return false;
+        }
+
+        // FLC-09: only a successful owning DELETE may drop the flow
+        // assignments, so a failed delete leaves the flow definitions intact.
+        $this->deleteFlujoAssignments();
+
+        return true;
     }
 
     /**

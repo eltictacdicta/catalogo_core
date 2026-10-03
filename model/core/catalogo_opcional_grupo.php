@@ -213,9 +213,15 @@ class catalogo_opcional_grupo extends \fs_model
         $this->grupo_rel_model()->delete_all_from_grupo((int) $this->id);
         $this->articulo_opcional_grupo_model()->delete_all_from_grupo((int) $this->id);
 
+        if (!$this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';')) {
+            return false;
+        }
+
+        // FLC-09: only a successful owning DELETE may drop the flow references,
+        // so a failed delete leaves the flow definitions intact.
         $this->deleteFlujoSubjectReferences();
 
-        return $this->db->exec('DELETE FROM ' . $this->table_name . ' WHERE id = ' . $this->intval($this->id) . ';');
+        return true;
     }
 
     /**

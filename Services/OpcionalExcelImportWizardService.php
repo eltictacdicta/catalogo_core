@@ -136,6 +136,9 @@ class OpcionalExcelImportWizardService
     /** @var callable|null flow-child persistence seam (conditions/actions/assignments). */
     private $flowChildrenWriter = null;
 
+    /** @var object|null flow transaction DB seam. */
+    private $flowDb = null;
+
     /** @var callable|null language-existence seam. */
     private $idiomaExists = null;
 
@@ -183,6 +186,15 @@ class OpcionalExcelImportWizardService
         $this->flowSubjectExists = $subjectExists;
         $this->newFlujo = $newFlujo;
         $this->flowChildrenWriter = $childrenWriter;
+    }
+
+    /**
+     * Injects the flow transaction connection (unit tests use a DB-free double;
+     * production resolves the shared `fs_db2` engine through `flow_db()`).
+     */
+    public function setFlowDb($db): void
+    {
+        $this->flowDb = $db;
     }
 
     /**
@@ -388,10 +400,6 @@ class OpcionalExcelImportWizardService
             $flujo->prioridad = (int) $mappedRow['prioridad'];
         }
 
-        if (!$flujo->save()) {
-            return $this->reject('save_failed', $codigo, 'No se pudo guardar el flujo.');
-        }
-
         $this->flujo_conditions = [];
         foreach ($condiciones as $condicion) {
             $this->flujo_conditions[] = $this->normalize_condition_row($condicion);
@@ -403,13 +411,60 @@ class OpcionalExcelImportWizardService
         $this->flujo_articulos = $articulos;
         $this->flujo_familias = $familias;
 
-        $this->persist_flow_children($flujo, $this->flujo_conditions, $this->flujo_actions, $articulos, $familias);
+        // The owning row and its replaced children are one write unit: a
+        // partial replacement must never survive, and a failed write must not
+        // be reported as a successful import.
+        $failure = $this->persist_flujo_transactionally($flujo);
+        if ($failure !== null) {
+            return $this->reject($failure['motivo'], $codigo, $failure['detalle']);
+        }
 
         return [
             'status' => $existing ? 'updated' : 'created',
             'codigo' => $codigo,
             'motivo' => '',
         ];
+    }
+
+    /**
+     * Persists the flow row and its replaced children inside one transaction.
+     *
+     * Returns null on success, or `array{motivo, detalle}` describing the
+     * failure. Any failure rolls the transaction back so the previous children
+     * are preserved instead of being half-replaced.
+     *
+     * When the connection cannot open a transaction (e.g. the DB-free unit
+     * harness), the work still runs best-effort: a missing transaction is never
+     * reported as a write failure, but a real write failure still is.
+     *
+     * @param object $flujo
+     * @return array{motivo: string, detalle: string}|null
+     */
+    private function persist_flujo_transactionally($flujo): ?array
+    {
+        $db = $this->flow_db();
+        $began = false;
+        $failure = null;
+
+        try {
+            $began = (bool) $db->begin_transaction();
+
+            if (!$flujo->save()) {
+                $failure = ['motivo' => 'save_failed', 'detalle' => 'No se pudo guardar el flujo.'];
+            } elseif (!$this->persist_flow_children($flujo, $this->flujo_conditions, $this->flujo_actions, $this->flujo_articulos, $this->flujo_familias)) {
+                $failure = ['motivo' => 'write_failed', 'detalle' => 'No se pudieron guardar las condiciones o acciones del flujo.'];
+            } elseif ($began && !$db->commit()) {
+                $failure = ['motivo' => 'commit_failed', 'detalle' => 'No se pudo confirmar la importación del flujo.'];
+            }
+        } catch (\Throwable $e) {
+            $failure = ['motivo' => 'write_failed', 'detalle' => $e->getMessage()];
+        }
+
+        if ($failure !== null && $began) {
+            $db->rollback();
+        }
+
+        return $failure;
     }
 
     /** @var list<array<string, mixed>> */
@@ -459,23 +514,26 @@ class OpcionalExcelImportWizardService
      * @param list<array<string, mixed>> $actions
      * @param list<string> $articulos
      * @param list<string> $familias
+     * @return bool false on the first failed child write so the caller can roll back
      */
-    private function persist_flow_children($flujo, array $conditions, array $actions, array $articulos, array $familias): void
+    private function persist_flow_children($flujo, array $conditions, array $actions, array $articulos, array $familias): bool
     {
         if ($this->flowChildrenWriter !== null) {
-            ($this->flowChildrenWriter)($flujo, $conditions, $actions, $articulos, $familias);
-
-            return;
+            // A void seam result is accepted (DB-free writer); an explicit
+            // false is a failed write the caller must roll back.
+            return ($this->flowChildrenWriter)($flujo, $conditions, $actions, $articulos, $familias) !== false;
         }
 
         $idFlujo = (int) ($flujo->id ?? 0);
         if ($idFlujo <= 0) {
-            return;
+            return false;
         }
+
+        $ok = true;
 
         $condicionModel = new \FSFramework\model\catalogo_flujo_condicion();
         foreach ($condicionModel->all_from_flujo($idFlujo) as $row) {
-            $row->delete();
+            $ok = (bool) $row->delete() && $ok;
         }
         foreach ($conditions as $condition) {
             $model = new \FSFramework\model\catalogo_flujo_condicion();
@@ -485,12 +543,12 @@ class OpcionalExcelImportWizardService
             $model->sujeto_codigo = (string) $condition['sujeto_codigo'];
             $model->operador = (string) $condition['operador'];
             $model->valor = $condition['valor'] === null ? null : (string) $condition['valor'];
-            $model->save();
+            $ok = (bool) $model->save() && $ok;
         }
 
         $accionModel = new \FSFramework\model\catalogo_flujo_accion();
         foreach ($accionModel->all_from_flujo($idFlujo) as $row) {
-            $row->delete();
+            $ok = (bool) $row->delete() && $ok;
         }
         foreach ($actions as $action) {
             $model = new \FSFramework\model\catalogo_flujo_accion();
@@ -498,20 +556,22 @@ class OpcionalExcelImportWizardService
             $model->accion = (string) $action['accion'];
             $model->sujeto_tipo = (string) $action['sujeto_tipo'];
             $model->sujeto_codigo = (string) $action['sujeto_codigo'];
-            $model->save();
+            $ok = (bool) $model->save() && $ok;
         }
 
         $articuloModel = new \FSFramework\model\catalogo_flujo_articulo();
-        $articuloModel->delete_all_from_flujo($idFlujo);
+        $ok = (bool) $articuloModel->delete_all_from_flujo($idFlujo) && $ok;
         foreach ($articulos as $referencia) {
-            $articuloModel->add($idFlujo, $referencia);
+            $ok = (bool) $articuloModel->add($idFlujo, $referencia) && $ok;
         }
 
         $familiaModel = new \FSFramework\model\catalogo_flujo_familia();
-        $familiaModel->delete_all_from_flujo($idFlujo);
+        $ok = (bool) $familiaModel->delete_all_from_flujo($idFlujo) && $ok;
         foreach ($familias as $codfamilia) {
-            $familiaModel->add($idFlujo, $codfamilia);
+            $ok = (bool) $familiaModel->add($idFlujo, $codfamilia) && $ok;
         }
+
+        return $ok;
     }
 
     // =====================================================================
@@ -844,6 +904,29 @@ class OpcionalExcelImportWizardService
         }
 
         return $this->flujoModel;
+    }
+
+    /**
+     * Flow transaction connection. Overridable seam; the shared static engine
+     * means `new \fs_db2()` joins the same connection as the real models.
+     *
+     * @return object
+     */
+    protected function flow_db()
+    {
+        if ($this->flowDb === null) {
+            $this->flowDb = $this->create_flow_db();
+        }
+
+        return $this->flowDb;
+    }
+
+    /**
+     * @return object
+     */
+    protected function create_flow_db()
+    {
+        return new \fs_db2();
     }
 
     /**

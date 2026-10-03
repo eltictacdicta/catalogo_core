@@ -1062,17 +1062,20 @@ class articulo extends \fs_model
     public function delete()
     {
         $this->clean_cache();
-        $this->deleteFlujoAssignments();
 
         $sql = "DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
         $sql .= "DELETE FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
-        if ($this->db->exec($sql)) {
-            $this->set_imagen(FALSE);
-            $this->exists = FALSE;
-            return TRUE;
+        if (!$this->db->exec($sql)) {
+            return FALSE;
         }
 
-        return FALSE;
+        // FLC-09: only a successful owning DELETE may drop the flow
+        // assignments, so a failed delete leaves the flow definitions intact.
+        $this->deleteFlujoAssignments();
+        $this->set_imagen(FALSE);
+        $this->exists = FALSE;
+
+        return TRUE;
     }
 
     /**

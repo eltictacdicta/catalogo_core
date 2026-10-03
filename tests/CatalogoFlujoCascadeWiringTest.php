@@ -82,12 +82,16 @@ final class FlujoCascadeRecorder
 }
 
 /**
- * DB-free connection double shared by the owning delete paths.
+ * DB-free connection double shared by the owning delete paths. `$failExec`
+ * simulates a rejected row DELETE so the cascade-ordering contract can prove
+ * the flow cleanup is skipped when the owning row survives.
  */
 final class CascadeWiringFakeDb
 {
     /** @var list<string> */
     public array $executed = [];
+
+    public bool $failExec = false;
 
     public function __construct(private CascadeWiringJournal $journal)
     {
@@ -98,7 +102,7 @@ final class CascadeWiringFakeDb
         $this->executed[] = trim((string) $sql);
         $this->journal->add('exec');
 
-        return true;
+        return !$this->failExec;
     }
 
     public function var2str($val): string
@@ -203,10 +207,62 @@ final class CatalogoFlujoCascadeWiringTest extends TestCase
         );
         $this->assertContains('DELETE FROM catalogo_opcionales WHERE id = 7;', $db->executed);
         $this->assertSame(
-            ['cascade:sujeto:opcional:OPC1', 'cascade:sujeto:opcional:OPC1', 'exec'],
+            ['exec', 'cascade:sujeto:opcional:OPC1', 'cascade:sujeto:opcional:OPC1'],
             $journal->events,
-            'both cascade cleanups must run before the owning row DELETE'
+            'both cascade cleanups must run only after the owning row DELETE succeeds'
         );
+    }
+
+    public function test_failed_opcional_delete_skips_the_flow_cascade(): void
+    {
+        $journal = new CascadeWiringJournal();
+        $db = new CascadeWiringFakeDb($journal);
+        $db->failExec = true;
+        $condicion = new FlujoCascadeRecorder($journal);
+        $accion = new FlujoCascadeRecorder($journal);
+
+        $model = new class($db, $condicion, $accion) extends \FSFramework\model\catalogo_opcional {
+            private FlujoCascadeRecorder $condRef;
+            private FlujoCascadeRecorder $accRef;
+
+            public function __construct($db, $cond, $acc)
+            {
+                $this->condRef = $cond;
+                $this->accRef = $acc;
+                $this->db = $db;
+                $this->table_name = 'catalogo_opcionales';
+                $this->id = 7;
+                $this->codigo = 'OPC1';
+            }
+
+            protected function grupo_rel_model(): \FSFramework\model\catalogo_opcional_grupo_rel
+            {
+                return new class() extends \FSFramework\model\catalogo_opcional_grupo_rel {
+                    public function __construct()
+                    {
+                    }
+
+                    public function delete_all_from_opcional(int $idOpcional): bool
+                    {
+                        return true;
+                    }
+                };
+            }
+
+            protected function flujo_condicion_model()
+            {
+                return $this->condRef;
+            }
+
+            protected function flujo_accion_model()
+            {
+                return $this->accRef;
+            }
+        };
+
+        $this->assertFalse($model->delete(), 'a failed owning DELETE must be reported as a failure');
+        $this->assertSame([], $condicion->subjectCalls, 'a failed opcional DELETE must not clean flow conditions');
+        $this->assertSame([], $accion->subjectCalls, 'a failed opcional DELETE must not clean flow actions');
     }
 
     public function test_deleting_grupo_cleans_conditions_and_actions_by_codigo(): void
@@ -274,6 +330,77 @@ final class CatalogoFlujoCascadeWiringTest extends TestCase
         $this->assertSame([['grupo', 'GRP1']], $condicion->subjectCalls);
         $this->assertSame([['grupo', 'GRP1']], $accion->subjectCalls);
         $this->assertContains('DELETE FROM catalogo_opcional_grupos WHERE id = 3;', $db->executed);
+        $this->assertSame(
+            ['exec', 'cascade:sujeto:grupo:GRP1', 'cascade:sujeto:grupo:GRP1'],
+            $journal->events,
+            'the grupo cascade must run only after the owning row DELETE succeeds'
+        );
+    }
+
+    public function test_failed_grupo_delete_skips_the_flow_cascade(): void
+    {
+        $journal = new CascadeWiringJournal();
+        $db = new CascadeWiringFakeDb($journal);
+        $db->failExec = true;
+        $condicion = new FlujoCascadeRecorder($journal);
+        $accion = new FlujoCascadeRecorder($journal);
+
+        $model = new class($db, $condicion, $accion) extends \FSFramework\model\catalogo_opcional_grupo {
+            private FlujoCascadeRecorder $condRef;
+            private FlujoCascadeRecorder $accRef;
+
+            public function __construct($db, $cond, $acc)
+            {
+                $this->condRef = $cond;
+                $this->accRef = $acc;
+                $this->db = $db;
+                $this->table_name = 'catalogo_opcional_grupos';
+                $this->id = 3;
+                $this->codigo = 'GRP1';
+            }
+
+            protected function grupo_rel_model(): \FSFramework\model\catalogo_opcional_grupo_rel
+            {
+                return new class() extends \FSFramework\model\catalogo_opcional_grupo_rel {
+                    public function __construct()
+                    {
+                    }
+
+                    public function delete_all_from_grupo(int $idGrupo): bool
+                    {
+                        return true;
+                    }
+                };
+            }
+
+            protected function articulo_opcional_grupo_model(): \FSFramework\model\catalogo_articulo_opcional_grupo
+            {
+                return new class() extends \FSFramework\model\catalogo_articulo_opcional_grupo {
+                    public function __construct()
+                    {
+                    }
+
+                    public function delete_all_from_grupo(int $idGrupo): bool
+                    {
+                        return true;
+                    }
+                };
+            }
+
+            protected function flujo_condicion_model()
+            {
+                return $this->condRef;
+            }
+
+            protected function flujo_accion_model()
+            {
+                return $this->accRef;
+            }
+        };
+
+        $this->assertFalse($model->delete(), 'a failed owning DELETE must be reported as a failure');
+        $this->assertSame([], $condicion->subjectCalls, 'a failed grupo DELETE must not clean flow conditions');
+        $this->assertSame([], $accion->subjectCalls, 'a failed grupo DELETE must not clean flow actions');
     }
 
     public function test_deleting_articulo_cleans_flow_assignments_by_referencia(): void
@@ -311,6 +438,44 @@ final class CatalogoFlujoCascadeWiringTest extends TestCase
             $this->executedContains($db, "DELETE FROM articulos WHERE referencia = 'ART1';"),
             'the owning article row DELETE must still run'
         );
+        $this->assertSame(
+            ['exec', 'cascade:referencia:ART1'],
+            $journal->events,
+            'the article flow cleanup must run only after the owning row DELETE succeeds'
+        );
+    }
+
+    public function test_failed_articulo_delete_skips_the_flow_cascade(): void
+    {
+        $journal = new CascadeWiringJournal();
+        $db = new CascadeWiringFakeDb($journal);
+        $db->failExec = true;
+        $spy = new FlujoCascadeRecorder($journal);
+
+        $model = new class($db, $spy) extends \FSFramework\model\articulo {
+            private FlujoCascadeRecorder $spyRef;
+
+            public function __construct($db, $spy)
+            {
+                $this->spyRef = $spy;
+                $this->db = $db;
+                $this->table_name = 'articulos';
+                $this->referencia = 'ART1';
+                $this->exists = true;
+            }
+
+            public function set_imagen($img, $png = true)
+            {
+            }
+
+            protected function flujo_articulo_model()
+            {
+                return $this->spyRef;
+            }
+        };
+
+        $this->assertFalse($model->delete(), 'a failed owning DELETE must be reported as a failure');
+        $this->assertSame([], $spy->referenciaCalls, 'a failed article DELETE must not clean flow assignments');
     }
 
     public function test_deleting_familia_cleans_flow_assignments_by_codfamilia(): void
@@ -350,6 +515,46 @@ final class CatalogoFlujoCascadeWiringTest extends TestCase
             $this->executedContains($db, "DELETE FROM familias WHERE codfamilia = 'FAM1';"),
             'the owning family row DELETE must still run'
         );
+        $this->assertSame(
+            ['exec', 'cascade:familia:FAM1'],
+            $journal->events,
+            'the family flow cleanup must run only after the owning row DELETE succeeds'
+        );
+    }
+
+    public function test_failed_familia_delete_skips_the_flow_cascade(): void
+    {
+        $journal = new CascadeWiringJournal();
+        $db = new CascadeWiringFakeDb($journal);
+        $db->failExec = true;
+        $spy = new FlujoCascadeRecorder($journal);
+
+        $model = new class($db, $spy) extends \FSFramework\model\familia {
+            private FlujoCascadeRecorder $spyRef;
+
+            public function __construct($db, $spy)
+            {
+                $this->spyRef = $spy;
+                $this->db = $db;
+                $this->cache = new class {
+                    public function delete($key)
+                    {
+                        return true;
+                    }
+                };
+                $this->table_name = 'familias';
+                $this->codfamilia = 'FAM1';
+                $this->madre = null;
+            }
+
+            protected function flujo_familia_model()
+            {
+                return $this->spyRef;
+            }
+        };
+
+        $this->assertFalse($model->delete(), 'a failed owning DELETE must be reported as a failure');
+        $this->assertSame([], $spy->familiaCalls, 'a failed family DELETE must not clean flow assignments');
     }
 
     public function test_cascade_helpers_are_used_by_the_owning_models(): void

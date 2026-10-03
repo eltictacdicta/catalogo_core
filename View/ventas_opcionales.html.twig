@@ -509,7 +509,7 @@
             </tr>
             {% else %}
             <tr class="warning">
-               <td colspan="10">Ningún opcional encontrado. Pulsa el botón <b>Nuevo opcional</b> para crear uno.</td>
+               <td colspan="{{ 8 + fsc.visibilidad_activa|length }}">Ningún opcional encontrado. Pulsa el botón <b>Nuevo opcional</b> para crear uno.</td>
             </tr>
             {% endfor %}
          </tbody>
