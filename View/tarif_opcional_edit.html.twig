@@ -292,17 +292,21 @@
                                     en_catalogo/en_tarifa. #}
                                  {{ tarif.toggle_button_group({'activa': fsc.opcional_activo_en_tarifa(fsc.tarifa_seleccionada.codtarifa)}, {'show_catalogo': false, 'show_en_tarifa': false, 'size': 'sm'}) }}
                                  <span class="text-muted" style="margin-left: 8px;">
+                                    {% if 'en_catalogo' in fsc.visibilidad_activa %}
                                     Catálogo:
                                     {% if fsc.opcional_en_catalogo_tarifa(fsc.tarifa_seleccionada.codtarifa) %}
                                     <span class="label label-success">Sí</span>
                                     {% else %}
                                     <span class="label label-default">No</span>
                                     {% endif %}
+                                    {% endif %}
+                                    {% if 'en_tarifa' in fsc.visibilidad_activa %}
                                     &nbsp;En tarifa:
                                     {% if fsc.opcional_en_tarifa_flag(fsc.tarifa_seleccionada.codtarifa) %}
                                     <span class="label label-info">Sí</span>
                                     {% else %}
                                     <span class="label label-default">No</span>
+                                    {% endif %}
                                     {% endif %}
                                  </span>
                               </div>
@@ -333,7 +337,7 @@
                      <div class="panel-heading"><h3 class="panel-title">Resumen por tarifa</h3></div>
                      <div class="panel-body" style="padding: 0;">
                         <table class="table table-condensed table-hover" style="margin-bottom: 0;">
-                           <thead><tr><th>Tarifa</th><th>Activa</th><th>Catálogo</th><th>En tarifa</th><th class="text-right">Precio</th></tr></thead>
+                           <thead><tr><th>Tarifa</th><th>Activa</th>{% if 'en_catalogo' in fsc.visibilidad_activa %}<th>Catálogo</th>{% endif %}{% if 'en_tarifa' in fsc.visibilidad_activa %}<th>En tarifa</th>{% endif %}<th class="text-right">Precio</th></tr></thead>
                            <tbody>
                               {% for codtarifa, datos in fsc.precios_tarifas %}
                               <tr{% if codtarifa == fsc.tarifa_seleccionada.codtarifa %} class="info"{% endif %}>
@@ -343,8 +347,12 @@
                                     {% if datos.tarifa.por_defecto %}<span class="glyphicon glyphicon-star text-primary"></span>{% endif %}
                                  </td>
                                  <td>{% if datos.activa %}<span class="glyphicon glyphicon-ok text-success"></span>{% else %}<span class="glyphicon glyphicon-remove text-muted"></span>{% endif %}</td>
+                                 {% if 'en_catalogo' in fsc.visibilidad_activa %}
                                  <td>{% if datos.en_catalogo %}<span class="glyphicon glyphicon-ok text-success"></span>{% else %}<span class="glyphicon glyphicon-remove text-muted"></span>{% endif %}</td>
+                                 {% endif %}
+                                 {% if 'en_tarifa' in fsc.visibilidad_activa %}
                                  <td>{% if datos.en_tarifa %}<span class="glyphicon glyphicon-ok text-success"></span>{% else %}<span class="glyphicon glyphicon-remove text-muted"></span>{% endif %}</td>
+                                 {% endif %}
                                   <td class="text-right">
                                      {% if datos.es_porcentaje %}
                                         {% if datos.porcentaje is not null %}{{ datos.porcentaje }}%{% else %}<span class="text-muted">—</span>{% endif %}

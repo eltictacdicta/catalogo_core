@@ -66,6 +66,14 @@ class tarif_tab_precios extends fbase_controller
      */
     protected string $rows_scope = '';
 
+    /**
+     * Memoized active visibility codigos for the request (VCG-01). The
+     * `articulo_precios_rows` partial reads it through {@see visibilidad_activa()}.
+     *
+     * @var list<string>|null
+     */
+    private ?array $visibilidad_activa_cache = null;
+
     public function __construct()
     {
         parent::__construct(__CLASS__, 'Precios Tarifas (tab)', 'tarifario', FALSE, FALSE);
@@ -102,6 +110,24 @@ class tarif_tab_precios extends fbase_controller
     protected function caracteristica_resolver()
     {
         return new CaracteristicaResolver();
+    }
+
+    /**
+     * VCG-01: active visibility characteristic codigos for this request.
+     *
+     * Memoized per request so the partial gate evaluates the resolver once.
+     * Driven by the definition activity (CAR-20), never by the read-through
+     * flag (VCG-06).
+     *
+     * @return list<string>
+     */
+    public function visibilidad_activa(): array
+    {
+        if ($this->visibilidad_activa_cache === null) {
+            $this->visibilidad_activa_cache = $this->caracteristica_resolver()->active_visibility_codigos();
+        }
+
+        return $this->visibilidad_activa_cache;
     }
 
     /**

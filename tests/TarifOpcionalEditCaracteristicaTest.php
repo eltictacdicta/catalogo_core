@@ -166,6 +166,39 @@ final class TarifOpcionalEditCaracteristicaTest extends TestCase
         $this->assertStringContainsString('{% if datos.en_tarifa %}', $view);
         $this->assertStringContainsString('<th>Catálogo</th>', $view);
         $this->assertStringContainsString('<th>En tarifa</th>', $view);
+
+        // VCG-05: each label and its overview header/value are wrapped by the
+        // matching active-visibility gate.
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*Catálogo:/s",
+            $view,
+            'the Catálogo label must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}.*?En tarifa:/s",
+            $view,
+            'the En tarifa label must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*<th>Catálogo<\/th>\s*\{%\s*endif\s*%\}/",
+            $view,
+            'the Catálogo overview header must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}\s*<th>En tarifa<\/th>\s*\{%\s*endif\s*%\}/",
+            $view,
+            'the En tarifa overview header must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/<td>\{% if datos\.en_catalogo %\}.*?\{% endif %\}<\/td>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the Catálogo overview value must sit inside its gate'
+        );
+        $this->assertMatchesRegularExpression(
+            "/<td>\{% if datos\.en_tarifa %\}.*?\{% endif %\}<\/td>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the En tarifa overview value must sit inside its gate'
+        );
     }
 
     // =====================================================================

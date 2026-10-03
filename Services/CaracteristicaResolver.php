@@ -102,6 +102,38 @@ class CaracteristicaResolver
     }
 
     /**
+     * VCG-01: active visibility characteristic codigos for the current
+     * enabled-plugin set.
+     *
+     * Derived from the same memoized CAR-20 filtered map as {@see definitions()},
+     * so it issues no additional query and is fail-closed: an empty enabled set
+     * yields an empty list. Order follows {@see self::VISIBILITY_CODIGOS}.
+     *
+     * @return list<string>
+     */
+    public function active_visibility_codigos(): array
+    {
+        $active = $this->definitions();
+
+        $codigos = [];
+        foreach (self::VISIBILITY_CODIGOS as $codigo) {
+            if (isset($active[$codigo])) {
+                $codigos[] = $codigo;
+            }
+        }
+
+        return $codigos;
+    }
+
+    /**
+     * VCG-01: strict membership over {@see active_visibility_codigos()}.
+     */
+    public function is_visibility_active(string $codigo): bool
+    {
+        return in_array($codigo, $this->active_visibility_codigos(), true);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listable_definitions(): array

@@ -115,6 +115,14 @@ trait VentasOpcionalesListTrait
      */
     private array $opcionales_visibility_cache = [];
 
+    /**
+     * Memoized active visibility codigos for the request (VCG-01). The list
+     * template gate reads it through {@see visibilidad_activa()}.
+     *
+     * @var list<string>|null
+     */
+    private ?array $visibilidad_activa_cache = null;
+
     // =====================================================================
     // Seams
     // =====================================================================
@@ -180,6 +188,24 @@ trait VentasOpcionalesListTrait
     protected function opcional_visibility_resolver()
     {
         return new CaracteristicaResolver();
+    }
+
+    /**
+     * VCG-01: active visibility characteristic codigos for this request.
+     *
+     * Memoized per request so the list template gate (`'en_tarifa' in
+     * fsc.visibilidad_activa`) evaluates the resolver at most once. Driven by
+     * the definition activity (CAR-20), never by the read-through flag (VCG-06).
+     *
+     * @return list<string>
+     */
+    public function visibilidad_activa(): array
+    {
+        if ($this->visibilidad_activa_cache === null) {
+            $this->visibilidad_activa_cache = $this->opcional_visibility_resolver()->active_visibility_codigos();
+        }
+
+        return $this->visibilidad_activa_cache;
     }
 
     // =====================================================================

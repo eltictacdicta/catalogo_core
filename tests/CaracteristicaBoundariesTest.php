@@ -208,6 +208,60 @@ final class CaracteristicaBoundariesTest extends TestCase
     }
 
     // =====================================================================
+    // VCG-08 — visibility gate ownership safety
+    // =====================================================================
+
+    /**
+     * The accessor and the four render seams answer from the canonical codigos
+     * only: no `'tarifario'` literal, path or namespace may be introduced.
+     */
+    public function test_visibility_gate_has_no_plugin_name_literal(): void
+    {
+        $methods = [
+            'Services/CaracteristicaResolver.php' => ['active_visibility_codigos', 'is_visibility_active'],
+            'extras/VentasArticulosListTrait.php' => ['caracteristica_resolver', 'visibilidad_activa'],
+            'extras/VentasOpcionalesListTrait.php' => ['visibilidad_activa'],
+            'controller/tarif_tab_precios.php' => ['visibilidad_activa'],
+            'controller/tarif_opcional_edit.php' => ['visibilidad_activa'],
+        ];
+
+        foreach ($methods as $relative => $names) {
+            $source = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/' . $relative);
+            foreach ($names as $name) {
+                $body = $this->stripComments($this->methodSource($source, $name));
+                $this->assertNotSame('', $body, $relative . '::' . $name . ' must exist');
+
+                foreach (["'tarifario'", '"tarifario"', 'plugins/tarifario/', '@tarifario/'] as $needle) {
+                    $this->assertStringNotContainsString(
+                        $needle,
+                        $body,
+                        $relative . '::' . $name . ' must not hardcode a plugin name/path'
+                    );
+                }
+            }
+        }
+    }
+
+    public function test_the_four_render_servers_expose_visibilidad_activa(): void
+    {
+        $servers = [
+            'extras/VentasArticulosListTrait.php',
+            'extras/VentasOpcionalesListTrait.php',
+            'controller/tarif_tab_precios.php',
+            'controller/tarif_opcional_edit.php',
+        ];
+
+        foreach ($servers as $relative) {
+            $source = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/' . $relative);
+            $this->assertMatchesRegularExpression(
+                '/function\s+visibilidad_activa\s*\(\s*\)\s*:\s*array/',
+                $source,
+                $relative . ' must expose the no-arg visibilidad_activa(): array seam'
+            );
+        }
+    }
+
+    // =====================================================================
     // Scan helpers
     // =====================================================================
 
@@ -340,6 +394,53 @@ final class CaracteristicaBoundariesTest extends TestCase
         }
 
         return $files;
+    }
+
+    /**
+     * Brace-balanced extraction of a named method (signature + body) from a
+     * class/trait source. Empty string when the method is absent.
+     */
+    private function methodSource(string $source, string $method): string
+    {
+        $tokens = token_get_all($source);
+        $count = count($tokens);
+
+        for ($i = 0; $i < $count; $i++) {
+            if (!is_array($tokens[$i]) || $tokens[$i][0] !== T_FUNCTION) {
+                continue;
+            }
+
+            $j = $i + 1;
+            while ($j < $count && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
+                $j++;
+            }
+            if ($j >= $count || !is_array($tokens[$j]) || $tokens[$j][0] !== T_STRING || $tokens[$j][1] !== $method) {
+                continue;
+            }
+
+            $out = '';
+            $depth = 0;
+            $started = false;
+            for ($k = $i; $k < $count; $k++) {
+                $token = $tokens[$k];
+                $text = is_array($token) ? $token[1] : $token;
+                $out .= $text;
+
+                if ($text === '{') {
+                    $depth++;
+                    $started = true;
+                } elseif ($text === '}') {
+                    $depth--;
+                    if ($started && $depth === 0) {
+                        return $out;
+                    }
+                } elseif ($text === ';' && !$started) {
+                    return $out;
+                }
+            }
+        }
+
+        return '';
     }
 
     private function stripComments(string $source): string

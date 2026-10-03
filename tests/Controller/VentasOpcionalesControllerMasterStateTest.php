@@ -117,6 +117,40 @@ final class VentasOpcionalesControllerMasterStateTest extends TestCase
         $this->assertStringContainsString('fsc.opcional_en_catalogo_tarifa(', $view, 'the catalog cell renders the derived value');
     }
 
+    public function test_view_gates_the_visibility_columns_on_the_active_set(): void
+    {
+        $view = $this->source(self::VIEW);
+
+        // Headers.
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}\s*<th class=\"text-center\">.*?<\/th>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the Tarifa header must be gated on the active visibility set'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*<th class=\"text-center\">Catálogo<\/th>\s*\{%\s*endif\s*%\}/",
+            $view,
+            'the Catálogo header must be gated on the active visibility set'
+        );
+
+        // Per-row cells keep their derived helpers inside the gate.
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}\s*<td class=\"text-center\">.*?fsc\.opcional_en_tarifa_flag\(value\.id\).*?<\/td>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the Tarifa cell must be gated and keep its derived helper'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*<td class=\"text-center\">.*?fsc\.opcional_en_catalogo_tarifa\(value\.id\).*?<\/td>\s*\{%\s*endif\s*%\}/s",
+            $view,
+            'the Catálogo cell must be gated and keep its derived helper'
+        );
+
+        // The multitarifa filter and the Precio/Estado columns stay ungated.
+        $this->assertStringContainsString('b_codtarifa', $view, 'the multitarifa filter must stay');
+        $this->assertStringContainsString('fsc.show_precio_opcional(', $view, 'the Precio column must stay');
+        $this->assertStringContainsString('action=toggle_activa', $view, 'the Estado column must stay');
+    }
+
     // =====================================================================
     // OUM-04 — only the activation toggle survives
     // =====================================================================

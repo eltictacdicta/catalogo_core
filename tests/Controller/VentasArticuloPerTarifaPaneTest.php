@@ -84,6 +84,9 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
     /** @var array<string, array<string, bool>> codtarifa => codigo => resolved value. */
     public array $visibilityByTarifa = [];
 
+    /** @var list<string> Active visibility codigos answered by the resolver double. */
+    public array $activeVisibility = ['en_tarifa', 'en_catalogo'];
+
     /** @var list<array{0: string, 1: string, 2: array<string, mixed>, 3: string, 4: bool}> assign_bool calls. */
     public array $storeAssignments = [];
 
@@ -130,6 +133,7 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
         $this->divisaCalls = [];
         $this->resolveCalls = [];
         $this->visibilityByTarifa = [];
+        $this->activeVisibility = ['en_tarifa', 'en_catalogo'];
         $this->storeAssignments = [];
         $this->saveCount = 0;
         $this->deleteCount = 0;
@@ -197,6 +201,12 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
                         $this->outer->resolveCalls[] = [$codigo, (string) $codtarifa, $referencia, $codfamilia];
 
                         return (bool) ($this->outer->visibilityByTarifa[(string) $codtarifa][$codigo] ?? false);
+                    }
+
+                    /** @return list<string> */
+                    public function active_visibility_codigos(): array
+                    {
+                        return $this->outer->activeVisibility;
                     }
                 };
             }
@@ -509,6 +519,36 @@ final class VentasArticuloPerTarifaPaneTest extends TestCase
         $this->assertSame([], $this->storeAssignments, 'Rendering must not write feature values');
         $this->assertSame(0, $this->saveCount, 'Rendering must not save a price row');
         $this->assertSame(0, $this->deleteCount, 'Rendering must not delete a price row');
+    }
+
+    public function test_scoped_rows_hide_inactive_visibility_controls_while_price_and_activo_stay(): void
+    {
+        $this->twoTarifaFixture();
+        // Owner disabled: no visibility definition is active.
+        $this->activeVisibility = [];
+
+        $html = $this->getRows(['ref' => 'REF-1', 'codtarifa' => 'USD1']);
+
+        $this->assertNotSame('', $html, 'Rows action must echo the rendered fragment');
+        $this->assertSame(
+            '',
+            $this->checkboxInput($html, 'en_tarifa', 'USD1'),
+            'an inactive en_tarifa control must not render'
+        );
+        $this->assertSame(
+            '',
+            $this->checkboxInput($html, 'en_catalogo', 'USD1'),
+            'an inactive en_catalogo control must not render'
+        );
+
+        // The multitarifa price input and the activo checkbox stay rendered.
+        $this->assertStringContainsString('name="precio"', $html, 'the price input must stay');
+        $this->assertStringContainsString('data-codtarifa="USD1"', $html, 'the scoped block must stay');
+        $this->assertNotSame(
+            '',
+            $this->checkboxInput($html, 'activo', 'USD1'),
+            'the multitarifa activo checkbox must stay rendered'
+        );
     }
 
     // =====================================================================

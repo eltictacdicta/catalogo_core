@@ -64,6 +64,9 @@ final class TarifTabPreciosTest extends TestCase
     /** @var array<string, array<string, bool>> codtarifa => codigo => value */
     public array $visibilityByTarifa = [];
 
+    /** @var list<string> Active visibility codigos answered by the resolver double. */
+    public array $activeVisibility = ['en_tarifa', 'en_catalogo'];
+
     /** @var array{0: bool, 1: bool}|null [en_tarifa, en_catalogo] of the last saved price row */
     public ?array $lastSavedVisibilityFlags = null;
 
@@ -122,6 +125,7 @@ final class TarifTabPreciosTest extends TestCase
         $this->divisaCalls = [];
         $this->storeAssignments = [];
         $this->visibilityByTarifa = [];
+        $this->activeVisibility = ['en_tarifa', 'en_catalogo'];
         $this->lastSavedVisibilityFlags = null;
     }
 
@@ -256,6 +260,12 @@ final class TarifTabPreciosTest extends TestCase
                     public function resolve_bool(string $codigo, string $codtarifa, ?string $referencia = null, ?string $codfamilia = null): ?bool
                     {
                         return (bool) ($this->outer->visibilityByTarifa[(string) $codtarifa][$codigo] ?? false);
+                    }
+
+                    /** @return list<string> */
+                    public function active_visibility_codigos(): array
+                    {
+                        return $this->outer->activeVisibility;
                     }
                 };
             }
@@ -840,6 +850,49 @@ final class TarifTabPreciosTest extends TestCase
         $addons = $xpath->query('.//span[contains(@class, "input-group-addon")]', $root);
         $this->assertSame(1, $addons->length, 'The price input must keep its currency addon');
         $this->assertSame('$', trim($addons->item(0)->textContent), 'The addon must render the tariff currency');
+    }
+
+    /**
+     * VCG-03: with both visibility characteristics inactive the partial must
+     * drop the two visibility checkboxes while keeping the multitarifa price
+     * input and the `activo` checkbox.
+     */
+    public function test_rows_fragment_hides_inactive_visibility_controls_while_price_and_activo_stay(): void
+    {
+        $this->setTarifas([
+            ['codtarifa' => 'USD1', 'nombre' => 'Dólar', 'coddivisa' => 'USD'],
+        ]);
+        $this->pricesByTarifa = ['USD1' => 12.5];
+        $this->activeVisibility = [];
+
+        $html = $this->getRows(['ref' => 'REF-1', 'codtarifa' => 'USD1']);
+
+        $dom = $this->fragmentDocument($html);
+        $xpath = new \DOMXPath($dom);
+        $roots = $xpath->query('//*[@id="tab_tarifario_precios_rows"]');
+        $this->assertSame(1, $roots->length, 'The fragment must keep the frozen rows root id');
+        $root = $roots->item(0);
+
+        $this->assertSame(
+            0,
+            $xpath->query('.//input[@name="en_tarifa"]', $root)->length,
+            'an inactive en_tarifa control must not render'
+        );
+        $this->assertSame(
+            0,
+            $xpath->query('.//input[@name="en_catalogo"]', $root)->length,
+            'an inactive en_catalogo control must not render'
+        );
+        $this->assertSame(
+            1,
+            $xpath->query('.//input[@name="precio"]', $root)->length,
+            'the multitarifa price input must stay rendered'
+        );
+        $this->assertSame(
+            1,
+            $xpath->query('.//input[@name="activo"]', $root)->length,
+            'the multitarifa activo checkbox must stay rendered'
+        );
     }
 
     /**

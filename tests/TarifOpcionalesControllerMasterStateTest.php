@@ -630,4 +630,31 @@ final class TarifOpcionalesControllerMasterStateTest extends TestCase
         self::assertStringContainsString('guardar_precio_tarifa', $edit);
         self::assertStringContainsString('{{ csrf_field() }}', $edit);
     }
+
+    public function test_list_and_edit_views_gate_the_visibility_surfaces(): void
+    {
+        $list = $this->source(self::LIST_VIEW);
+        self::assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}\s*<th class=\"text-center\">.*?<\/th>\s*\{%\s*endif\s*%\}/s",
+            $list,
+            'the list Tarifa header must be gated on the active visibility set'
+        );
+        self::assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*<th class=\"text-center\">Catálogo<\/th>\s*\{%\s*endif\s*%\}/",
+            $list,
+            'the list Catálogo header must be gated on the active visibility set'
+        );
+
+        $edit = $this->source(self::EDIT_VIEW);
+        self::assertMatchesRegularExpression(
+            "/\{%\s*if 'en_catalogo' in fsc\.visibilidad_activa\s*%\}\s*Catálogo:/s",
+            $edit,
+            'the edit Catálogo label must be gated on the active visibility set'
+        );
+        self::assertMatchesRegularExpression(
+            "/\{%\s*if 'en_tarifa' in fsc\.visibilidad_activa\s*%\}.*?En tarifa:/s",
+            $edit,
+            'the edit En tarifa label must be gated on the active visibility set'
+        );
+    }
 }
