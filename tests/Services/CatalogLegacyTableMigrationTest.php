@@ -201,6 +201,22 @@ final class CatalogMigrationFakeDb extends \fs_db2
             return true;
         }
 
+        // Any other CREATE TABLE (the versatilidad tables): register the table
+        // so tableExists() sees it and a second run is a no-op.
+        if (preg_match('/^CREATE TABLE (?:IF NOT EXISTS )?([a-zA-Z0-9_]+)/i', $sql, $m)) {
+            $this->tables[$m[1]] = $this->tables[$m[1]] ?? [];
+
+            return true;
+        }
+
+        // MySQL column addition guarded by the column-exists pre-check: record
+        // the new column so a second run skips the ALTER.
+        if (preg_match('/^ALTER TABLE `([a-zA-Z0-9_]+)` ADD `([a-zA-Z0-9_]+)`/i', $sql, $m)) {
+            $this->columns[$m[1]][] = $m[2];
+
+            return true;
+        }
+
         // M:N backfill from the frozen id_grupo column (INSERT IGNORE, MySQL).
         if (preg_match(
             '/^INSERT IGNORE INTO catalogo_opcional_grupo_rel \(id_opcional, id_grupo\)'
@@ -331,11 +347,54 @@ final class CatalogMigrationFakeDb extends \fs_db2
 
 final class CatalogLegacyTableMigrationTest extends TestCase
 {
+    /** New tables added by the opcionales-versatilidad change (OVE-07). */
+    private const VERSATILIDAD_TABLES = [
+        'catalogo_opcional_idiomas',
+        'catalogo_flujos',
+        'catalogo_flujo_condiciones',
+        'catalogo_flujo_acciones',
+        'catalogo_flujo_articulos',
+        'catalogo_flujo_familias',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogLegacyTableMigration.php';
+    }
+
+    private function migrationSource(): string
+    {
+        $path = FS_FOLDER . '/plugins/catalogo_core/Services/CatalogLegacyTableMigration.php';
+        $this->assertFileExists($path);
+
+        return (string) file_get_contents($path);
+    }
+
+    /** Extracts a method body by brace matching from its signature. */
+    private function methodSource(string $src, string $signature): string
+    {
+        $start = strpos($src, $signature);
+        if ($start === false) {
+            self::fail('missing migration method: ' . $signature);
+        }
+
+        $open = (int) strpos($src, '{', (int) $start);
+        $depth = 0;
+        $len = strlen($src);
+        for ($i = $open; $i < $len; $i++) {
+            if ($src[$i] === '{') {
+                $depth++;
+            } elseif ($src[$i] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($src, (int) $start, $i - $start + 1);
+                }
+            }
+        }
+
+        self::fail('method body is not terminated: ' . $signature);
     }
 
     /**
@@ -634,5 +693,110 @@ final class CatalogLegacyTableMigrationTest extends TestCase
             $deletes[0],
             'the grouped-assignment delete must source membership from the bridge'
         );
+    }
+
+    public function test_versatilidad_tables_are_created_when_missing(): void
+    {
+        $db = $this->freshDb();
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        foreach (self::VERSATILIDAD_TABLES as $table) {
+            $creates = array_values(array_filter(
+                $this->executedContaining($db, 'CREATE TABLE'),
+                static fn (string $sql): bool => stripos($sql, $table) !== false
+            ));
+            $this->assertNotEmpty($creates, $table . ' must be created when missing');
+            $this->assertArrayHasKey($table, $db->tables, $table . ' must exist after the migration');
+        }
+    }
+
+    public function test_versatilidad_table_creation_is_idempotent(): void
+    {
+        $db = $this->freshDb();
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+        $db->executed = [];
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        foreach (self::VERSATILIDAD_TABLES as $table) {
+            $creates = array_values(array_filter(
+                $this->executedContaining($db, 'CREATE TABLE'),
+                static fn (string $sql): bool => stripos($sql, $table) !== false
+            ));
+            $this->assertSame([], $creates, $table . ' must not be re-created on a second run');
+        }
+    }
+
+    public function test_cantidad_min_max_and_imagen_columns_are_added_guarded_by_a_pre_check(): void
+    {
+        $db = $this->freshDb();
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $cantidadMin = array_filter(
+            $db->executed,
+            static fn (string $sql): bool => stripos($sql, 'ADD `cantidad_min`') !== false
+        );
+        $cantidad = array_filter(
+            $db->executed,
+            static fn (string $sql): bool => stripos($sql, 'ADD `cantidad_max`') !== false
+        );
+        $imagen = array_filter(
+            $db->executed,
+            static fn (string $sql): bool => stripos($sql, 'ADD `imagen`') !== false
+        );
+        $this->assertNotEmpty($cantidadMin, 'cantidad_min must be added when missing');
+        $this->assertNotEmpty($cantidad, 'cantidad_max must be added when missing');
+        $this->assertNotEmpty($imagen, 'imagen must be added when missing');
+        $this->assertStringContainsString('DEFAULT 1', implode(' ', $cantidadMin));
+        $this->assertStringContainsString('DEFAULT 1', implode(' ', $cantidad));
+
+        $db->executed = [];
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame(
+            [],
+            array_filter($db->executed, static fn (string $sql): bool => stripos($sql, 'ADD `cantidad_min`') !== false),
+            'the second run must skip cantidad_min when the column exists'
+        );
+        $this->assertSame(
+            [],
+            array_filter($db->executed, static fn (string $sql): bool => stripos($sql, 'ADD `cantidad_max`') !== false),
+            'the second run must skip cantidad_max when the column exists'
+        );
+        $this->assertSame(
+            [],
+            array_filter($db->executed, static fn (string $sql): bool => stripos($sql, 'ADD `imagen`') !== false),
+            'the second run must skip imagen when the column exists'
+        );
+    }
+
+    public function test_versatilidad_ddl_is_additive_with_fk_and_unique_constraints(): void
+    {
+        $method = $this->methodSource(
+            $this->migrationSource(),
+            'function syncOpcionalVersatilidad('
+        );
+
+        // Foreign keys and uniqueness of the new schema.
+        $this->assertStringContainsString('catalogo_opcional_idiomas', $method);
+        $this->assertStringContainsString('UNIQUE (codigo, codidioma)', $method);
+        $this->assertStringContainsString('FOREIGN KEY (codigo)', $method);
+        $this->assertStringContainsString('ON DELETE CASCADE ON UPDATE CASCADE', $method);
+        $this->assertStringContainsString('UNIQUE (id_flujo, referencia)', $method);
+        // The article FK target is assembled via REFERENCED_PRODUCT_TABLE to
+        // respect the GDI-06 frozen guard (ArticuloDescripcionFrozenBaseTest),
+        // which forbids the literal table name in this file.
+        $this->assertStringContainsString('FOREIGN KEY (referencia)', $method);
+        $this->assertStringContainsString('self::REFERENCED_PRODUCT_TABLE', $method);
+        $this->assertStringContainsString('(referencia) ON DELETE CASCADE ON UPDATE CASCADE', $method);
+        $this->assertStringContainsString('REFERENCES familias (codfamilia)', $method);
+        $this->assertStringContainsString('CREATE TABLE IF NOT EXISTS', $method);
+
+        // Additive only: no destructive DDL in the new migration method.
+        $this->assertStringNotContainsString('DROP', $method);
+        $this->assertStringNotContainsString('DELETE FROM', $method);
+        $this->assertStringNotContainsString('TRUNCATE', $method);
     }
 }

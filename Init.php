@@ -642,12 +642,18 @@ final class Init
             'articulo_descripcion',
             'catalogo_lista_precio',
             'catalogo_opcional',
+            'catalogo_opcional_idioma',
             'catalogo_opcional_familia',
             'catalogo_articulo_opcional',
             'catalogo_opcional_precio',
             'catalogo_opcional_grupo',
             'catalogo_articulo_opcional_grupo',
             'catalogo_opcional_grupo_rel',
+            'catalogo_flujo',
+            'catalogo_flujo_condicion',
+            'catalogo_flujo_accion',
+            'catalogo_flujo_articulo',
+            'catalogo_flujo_familia',
         ] as $modelName) {
             self::touchNamespacedModel($modelName);
         }

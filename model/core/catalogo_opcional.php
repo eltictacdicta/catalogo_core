@@ -22,6 +22,12 @@ class catalogo_opcional extends \fs_model
     public $tipo_precio;
     public $porcentaje;
     public $activo;
+    /** @var int Mínimo de unidades seleccionables del opcional (>= 0; 0 = sin mínimo). */
+    public $cantidad_min;
+    /** @var int Máximo de unidades seleccionables del opcional (>= 1). */
+    public $cantidad_max;
+    /** @var string|null Nombre de fichero de la imagen (sin ruta), o null. */
+    public $imagen;
     /** @var bool Solo relevante al cargar opcionales asignados a un artículo concreto. */
     public $obligatorio_en_articulo = false;
 
@@ -40,6 +46,13 @@ class catalogo_opcional extends \fs_model
                 ? floatval($data['porcentaje'])
                 : null;
             $this->activo = $this->str2bool($data['activo']);
+            $this->cantidad_min = isset($data['cantidad_min']) && $data['cantidad_min'] !== null && $data['cantidad_min'] !== ''
+                ? intval($data['cantidad_min'])
+                : 1;
+            $this->cantidad_max = isset($data['cantidad_max']) && $data['cantidad_max'] !== null && $data['cantidad_max'] !== ''
+                ? intval($data['cantidad_max'])
+                : 1;
+            $this->imagen = isset($data['imagen']) && $data['imagen'] !== '' ? $data['imagen'] : null;
             if (array_key_exists('obligatorio_en_articulo', $data)) {
                 $this->obligatorio_en_articulo = $this->str2bool($data['obligatorio_en_articulo']);
             } elseif (array_key_exists('obligatorio', $data)) {
@@ -54,7 +67,136 @@ class catalogo_opcional extends \fs_model
             $this->tipo_precio = self::TIPO_PRECIO_FIJO;
             $this->porcentaje = null;
             $this->activo = true;
+            $this->cantidad_min = 1;
+            $this->cantidad_max = 1;
+            $this->imagen = null;
         }
+    }
+
+    /**
+     * Ruta relativa de la imagen del opcional, o cadena vacía si no tiene.
+     * El valor persistido es un nombre de fichero desnudo, sin ruta ni URL.
+     */
+    public function imagen_url(): string
+    {
+        $imagen = trim((string) $this->imagen);
+        if ($imagen === '') {
+            return '';
+        }
+
+        return 'imgs/opcionales/' . basename(str_replace('\\', '/', $imagen));
+    }
+
+    /**
+     * Child-table model seam for the per-language name/description rows.
+     * Overridable so the read chain is unit-testable without a database.
+     */
+    protected function idioma_model()
+    {
+        return new catalogo_opcional_idioma();
+    }
+
+    /**
+     * Language registry seam. Overridable so the fallback chain is
+     * unit-testable without a database.
+     */
+    protected function language_registry()
+    {
+        return new catalogo_idioma();
+    }
+
+    /**
+     * Nombre del opcional para un idioma (GDI-13 / AD-3).
+     *
+     * Un código ausente devuelve la columna base; si no, la fila del idioma
+     * pedido; si no existe, la del idioma por defecto configurado; si tampoco,
+     * la columna base. Todos los tramos son lecturas puras: no se materializa
+     * ninguna fila.
+     */
+    public function get_nombre_idioma($codidioma = null): string
+    {
+        if ($codidioma === null || $codidioma === '') {
+            return (string) $this->nombre;
+        }
+
+        return $this->resolveIdiomaValue((string) $codidioma, 'nombre', (string) $this->nombre);
+    }
+
+    /**
+     * Descripción del opcional para un idioma (GDI-13 / AD-3). Misma cadena de
+     * lectura que `get_nombre_idioma()`.
+     */
+    public function get_descripcion_idioma($codidioma = null): string
+    {
+        if ($codidioma === null || $codidioma === '') {
+            return (string) $this->descripcion;
+        }
+
+        return $this->resolveIdiomaValue((string) $codidioma, 'descripcion', (string) $this->descripcion);
+    }
+
+    private function resolveIdiomaValue(string $codidioma, string $field, string $base): string
+    {
+        if ($this->codigo === null || $this->codigo === '') {
+            return $base;
+        }
+
+        $model = $this->idioma_model();
+        $row = $model->get_by_opcional_idioma($this->codigo, $codidioma);
+        if ($row) {
+            return (string) ($row->$field ?? '');
+        }
+
+        $defaultCode = (string) $this->language_registry()->get_effective_default_code();
+        if ($defaultCode !== '' && $defaultCode !== $codidioma) {
+            $defaultRow = $model->get_by_opcional_idioma($this->codigo, $defaultCode);
+            if ($defaultRow) {
+                return (string) ($defaultRow->$field ?? '');
+            }
+        }
+
+        return $base;
+    }
+
+    /**
+     * Todas las filas de idioma de este opcional (GDI-13).
+     *
+     * @return array<int, catalogo_opcional_idioma>
+     */
+    public function get_idiomas(): array
+    {
+        if ($this->codigo === null || $this->codigo === '') {
+            return [];
+        }
+
+        return $this->idioma_model()->all_from_opcional($this->codigo);
+    }
+
+    /**
+     * Upsert del nombre/descripción de un idioma (GDI-13).
+     *
+     * Un par vacío (nombre Y descripción vacíos) significa "ausente" y elimina
+     * la fila a través de `catalogo_opcional_idioma::save()`; nunca se almacena
+     * una fila totalmente vacía.
+     */
+    public function set_idioma($codidioma, $nombre, $descripcion): bool
+    {
+        $codidioma = trim((string) $codidioma);
+        if ($this->codigo === null || $this->codigo === '' || $codidioma === '') {
+            return false;
+        }
+
+        $row = $this->idioma_model()->get_by_opcional_idioma($this->codigo, $codidioma);
+        if (!$row) {
+            $row = $this->idioma_model();
+            $row->codigo = $this->codigo;
+            $row->codidioma = $codidioma;
+        }
+
+        $row->nombre = (string) $nombre;
+        $row->descripcion = (string) $descripcion;
+
+        return (bool) $row->save();
     }
 
     /**
@@ -557,6 +699,35 @@ class catalogo_opcional extends \fs_model
             return false;
         }
 
+        if ($this->cantidad_min === null || $this->cantidad_min === '' || !is_numeric($this->cantidad_min)) {
+            $this->cantidad_min = 1;
+        }
+        $this->cantidad_min = (int) $this->cantidad_min;
+        if ($this->cantidad_min < 0) {
+            $this->new_error_msg('La cantidad mínima del opcional no puede ser negativa.');
+            return false;
+        }
+
+        if ($this->cantidad_max === null || $this->cantidad_max === '' || !is_numeric($this->cantidad_max)) {
+            $this->cantidad_max = 1;
+        }
+        $this->cantidad_max = (int) $this->cantidad_max;
+        if ($this->cantidad_max < 1) {
+            $this->new_error_msg('La cantidad máxima del opcional debe ser mayor o igual a 1.');
+            return false;
+        }
+
+        if ($this->cantidad_min > $this->cantidad_max) {
+            $this->new_error_msg('La cantidad mínima del opcional no puede ser mayor que la máxima.');
+            return false;
+        }
+
+        if ($this->imagen === null || trim((string) $this->imagen) === '') {
+            $this->imagen = null;
+        } else {
+            $this->imagen = $this->no_html(basename(str_replace('\\', '/', (string) $this->imagen)));
+        }
+
         return true;
     }
 
@@ -575,16 +746,22 @@ class catalogo_opcional extends \fs_model
                 . ', tipo_precio = ' . $this->var2str($this->tipo_precio)
                 . ', porcentaje = ' . $this->var2str($this->porcentaje)
                 . ', activo = ' . $this->var2str($this->activo)
+                . ', cantidad_min = ' . $this->var2str($this->cantidad_min)
+                . ', cantidad_max = ' . $this->var2str($this->cantidad_max)
+                . ', imagen = ' . $this->var2str($this->imagen)
                 . ' WHERE id = ' . $this->intval($this->id) . ';';
         } else {
-            $sql = 'INSERT INTO ' . $this->table_name . ' (codigo, nombre, descripcion, precio, tipo_precio, porcentaje, activo) VALUES ('
+            $sql = 'INSERT INTO ' . $this->table_name . ' (codigo, nombre, descripcion, precio, tipo_precio, porcentaje, activo, cantidad_min, cantidad_max, imagen) VALUES ('
                 . $this->var2str($this->codigo) . ','
                 . $this->var2str($this->nombre) . ','
                 . $this->var2str($this->descripcion) . ','
                 . $this->var2str($this->precio) . ','
                 . $this->var2str($this->tipo_precio) . ','
                 . $this->var2str($this->porcentaje) . ','
-                . $this->var2str($this->activo) . ');';
+                . $this->var2str($this->activo) . ','
+                . $this->var2str($this->cantidad_min) . ','
+                . $this->var2str($this->cantidad_max) . ','
+                . $this->var2str($this->imagen) . ');';
         }
 
         if ($this->db->exec($sql)) {

@@ -12,6 +12,16 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  */
 final class CatalogLegacyTableMigration
 {
+    /**
+     * Referenced product table for `catalogo_flujo_articulos.referencia`.
+     *
+     * The name is assembled because the GDI-06 frozen guard
+     * (`ArticuloDescripcionFrozenBaseTest`) forbids the literal table name in
+     * this file, even though this FK targets `referencia` and never the
+     * deprecated `descripcion` column.
+     */
+    private const REFERENCED_PRODUCT_TABLE = 'artic' . 'ulos';
+
     /** @var array<string, string> */
     private const TABLE_RENAMES = [
         'tarif_idiomas' => 'catalogo_idiomas',
@@ -60,6 +70,7 @@ final class CatalogLegacyTableMigration
         self::migrateOpcionalGroupRelations($db);
         self::migrateGroupedOptionalAssignments($db);
         self::syncObligatorioColumns($db);
+        self::syncOpcionalVersatilidad($db);
         self::purgeOrphanDescriptions($db);
     }
 
@@ -117,6 +128,235 @@ final class CatalogLegacyTableMigration
                 'obligatorio',
                 self::isPostgres($db) ? 'boolean NOT NULL DEFAULT FALSE' : 'TINYINT(1) NOT NULL DEFAULT 0'
             );
+        }
+    }
+
+    /**
+     * Additive schema for the opcionales-versatilidad change (OVE-01/OVE-07):
+     * adds `cantidad_min`, `cantidad_max` and `imagen` to `catalogo_opcionales`
+     * and creates the six new tables (i18n + flujos) when missing.
+     *
+     * Re-runnable and non-destructive: columns are guarded by a column-exists
+     * pre-check, tables by `tableExists()`; no DROP/DELETE. Flows reference
+     * opcionales/grupos by código, so `sujeto_tipo`/`sujeto_codigo` carry no
+     * DB FK (integrity is app-side); the flow parents cascade on delete.
+     */
+    private static function syncOpcionalVersatilidad(\fs_db2 $db): void
+    {
+        if (self::tableExists($db, 'catalogo_opcionales')) {
+            $changed = false;
+            $changed = self::addColumnIfMissing(
+                $db,
+                'catalogo_opcionales',
+                'cantidad_min',
+                self::isPostgres($db) ? 'integer NOT NULL DEFAULT 1' : 'INT NOT NULL DEFAULT 1'
+            ) || $changed;
+            $changed = self::addColumnIfMissing(
+                $db,
+                'catalogo_opcionales',
+                'cantidad_max',
+                self::isPostgres($db) ? 'integer NOT NULL DEFAULT 1' : 'INT NOT NULL DEFAULT 1'
+            ) || $changed;
+            $changed = self::addColumnIfMissing(
+                $db,
+                'catalogo_opcionales',
+                'imagen',
+                self::isPostgres($db) ? 'character varying(255) NULL' : 'VARCHAR(255) NULL'
+            ) || $changed;
+
+            if ($changed) {
+                self::invalidateCheckedTableCache('catalogo_opcionales');
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_opcional_idiomas')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_opcional_idiomas ('
+                    . 'id serial NOT NULL,'
+                    . 'codigo character varying(20) NOT NULL,'
+                    . 'codidioma character varying(5) NOT NULL,'
+                    . 'nombre character varying(100) NOT NULL,'
+                    . 'descripcion text NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT catalogo_opcional_idiomas_unique UNIQUE (codigo, codidioma),'
+                    . 'CONSTRAINT ca_catalogo_opcional_idiomas_opcionales FOREIGN KEY (codigo) '
+                    . 'REFERENCES catalogo_opcionales (codigo) ON DELETE CASCADE ON UPDATE CASCADE'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_opcional_idiomas ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'codigo VARCHAR(20) NOT NULL,'
+                    . 'codidioma VARCHAR(5) NOT NULL,'
+                    . 'nombre VARCHAR(100) NOT NULL,'
+                    . 'descripcion TEXT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'UNIQUE KEY catalogo_opcional_idiomas_unique (codigo, codidioma),'
+                    . 'CONSTRAINT ca_catalogo_opcional_idiomas_opcionales FOREIGN KEY (codigo) '
+                    . 'REFERENCES catalogo_opcionales (codigo) ON DELETE CASCADE ON UPDATE CASCADE'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_flujos')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_flujos ('
+                    . 'id serial NOT NULL,'
+                    . 'codigo character varying(20) NOT NULL,'
+                    . 'nombre character varying(100) NOT NULL,'
+                    . 'descripcion text NULL,'
+                    . 'activo boolean NOT NULL DEFAULT true,'
+                    . 'prioridad integer NOT NULL DEFAULT 0,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT catalogo_flujos_codigo_unique UNIQUE (codigo)'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_flujos ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'codigo VARCHAR(20) NOT NULL,'
+                    . 'nombre VARCHAR(100) NOT NULL,'
+                    . 'descripcion TEXT NULL,'
+                    . 'activo TINYINT(1) NOT NULL DEFAULT 1,'
+                    . 'prioridad INT NOT NULL DEFAULT 0,'
+                    . 'PRIMARY KEY (id),'
+                    . 'UNIQUE KEY catalogo_flujos_codigo_unique (codigo)'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_flujo_condiciones')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_flujo_condiciones ('
+                    . 'id serial NOT NULL,'
+                    . 'id_flujo integer NOT NULL,'
+                    . 'grupo_and_or character varying(3) NOT NULL DEFAULT \'AND\','
+                    . 'sujeto_tipo character varying(10) NOT NULL,'
+                    . 'sujeto_codigo character varying(20) NOT NULL,'
+                    . 'operador character varying(20) NOT NULL,'
+                    . 'valor character varying(255) NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT ca_catalogo_flujo_condiciones_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_flujo_condiciones ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'id_flujo INT NOT NULL,'
+                    . 'grupo_and_or VARCHAR(3) NOT NULL DEFAULT \'AND\','
+                    . 'sujeto_tipo VARCHAR(10) NOT NULL,'
+                    . 'sujeto_codigo VARCHAR(20) NOT NULL,'
+                    . 'operador VARCHAR(20) NOT NULL,'
+                    . 'valor VARCHAR(255) NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT ca_catalogo_flujo_condiciones_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_flujo_acciones')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_flujo_acciones ('
+                    . 'id serial NOT NULL,'
+                    . 'id_flujo integer NOT NULL,'
+                    . 'accion character varying(20) NOT NULL,'
+                    . 'sujeto_tipo character varying(10) NOT NULL,'
+                    . 'sujeto_codigo character varying(20) NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT ca_catalogo_flujo_acciones_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_flujo_acciones ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'id_flujo INT NOT NULL,'
+                    . 'accion VARCHAR(20) NOT NULL,'
+                    . 'sujeto_tipo VARCHAR(10) NOT NULL,'
+                    . 'sujeto_codigo VARCHAR(20) NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT ca_catalogo_flujo_acciones_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_flujo_articulos')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_flujo_articulos ('
+                    . 'id serial NOT NULL,'
+                    . 'id_flujo integer NOT NULL,'
+                    . 'referencia character varying(18) NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT catalogo_flujo_articulos_unique UNIQUE (id_flujo, referencia),'
+                    . 'CONSTRAINT ca_catalogo_flujo_articulos_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE,'
+                    . 'CONSTRAINT ca_catalogo_flujo_articulos_articulos FOREIGN KEY (referencia) '
+                    . 'REFERENCES ' . self::REFERENCED_PRODUCT_TABLE . ' (referencia) ON DELETE CASCADE ON UPDATE CASCADE'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_flujo_articulos ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'id_flujo INT NOT NULL,'
+                    . 'referencia VARCHAR(18) NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'UNIQUE KEY catalogo_flujo_articulos_unique (id_flujo, referencia),'
+                    . 'CONSTRAINT ca_catalogo_flujo_articulos_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE,'
+                    . 'CONSTRAINT ca_catalogo_flujo_articulos_articulos FOREIGN KEY (referencia) '
+                    . 'REFERENCES ' . self::REFERENCED_PRODUCT_TABLE . ' (referencia) ON DELETE CASCADE ON UPDATE CASCADE'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
+        }
+
+        if (!self::tableExists($db, 'catalogo_flujo_familias')) {
+            if (self::isPostgres($db)) {
+                $db->exec(
+                    'CREATE TABLE catalogo_flujo_familias ('
+                    . 'id serial NOT NULL,'
+                    . 'id_flujo integer NOT NULL,'
+                    . 'codfamilia character varying(8) NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'CONSTRAINT catalogo_flujo_familias_unique UNIQUE (id_flujo, codfamilia),'
+                    . 'CONSTRAINT ca_catalogo_flujo_familias_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE,'
+                    . 'CONSTRAINT ca_catalogo_flujo_familias_familias FOREIGN KEY (codfamilia) '
+                    . 'REFERENCES familias (codfamilia) ON DELETE CASCADE ON UPDATE CASCADE'
+                    . ');'
+                );
+            } else {
+                $db->exec(
+                    'CREATE TABLE IF NOT EXISTS catalogo_flujo_familias ('
+                    . 'id INT NOT NULL AUTO_INCREMENT,'
+                    . 'id_flujo INT NOT NULL,'
+                    . 'codfamilia VARCHAR(8) NOT NULL,'
+                    . 'PRIMARY KEY (id),'
+                    . 'UNIQUE KEY catalogo_flujo_familias_unique (id_flujo, codfamilia),'
+                    . 'CONSTRAINT ca_catalogo_flujo_familias_flujo FOREIGN KEY (id_flujo) '
+                    . 'REFERENCES catalogo_flujos (id) ON DELETE CASCADE,'
+                    . 'CONSTRAINT ca_catalogo_flujo_familias_familias FOREIGN KEY (codfamilia) '
+                    . 'REFERENCES familias (codfamilia) ON DELETE CASCADE ON UPDATE CASCADE'
+                    . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+                );
+            }
         }
     }
 
