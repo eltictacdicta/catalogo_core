@@ -330,6 +330,11 @@ class OpcionalExcelImportWizardService
         foreach ($idiomas as $codidioma => $pair) {
             if (!$opcional->set_idioma($codidioma, $pair['nombre'], $pair['descripcion'])) {
                 $warnings[] = $codidioma;
+                $this->reject(
+                    'idioma_save_failed',
+                    $codigo,
+                    'No se pudo guardar el idioma: ' . $codidioma
+                );
             }
         }
 

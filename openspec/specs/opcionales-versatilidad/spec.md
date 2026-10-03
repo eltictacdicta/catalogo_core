@@ -119,7 +119,7 @@ used by the article export.
 The opcionales import MUST reuse the article wizard pattern (field catalog,
 header mapping, preview, locale resolution) and MUST be idempotent by the
 opcional `codigo`: an existing opcional is updated, a new one is created. Rows
-whose referenced opcional/grupo/idoma does not exist MUST be reported in a
+whose referenced opcional/grupo/idioma does not exist MUST be reported in a
 rejected-rows output, never silently dropped. Import MUST accept a base64 image
 cell and persist it through the image service.
 

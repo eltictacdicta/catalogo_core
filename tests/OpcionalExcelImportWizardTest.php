@@ -70,6 +70,23 @@ final class OpcionalExcelImportWizardTest extends TestCase
         $this->assertSame([], $opcional->created);
     }
 
+    public function test_failed_language_write_is_recorded_as_rejected(): void
+    {
+        $opcional = new FakeOpcionalModel([], failIdioma: true);
+        $wizard = $this->wizard($opcional, ['es' => true], []);
+
+        $result = $wizard->apply_row([
+            'codigo' => 'OPC0001',
+            'nombre' => 'X',
+            'nombre_es' => 'Hola',
+            'descripcion_es' => 'Mundo',
+        ]);
+
+        $this->assertSame('partial', $result['status'], 'a failed language write is a partial import');
+        $motivos = array_column($wizard->rejectedRows(), 'motivo');
+        $this->assertContains('idioma_save_failed', $motivos);
+    }
+
     public function test_base64_image_is_persisted_through_the_image_service(): void
     {
         $opcional = new FakeOpcionalModel([]);
@@ -203,6 +220,8 @@ final class FakeOpcionalModel
     /** @var list<string> */
     public array $created = [];
 
+    public bool $failIdioma = false;
+
     public int $updateCalls = 0;
 
     /** @var array<string, mixed> */
@@ -215,8 +234,9 @@ final class FakeOpcionalModel
     private array $existing;
 
     /** @param list<string> $existingCodigos */
-    public function __construct(array $existingCodigos)
+    public function __construct(array $existingCodigos, bool $failIdioma = false)
     {
+        $this->failIdioma = $failIdioma;
         $this->existing = [];
         foreach ($existingCodigos as $codigo) {
             $this->existing[$codigo] = [
@@ -261,6 +281,8 @@ final class FakeOpcionalModel
  */
 final class FakeOpcionalRecord
 {
+    public bool $failIdioma = false;
+
     public ?int $id = null;
     public string $codigo = '';
     public string $nombre = '';
@@ -297,6 +319,7 @@ final class FakeOpcionalRecord
     public function withStore(FakeOpcionalModel $store): self
     {
         $this->store = $store;
+        $this->failIdioma = $store->failIdioma;
 
         return $this;
     }
@@ -332,6 +355,10 @@ final class FakeOpcionalRecord
 
     public function set_idioma($codidioma, $nombre, $descripcion): bool
     {
+        if ($this->failIdioma) {
+            return false;
+        }
+
         $this->idiomas[(string) $codidioma] = [
             'nombre' => (string) $nombre,
             'descripcion' => (string) $descripcion,
