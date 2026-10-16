@@ -83,6 +83,14 @@ class catalogo_lista_precio extends \fs_model
             return new static($data[0]);
         }
 
+        // Invariant fallback: there must always be a default list (R-MT-001).
+        $data = $this->db->select(
+            'SELECT * FROM ' . $this->table_name . ' WHERE codlista = ' . $this->var2str(self::DEFAULT_CODE) . ' LIMIT 1;'
+        );
+        if ($data) {
+            return new static($data[0]);
+        }
+
         return false;
     }
 
@@ -126,7 +134,18 @@ class catalogo_lista_precio extends \fs_model
         }
 
         if ($this->por_defecto) {
-            $this->db->exec('UPDATE ' . $this->table_name . ' SET por_defecto = FALSE WHERE codlista != ' . $this->var2str($this->codlista) . ';');
+            // D1: demotion + upsert must be atomic so a failed demotion never
+            // leaves zero defaults in the table.
+            if (!$this->db->begin_transaction()) {
+                $this->new_error_msg('No se pudo iniciar la transacción de lista de precio.');
+                return false;
+            }
+
+            if (!$this->db->exec('UPDATE ' . $this->table_name . ' SET por_defecto = FALSE WHERE codlista != ' . $this->var2str($this->codlista) . ';')) {
+                $this->db->rollback();
+                $this->new_error_msg('No se pudo desmarcar la lista de precio por defecto anterior.');
+                return false;
+            }
         }
 
         if ($this->exists()) {
@@ -145,7 +164,17 @@ class catalogo_lista_precio extends \fs_model
                 . $this->var2str($this->coddivisa) . ');';
         }
 
-        return $this->db->exec($sql);
+        $result = $this->db->exec($sql);
+
+        if ($this->por_defecto) {
+            if ($result) {
+                $this->db->commit();
+            } else {
+                $this->db->rollback();
+            }
+        }
+
+        return $result;
     }
 
     public function delete()

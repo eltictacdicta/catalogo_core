@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Roles de aplicación asignados a un grupo de acceso a precios.
+-->
+<tabla>
+    <columna>
+        <nombre>id_grupo</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codrol</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_grupo_roles_pkey</nombre>
+        <consulta>PRIMARY KEY (id_grupo, codrol)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_grupo_roles_grupo</nombre>
+        <consulta>FOREIGN KEY (id_grupo)
+            REFERENCES catalogo_grupo (id)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_grupo_roles_rol</nombre>
+        <consulta>FOREIGN KEY (codrol)
+            REFERENCES fs_roles (codrol)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

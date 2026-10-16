@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Precios por artículo y lista de precio del catálogo (multitarifa).
+-->
+<tabla>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codlista</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>precio</nombre>
+        <tipo>double precision</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_articulo_precios_pkey</nombre>
+        <consulta>PRIMARY KEY (referencia, codlista)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_articulo_precios_articulo</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_articulo_precios_lista</nombre>
+        <consulta>FOREIGN KEY (codlista)
+            REFERENCES catalogo_listas_precio (codlista)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

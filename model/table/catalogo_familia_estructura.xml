@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla catalogo_familia_estructura: estructura de familias por lista de precio.
+    Extensión por lista del árbol canónico de familias (familias.madre es la
+    jerarquía autoritativa; aqui `madre` es metadata de display por lista).
+-->
+<tabla>
+    <columna>
+        <nombre>codlista</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>madre</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>capitulo</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <columna>
+        <nombre>nivel</nombre>
+        <tipo>character varying(50)</tipo>
+        <nulo>YES</nulo>
+        <defecto>''</defecto>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>FALSE</defecto>
+    </columna>
+    <columna>
+        <nombre>activa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_familia_estructura_pkey</nombre>
+        <consulta>PRIMARY KEY (codlista, codfamilia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_familia_estructura_lista</nombre>
+        <consulta>FOREIGN KEY (codlista)
+            REFERENCES catalogo_listas_precio (codlista)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_familia_estructura_familia</nombre>
+        <consulta>FOREIGN KEY (codfamilia)
+            REFERENCES familias (codfamilia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

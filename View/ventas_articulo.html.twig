@@ -288,6 +288,58 @@
                             {% endif %}
                         </div>
 
+                        {% if fsc.multi_tariff %}
+                        {# Section: Precios por lista (multitarifa, R-MT-005; solo listas activas, R-MT-001).
+                           Los campos usan form="form_precios_lista": ese <form> vive fuera del formulario
+                           principal porque HTML no admite formularios anidados. #}
+                        <div class="panel panel-default" id="precios_listas">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">Precios por lista</h3>
+                            </div>
+                            <div class="panel-body">
+                                <p class="help-block">
+                                    Vacío = sin precio propio en la lista. La lista por defecto
+                                    ({{ fsc.lista_precio_defecto }}) cae al <code>pvp</code> del artículo
+                                    (marcador: <span class="label label-default">pvp</span>).
+                                </p>
+                                <table class="table table-condensed">
+                                    <thead>
+                                    <tr>
+                                        <th>Lista</th>
+                                        <th>Precio</th>
+                                        <th>Fallback</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {% for lista in fsc.listas_activas %}
+                                    <tr>
+                                        <td>{{ lista.nombre }} <span class="text-muted">({{ lista.codlista }})</span></td>
+                                        <td>
+                                            <input class="form-control input-sm" type="text" form="form_precios_lista"
+                                                   name="precios_lista[{{ lista.codlista }}]"
+                                                   value="{% if lista.codlista in fsc.precios_por_lista|keys %}{{ fsc.precios_por_lista[lista.codlista]|number_format(2, ',', '.') }}{% endif %}"
+                                                   autocomplete="off" />
+                                        </td>
+                                        <td>
+                                            {% if lista.por_defecto %}
+                                            <span class="label label-default">pvp</span>
+                                            {% else %}
+                                            <span class="text-muted">—</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted">Sin listas de precio activas.</td>
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                                <button class="btn btn-sm btn-primary" type="submit" form="form_precios_lista">Guardar precios</button>
+                            </div>
+                        </div>
+                        {% endif %}
+
                         {# Section: Stock #}
                         <div class="panel panel-default" id="stock-articulo">
                             <div class="panel-heading">
@@ -386,6 +438,13 @@
                     </button>
                 </div>
             </form>
+            {% if fsc.multi_tariff %}
+            <form id="form_precios_lista" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <input type="hidden" name="guardar_precios_lista" value="TRUE" />
+                <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}" />
+            </form>
+            {% endif %}
         </div>
     </div>
     {% else %}

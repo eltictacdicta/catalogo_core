@@ -263,6 +263,23 @@ final class BackfillFakeDb extends \fs_db2
             return false;
         }
 
+        // FK parent guards: enforced only when the fixture declares the parent table.
+        $parents = [
+            'tarif_tarifas pt WHERE pt.codtarifa' => ['tarif_tarifas', 'codtarifa'],
+            'articulos pa WHERE pa.referencia' => ['articulos', 'referencia'],
+            'familias pf WHERE pf.codfamilia' => ['familias', 'codfamilia'],
+        ];
+        foreach ($parents as $needle => [$table, $column]) {
+            if (!array_key_exists($table, $this->tables)
+                || !preg_match('/' . preg_quote($needle, '/') . " = ('[^']*'|\\w+\\.\\w+)\\)/", $where, $p)) {
+                continue;
+            }
+            $value = $this->tarifa_of($row, $p[1]);
+            if (!in_array($value, array_map('strval', array_column($this->tables[$table], $column)), true)) {
+                return false;
+            }
+        }
+
         if (str_contains($where, 'tarif_articulo_precios pr')) {
             foreach ($this->tables['tarif_articulo_precios'] ?? [] as $price) {
                 if ((string) $price['referencia'] === (string) $row['referencia']
@@ -417,6 +434,44 @@ final class CaracteristicaBackfillTest extends TestCase
         $this->assertSame('F1', $familia[0]['codfamilia']);
         $this->assertSame(101, $this->valueFor($familia, 'F1', 'T1', 10), 'en_catalogo TRUE maps to the "1" value');
         $this->assertSame(112, $this->valueFor($familia, 'F1', 'T1', 11), 'a stored FALSE family flag maps to the "0" value');
+    }
+
+    public function test_orphan_legacy_rows_are_skipped_instead_of_failing_the_fk(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_tarifas'] = [['codtarifa' => 'T1']];
+        $tables['articulos'] = [['referencia' => 'A1']];
+        $tables['familias'] = [['codfamilia' => 'F1']];
+        $tables['tarif_articulo_precios'] = [
+            ['referencia' => 'A1', 'codtarifa' => 'T1', 'en_catalogo' => 1, 'en_tarifa' => 1],
+            ['referencia' => 'A1', 'codtarifa' => 'GONE', 'en_catalogo' => 1, 'en_tarifa' => 1],
+            ['referencia' => 'DELETED', 'codtarifa' => 'T1', 'en_catalogo' => 1, 'en_tarifa' => 1],
+        ];
+        $tables['tarif_tarifa_familia'] = [
+            ['codtarifa' => 'T1', 'codfamilia' => 'F1', 'en_catalogo' => 1, 'en_tarifa' => 0],
+            ['codtarifa' => 'GONE', 'codfamilia' => 'F1', 'en_catalogo' => 1, 'en_tarifa' => 0],
+            ['codtarifa' => 'T1', 'codfamilia' => 'FX', 'en_catalogo' => 1, 'en_tarifa' => 0],
+        ];
+        $tables['catalogo_articulo_opcional'] = [['referencia' => 'A1', 'id_opcional' => 7]];
+        $tables['tarif_opcional_ext'] = [['id_opcional' => 7, 'en_catalogo' => 1, 'en_tarifa' => 1]];
+
+        $db = $this->newDb($tables);
+        CaracteristicaBackfillMigration::migrateIfNeeded($db);
+
+        $articulo = $db->tables['catalogo_caracteristica_articulo'];
+        $this->assertCount(2, $articulo, 'only the valid (T1, A1) row maps, once per flag');
+        $this->assertSame(['T1'], array_values(array_unique(array_column($articulo, 'codtarifa'))));
+        $this->assertSame(['A1'], array_values(array_unique(array_column($articulo, 'referencia'))));
+
+        $familia = $db->tables['catalogo_caracteristica_familia'];
+        $this->assertCount(2, $familia, 'only the valid (T1, F1) family maps, once per flag');
+        $this->assertSame(['F1'], array_values(array_unique(array_column($familia, 'codfamilia'))));
+
+        $this->assertSame([], $db->tables['catalogo_caracteristica_global'], 'no DEF tarifa: no global row');
+
+        foreach ($this->executes($db) as $sql) {
+            $this->assertStringContainsString('FROM tarif_tarifas pt', $sql, 'every insert must guard the tarifa FK');
+        }
     }
 
     public function test_tarif_familia_ext_without_flags_is_an_introspection_guarded_noop(): void

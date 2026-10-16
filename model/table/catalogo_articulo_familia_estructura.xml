@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Tabla catalogo_articulo_familia_estructura: asignación de artículos a
+    familias por lista de precio.
+
+    Nota: La relación con catalogo_familia_estructura no usa FK porque:
+    1. codfamilia puede ser NULL
+    2. La familia puede no existir todavía en la lista cuando se asigna el
+       artículo
+    3. ON DELETE SET NULL no funciona con FKs compuestas parciales
+    La integridad se gestiona a nivel de aplicación (paridad con legacy).
+-->
+<tabla>
+    <columna>
+        <nombre>codlista</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>referencia</nombre>
+        <tipo>character varying(18)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codfamilia</nombre>
+        <tipo>character varying(8)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>en_tarifa</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>en_catalogo</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>TRUE</defecto>
+    </columna>
+    <columna>
+        <nombre>orden</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>0</defecto>
+    </columna>
+    <restriccion>
+        <nombre>catalogo_articulo_familia_estructura_pkey</nombre>
+        <consulta>PRIMARY KEY (codlista, referencia)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_articulo_familia_estructura_lista</nombre>
+        <consulta>FOREIGN KEY (codlista)
+            REFERENCES catalogo_listas_precio (codlista)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_catalogo_articulo_familia_estructura_articulo</nombre>
+        <consulta>FOREIGN KEY (referencia)
+            REFERENCES articulos (referencia)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

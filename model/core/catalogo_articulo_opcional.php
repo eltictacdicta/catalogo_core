@@ -5,6 +5,9 @@
  */
 namespace FSFramework\model;
 
+require_once __DIR__ . '/catalogo_opcional.php';
+require_once __DIR__ . '/catalogo_opcional_grupo_rel.php';
+
 /**
  * Relación muchos a muchos entre artículos y opcionales sueltos (sin grupo).
  */

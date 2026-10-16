@@ -85,6 +85,14 @@ function catalogo_excel_wizard_run(bool $embedded): void
             echo json_encode(['success' => false, 'error' => 'No authenticated session. Please log in again.']);
             exit;
         }
+
+        // Access policy gate (R-CEXC-001/004): applies to ALL standalone
+        // actions (start, progress, status) after login, before wizard
+        // handling. Closes the direct-URL hole with an explicit 403 JSON.
+        $policyDenial = catalogo_excel_wizard_policy_denial();
+        if ($policyDenial !== null) {
+            catalogo_excel_wizard_emit_denial($policyDenial);
+        }
     }
 
     @set_time_limit(300);
@@ -152,6 +160,64 @@ function catalogo_excel_wizard_require_login(): bool
     } catch (\Throwable $e) {
         return false;
     }
+}
+
+/**
+ * Central access-policy verdict for the Excel wizard (R-CEXC-001/004).
+ *
+ * @param \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy|null $policy
+ *        Injectable for tests; production resolves the session user.
+ *
+ * @return array|null null = allowed | ['success' => false, 'error' => ...] denial payload
+ */
+function catalogo_excel_wizard_policy_denial(?\FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy $policy = null): ?array
+{
+    $policy = $policy ?? new \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy();
+    if ($policy->isAllowed()) {
+        return null;
+    }
+
+    return [
+        'success' => false,
+        'error' => $policy->denialMessage(),
+    ];
+}
+
+/**
+ * SSE per-event policy re-check (R-CEXC-005, AD-4).
+ *
+ * A verdict flip to denied throws CatalogoExcelAccessDeniedException, which
+ * the existing catch in handleCatalogoStart() turns into the SSE 'error'
+ * event and ends the stream. Each call evaluates a FRESH policy instance, so
+ * DB-backed revocations (role/user changes) are detected mid-stream; the
+ * per-instance memoization in AD-3 only spans a single evaluation.
+ *
+ * @param \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy|null $policy
+ *        Injectable for tests; production resolves the session user.
+ *
+ * @throws \FSFramework\Plugins\catalogo_core\Services\CatalogoExcelAccessDeniedException
+ */
+function catalogo_excel_wizard_assert_policy(?\FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy $policy = null): void
+{
+    $denial = catalogo_excel_wizard_policy_denial($policy);
+    if ($denial !== null) {
+        throw new \FSFramework\Plugins\catalogo_core\Services\CatalogoExcelAccessDeniedException((string) $denial['error']);
+    }
+}
+
+/**
+ * Emits the standalone denied response (403 JSON) and terminates before any
+ * wizard handling. Shape matches what the wizard client already parses
+ * (json.error); mirrors the existing CSRF denial response.
+ */
+function catalogo_excel_wizard_emit_denial(array $payload): void
+{
+    if (!headers_sent()) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=UTF-8');
+    }
+    echo json_encode($payload);
+    exit;
 }
 
 function handleCatalogoStart(string $progressFile): void
@@ -270,7 +336,23 @@ function handleCatalogoStart(string $progressFile): void
     $lastEventTime = time();
     $articuloModel = new \FSFramework\model\articulo();
 
+    // Per-run policy context for the row gate (AD-3: one instance per import
+    // run; the session nick feeds the event payload).
+    $rowPolicy = new \FSFramework\Plugins\catalogo_core\Services\ArticleExcelAccessPolicy();
+    $rowNick = '';
+    try {
+        $rowNick = (string) (\FSFramework\Security\SessionManager::getInstance()->getCurrentUserNick() ?? '');
+    } catch (\Throwable) {
+        $rowNick = '';
+    }
+    $rowIsAdmin = $rowPolicy->isAdmin();
+
     $progressCallback = static function (string $step, string $message, int $percent) use ($progressFile, &$lastEventTime) {
+        // SSE per-event policy re-check (R-CEXC-005): a mid-stream revocation
+        // flips the verdict; the throw is caught by the existing catch below,
+        // which emits the 'error' event and ends the stream.
+        catalogo_excel_wizard_assert_policy();
+
         if (time() - $lastEventTime > 10) {
             \FSFramework\Core\ProgressStream::sendKeepalive(false);
         }
@@ -289,10 +371,28 @@ function handleCatalogoStart(string $progressFile): void
         $defaultCodimpuesto,
         $targetCodidioma,
         $idiomasActivos,
-        $mappedLocaleFields
+        $mappedLocaleFields,
+        $rowNick,
+        $rowIsAdmin
     ): void {
         $referencia = trim((string) ($mappedRow['referencia'] ?? ''));
         $rowSig = ['motivo_descarte' => '', 'referencia' => $referencia, 'detalle' => ''];
+
+        // Per-row permission gate (R-CEXC-003): fires BEFORE every create/update
+        // branch so a denial makes any pvp mutation and save() unreachable
+        // (scenario 19). Admin rows skip the dispatch entirely (AD-5); only
+        // pvp-mapped non-admin rows dispatch the frozen ACTION_EDIT_ARTICLE
+        // (AD-2). Denied rows are skipped and reported (scenario 18).
+        $denialReason = \FSFramework\Plugins\catalogo_core\Services\ArticuloExcelPermissionGate::check(
+            $mappedRow,
+            $referencia,
+            $rowNick,
+            $rowIsAdmin
+        );
+        if ($denialReason !== null) {
+            catalogo_excel_wizard_deny_row($hDesc, $referencia, $denialReason, $stats);
+            return;
+        }
 
         if ($defaultAction === 'create_if_missing') {
             if ($referencia !== '') {
@@ -375,6 +475,10 @@ function handleCatalogoStart(string $progressFile): void
         }
 
         @unlink($filePath);
+
+        // Final re-check before 'complete' (R-CEXC-005, design flowchart b):
+        // the stream must not report success after a mid-run revocation.
+        catalogo_excel_wizard_assert_policy();
 
         \FSFramework\Core\ProgressStream::saveProgress($progressFile, 'complete', 'Importación completada.', 100);
         \FSFramework\Core\ProgressStream::sendEvent('complete', [
@@ -500,6 +604,22 @@ function handleCatalogoStatus(string $progressFile): void
         'active' => $data !== null && (int) ($data['percent'] ?? 0) < 100,
         'data' => $data,
     ]);
+}
+
+/**
+ * Records a permission-denied row into the existing discarded-rows CSV
+ * (AD-8: motivo_descarte;referencia;detalle — same file served by the
+ * policy-gated download_import_log) and bumps the import stats. The import
+ * loop continues with the remaining rows.
+ *
+ * @param resource $handle
+ * @param array<string,int|array<int,string>> $stats
+ */
+function catalogo_excel_wizard_deny_row($handle, string $referencia, string $reason, array &$stats): void
+{
+    catalogoFputcsvSafe($handle, ['permiso_denegado', $referencia, $reason], ';');
+    $stats['descartadas']++;
+    $stats['errores']++;
 }
 
 /**

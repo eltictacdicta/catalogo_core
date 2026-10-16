@@ -85,7 +85,9 @@ final class CaracteristicaBackfillMigration
                 . ', CASE WHEN p.' . $flag['codigo'] . ' THEN ' . $flag['one']
                 . ' ELSE ' . $flag['zero'] . ' END, NULL, 0',
             'tarif_articulo_precios p',
-            self::flag_not_null($flag, 'p') . ' AND ' . self::not_exists_articulo($flag, 'p.codtarifa', 'p.referencia')
+            self::flag_not_null($flag, 'p')
+                . ' AND ' . self::articulo_parents_exist('p.codtarifa', 'p.referencia')
+                . ' AND ' . self::not_exists_articulo($flag, 'p.codtarifa', 'p.referencia')
         );
     }
 
@@ -103,6 +105,7 @@ final class CaracteristicaBackfillMigration
         $where = self::flag_not_null($flag, 't')
             . ' AND NOT EXISTS (SELECT 1 FROM tarif_articulo_precios pr'
             . ' WHERE pr.referencia = t.referencia AND pr.codtarifa = t.codtarifa)'
+            . ' AND ' . self::articulo_parents_exist('t.codtarifa', 't.referencia')
             . ' AND ' . self::not_exists_articulo($flag, 't.codtarifa', 't.referencia');
 
         self::insert_pending(
@@ -129,6 +132,7 @@ final class CaracteristicaBackfillMigration
         }
 
         $where = self::flag_not_null($flag, 'f')
+            . ' AND ' . self::familia_parents_exist('f.codtarifa', 'f.codfamilia')
             . ' AND ' . self::not_exists_familia($flag, 'f.codtarifa', 'f.codfamilia');
 
         self::insert_pending(
@@ -167,6 +171,7 @@ final class CaracteristicaBackfillMigration
         }
 
         $where = self::flag_not_null($flag, 'e')
+            . ' AND ' . self::familia_parents_exist(self::quote(self::DEF_TARIFA), 'e.codfamilia')
             . ' AND ' . self::not_exists_familia($flag, self::quote(self::DEF_TARIFA), 'e.codfamilia');
 
         self::insert_pending(
@@ -195,6 +200,7 @@ final class CaracteristicaBackfillMigration
         }
 
         $where = self::flag_not_null($flag, 'oe')
+            . ' AND ' . self::articulo_parents_exist(self::quote(self::DEF_TARIFA), 'ao.referencia')
             . ' AND ' . self::not_exists_articulo(
                 $flag,
                 self::quote(self::DEF_TARIFA),
@@ -228,6 +234,7 @@ final class CaracteristicaBackfillMigration
         }
 
         $where = self::flag_not_null($flag, 'oe')
+            . ' AND ' . self::familia_parents_exist(self::quote(self::DEF_TARIFA), 'ofam.codfamilia')
             . ' AND ' . self::not_exists_familia(
                 $flag,
                 self::quote(self::DEF_TARIFA),
@@ -260,6 +267,7 @@ final class CaracteristicaBackfillMigration
         }
 
         $where = self::flag_not_null($flag, 'oe')
+            . ' AND ' . self::tarifa_exists(self::quote(self::DEF_TARIFA))
             . ' AND NOT EXISTS (SELECT 1 FROM catalogo_articulo_opcional ao'
             . ' WHERE ao.id_opcional = oe.id_opcional)'
             . ' AND NOT EXISTS (SELECT 1 FROM catalogo_opcional_familia ofam'
@@ -322,6 +330,27 @@ final class CaracteristicaBackfillMigration
             . ' WHERE c.codtarifa = ' . $tarifaExpr
             . ' AND c.referencia = ' . $keyExpr
             . ' AND c.id_caracteristica = ' . $flag['id'] . ')';
+    }
+
+    /**
+     * Legacy tables carry no FKs, so they may hold rows for deleted tarifas or
+     * articles; one orphan would make the whole INSERT ... SELECT fail its FK.
+     */
+    private static function articulo_parents_exist(string $tarifaExpr, string $referenciaExpr): string
+    {
+        return self::tarifa_exists($tarifaExpr)
+            . ' AND EXISTS (SELECT 1 FROM articulos pa WHERE pa.referencia = ' . $referenciaExpr . ')';
+    }
+
+    private static function familia_parents_exist(string $tarifaExpr, string $codfamiliaExpr): string
+    {
+        return self::tarifa_exists($tarifaExpr)
+            . ' AND EXISTS (SELECT 1 FROM familias pf WHERE pf.codfamilia = ' . $codfamiliaExpr . ')';
+    }
+
+    private static function tarifa_exists(string $tarifaExpr): string
+    {
+        return 'EXISTS (SELECT 1 FROM tarif_tarifas pt WHERE pt.codtarifa = ' . $tarifaExpr . ')';
     }
 
     private static function not_exists_familia(array $flag, string $tarifaExpr, string $keyExpr): string

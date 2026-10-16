@@ -54,6 +54,7 @@ final class Init
 
     public function init(): void
     {
+        $this->registerPermissionListener();
         $this->cleanupOrphanWizardFiles();
         self::migrateLegacyTables();
         self::migrateOpcionalExtension();
@@ -102,6 +103,24 @@ final class Init
             self::registerViewExtensions();
         } catch (\Throwable $e) {
             error_log('[catalogo_core] view extensions registration failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Multitarifa (D4): the first-party GroupPermissionListener is registered
+     * UNCONDITIONALLY. The listener short-circuits on the role-groups master
+     * setting (CatalogoOptions::groupsEnabled(), default off), so the feature
+     * is provably inert when off — no conditional re-registration needed.
+     */
+    private function registerPermissionListener(): void
+    {
+        try {
+            \FSFramework\Event\FSEventDispatcher::getInstance()->addListener(
+                \FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent::NAME,
+                new \FSFramework\Plugins\catalogo_core\Services\GroupPermissionListener()
+            );
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] GroupPermissionListener registration failed: ' . $e->getMessage());
         }
     }
 
@@ -641,6 +660,17 @@ final class Init
             'catalogo_idioma',
             'articulo_descripcion',
             'catalogo_lista_precio',
+            // Multitarifa (D5): FK definition tables before their dependents.
+            'catalogo_articulo_precio',
+            // Familias-jerarquia (D4): structure tables depend on
+            // catalogo_listas_precio (installed above) and familias.
+            'catalogo_familia_estructura',
+            'catalogo_articulo_familia_estructura',
+            'catalogo_grupo',
+            'catalogo_grupo_roles',
+            'catalogo_grupo_usuarios',
+            'catalogo_grupo_tarifas',
+            'catalogo_grupo_articulos',
             'catalogo_opcional',
             'catalogo_opcional_idioma',
             'catalogo_opcional_familia',
