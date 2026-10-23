@@ -263,6 +263,42 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $this->assertCount(0, $store, 'An empty family must delete the assignment row');
     }
 
+    public function test_save_rejects_unknown_family_code_without_writing(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $controller = $this->makeController($this->listaModel(), $this->assignmentStore($store));
+        $controller->family_structure = true;
+        $controller->articulo = $this->article('REF1');
+        $controller->user = (object) ['nick' => 'admin'];
+        $controller->request = $this->assignmentRequest('L1', 'F9');
+
+        $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
+
+        $this->assertContains('Familia no válida.', $controller->errors);
+        $this->assertSame([], $controller->messages);
+        $this->assertCount(0, $store, 'An unknown family code must not be persisted');
+    }
+
+    public function test_save_rejects_family_code_longer_than_eight_chars(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $controller = $this->makeController($this->listaModel(), $this->assignmentStore($store));
+        $controller->family_structure = true;
+        $controller->articulo = $this->article('REF1');
+        $controller->user = (object) ['nick' => 'admin'];
+        $controller->request = $this->assignmentRequest('L1', 'F123456789');
+
+        $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
+
+        $this->assertContains('Familia no válida.', $controller->errors);
+        $this->assertSame([], $controller->messages);
+        $this->assertCount(0, $store, 'An over-length family code must not be persisted');
+    }
+
     public function test_denied_permission_filter_blocks_the_write(): void
     {
         $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
@@ -442,6 +478,12 @@ final class ArticleFamilyAssignmentTest extends TestCase
                             (object) ['codfamilia' => 'F1', 'descripcion' => 'Familia 1'],
                             (object) ['codfamilia' => 'F2', 'descripcion' => 'Familia 2'],
                         ];
+                    }
+                    public function get($cod)
+                    {
+                        return in_array($cod, ['F1', 'F2'], true)
+                            ? (object) ['codfamilia' => $cod, 'descripcion' => 'Familia ' . $cod]
+                            : false;
                     }
                 };
             }

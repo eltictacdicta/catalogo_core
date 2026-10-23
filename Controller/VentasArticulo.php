@@ -1134,6 +1134,14 @@ class VentasArticulo extends PageController
         }
 
         $codfamilia = trim((string) $request->request->get('asignacion_codfamilia', ''));
+
+        // D2: codfamilia has no FK by design, so integrity is enforced here.
+        // An empty value is the explicit "clear the assignment" request.
+        if ($codfamilia !== '' && (mb_strlen($codfamilia) > 8 || !$this->familia_model()->get($codfamilia))) {
+            $this->new_error_msg('Familia no válida.');
+            return;
+        }
+
         $model = $this->articulo_familia_estructura_model();
         $row = $model->get($codlista, $referencia);
 
