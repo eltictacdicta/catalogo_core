@@ -28,6 +28,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/impuesto.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_precio.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_familia_estructura.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
@@ -120,6 +121,21 @@ class VentasArticulo extends PageController
 
     /** @var array<string,float> codlista => per-list price rows of the current article */
     public array $precios_por_lista = [];
+
+    /** Family-structure capability flag: hides the assignment block when off. */
+    public bool $family_structure = false;
+
+    /** Selected price list for the per-list family assignment. */
+    public string $codlista_asignacion = '';
+
+    /** @var list<\FSFramework\model\catalogo_lista_precio> active lists only */
+    public array $listas_estructura = [];
+
+    /** @var list<object> families available for assignment */
+    public array $familias_asignables = [];
+
+    /** @var object|null current (codlista, referencia) assignment row */
+    public ?object $asignacion_actual = null;
 
     public function __construct()
     {
@@ -225,6 +241,8 @@ class VentasArticulo extends PageController
             $this->eliminarArticulo($this->request);
         } elseif ($this->request->request->has('guardar_precios_lista')) {
             $this->guardarPreciosPorLista($this->request);
+        } elseif ($this->request->request->has('guardar_asignacion_familia')) {
+            $this->guardarAsignacionFamilia($this->request);
         } elseif ($this->request->request->has('sreferencia')) {
             $this->editarArticulo($this->request);
         }
@@ -409,6 +427,21 @@ class VentasArticulo extends PageController
     protected function familia_model(): \familia
     {
         return new \familia();
+    }
+
+    protected function lista_precio_model(): catalogo_lista_precio
+    {
+        return new catalogo_lista_precio();
+    }
+
+    protected function articulo_familia_estructura_model(): \FSFramework\model\catalogo_articulo_familia_estructura
+    {
+        return new \FSFramework\model\catalogo_articulo_familia_estructura();
+    }
+
+    protected function nueva_asignacion(): \FSFramework\model\catalogo_articulo_familia_estructura
+    {
+        return new \FSFramework\model\catalogo_articulo_familia_estructura();
     }
 
     protected function tarifa_familia_model(): tarif_tarifa_familia
@@ -950,6 +983,7 @@ class VentasArticulo extends PageController
         $this->loadOpcionalesDisponibles();
         $this->loadGruposDisponibles();
         $this->loadPreciosPorLista();
+        $this->loadAsignacionFamilias();
     }
 
     /**
@@ -982,6 +1016,156 @@ class VentasArticulo extends PageController
         foreach ($precioModel->all_from_articulo($this->articulo->referencia) as $precio) {
             $this->precios_por_lista[(string) $precio->codlista] = (float) $precio->precio;
         }
+    }
+
+    /**
+     * Task 3.4 (R-FJ-003): per-list article-to-family assignment. Flag-off
+     * keeps every collection empty and performs zero queries (inert feature).
+     * Reads only ACTIVE lists and the selected list's assignment row.
+     */
+    private function loadAsignacionFamilias(): void
+    {
+        $this->family_structure = (new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions())->familyStructureEnabled();
+        $this->codlista_asignacion = '';
+        $this->listas_estructura = [];
+        $this->familias_asignables = [];
+        $this->asignacion_actual = null;
+
+        if (!$this->family_structure) {
+            return;
+        }
+
+        $listaModel = $this->lista_precio_model();
+        foreach ($listaModel->all() as $lista) {
+            if (!empty($lista->activa)) {
+                $this->listas_estructura[] = $lista;
+            }
+        }
+
+        $activeCodes = array_map(
+            static fn ($lista): string => (string) $lista->codlista,
+            $this->listas_estructura
+        );
+
+        $requested = trim((string) $this->request->query->get('codlista', ''));
+        if ($requested !== '' && in_array($requested, $activeCodes, true)) {
+            $this->codlista_asignacion = $requested;
+        } elseif ($this->listas_estructura !== []) {
+            $default = $listaModel->get_default();
+            $defaultCode = $default ? (string) $default->codlista : '';
+            $this->codlista_asignacion = in_array($defaultCode, $activeCodes, true)
+                ? $defaultCode
+                : (string) $this->listas_estructura[0]->codlista;
+        }
+
+        if ($this->codlista_asignacion === '') {
+            return;
+        }
+
+        $familias = $this->familia_model()->all();
+        $this->familias_asignables = is_array($familias) ? $familias : [];
+
+        $referencia = $this->articulo !== null ? $this->articulo->referencia : null;
+        if ($referencia === null || $referencia === '') {
+            return;
+        }
+
+        $row = $this->articulo_familia_estructura_model()->get($this->codlista_asignacion, (string) $referencia);
+        $this->asignacion_actual = $row ?: null;
+    }
+
+    /**
+     * Upserts (codlista, referencia) for the current article. Flag-off aborts
+     * before any read/write; a denied permission filter blocks persistence.
+     */
+    private function guardarAsignacionFamilia(Request $request): void
+    {
+        if (!$this->family_structure) {
+            $this->new_error_msg('La asignación a familias no está habilitada.');
+            return;
+        }
+
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        $defaultReferencia = $this->articulo !== null ? (string) $this->articulo->referencia : '';
+        $referencia = trim((string) $request->request->get('sreferencia', $defaultReferencia));
+        $codlista = trim((string) $request->request->get('asignacion_codlista', $this->codlista_asignacion));
+        $activeCodes = array_map(
+            static fn ($lista): string => (string) $lista->codlista,
+            $this->listas_estructura
+        );
+
+        if ($referencia === '' || !in_array($codlista, $activeCodes, true)) {
+            $this->new_error_msg('Artículo o lista de precios no válida.');
+            return;
+        }
+
+        $filterEvent = self::dispatchFamilyAssignmentFilter($referencia, (string) $this->user->nick, $codlista);
+        if ($filterEvent === null || !$filterEvent->isAllowed()) {
+            $this->new_error_msg('No tienes permisos para asignar el artículo a una familia: '
+                . ($filterEvent !== null ? $filterEvent->getDenialReason() : 'error del filtro'));
+            return;
+        }
+
+        $codfamilia = trim((string) $request->request->get('asignacion_codfamilia', ''));
+        $model = $this->articulo_familia_estructura_model();
+        $row = $model->get($codlista, $referencia);
+
+        if ($codfamilia === '') {
+            if ($row && $row->delete()) {
+                $this->new_message('Asignación a familias eliminada.');
+            } else {
+                $this->new_message('El artículo no tenía asignación en esta lista.');
+            }
+            return;
+        }
+
+        if (!$row) {
+            $row = $this->nueva_asignacion();
+            $row->codlista = $codlista;
+            $row->referencia = $referencia;
+        }
+
+        $row->codfamilia = $codfamilia;
+        $row->en_catalogo = $request->request->has('asignacion_en_catalogo');
+        $row->en_tarifa = $request->request->has('asignacion_en_tarifa');
+        $row->orden = (int) $request->request->get('asignacion_orden', 0);
+
+        if ($row->save()) {
+            $this->new_message('Artículo asignado a la familia ' . $codfamilia . ' en la lista ' . $codlista . '.');
+            return;
+        }
+
+        $this->new_error_msg('¡Imposible guardar la asignación a familias!');
+    }
+
+    /**
+     * Neutral permission filter for assignment writes (design D6). Reuses the
+     * frozen event contract: zero listeners resolve allow.
+     */
+    public static function dispatchFamilyAssignmentFilter(
+        string $referencia,
+        string $nick,
+        string $codlista = ''
+    ): ?ArticlePermissionFilterEvent {
+        $filterEvent = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            $nick,
+            $codlista
+        );
+
+        try {
+            FSEventDispatcher::getInstance()->dispatch($filterEvent, ArticlePermissionFilterEvent::NAME);
+        } catch (\Throwable $e) {
+            error_log('ArticlePermissionFilterEvent listener error: ' . $e->getMessage());
+            $filterEvent->deny('permission filter error');
+        }
+
+        return $filterEvent;
     }
 
     /**
