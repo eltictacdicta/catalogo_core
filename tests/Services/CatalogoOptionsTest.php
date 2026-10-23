@@ -243,4 +243,36 @@ final class CatalogoOptionsTest extends TestCase
 
         $this->assertFalse($options->saveAll(false, true, ''));
     }
+
+    public function test_failed_persistence_restores_the_previous_value(): void
+    {
+        $GLOBALS['config2']['catalogo_core.multi_tariff'] = 'true';
+        $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
+
+        $this->assertFalse($options->setMultiTariff(false));
+        $this->assertTrue(
+            $options->multiTariffEnabled(),
+            'A failed save must not leak the unsaved value into readers'
+        );
+    }
+
+    public function test_failed_persistence_restores_an_absent_key_to_absent(): void
+    {
+        $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
+
+        $this->assertFalse($options->setGroupsEnabled(true));
+        $this->assertArrayNotHasKey('catalogo_core.groups_enabled', $GLOBALS['config2']);
+    }
+
+    public function test_failed_save_all_restores_every_touched_key(): void
+    {
+        $GLOBALS['config2']['catalogo_core.excel_roles'] = 'OLD';
+        $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
+
+        $this->assertFalse($options->saveAll(true, true, 'NEW'));
+
+        $this->assertFalse($options->multiTariffEnabled());
+        $this->assertFalse($options->groupsEnabled());
+        $this->assertSame('OLD', $options->excelRoles());
+    }
 }

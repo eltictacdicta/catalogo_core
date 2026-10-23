@@ -121,12 +121,11 @@ final class CatalogoOptions
      */
     public function saveAll(bool $multiTariff, bool $groupsEnabled, string $excelRoles): bool
     {
-        $settings = $this->settings();
-        $settings->set(self::KEY_MULTI_TARIFF, $multiTariff ? 'true' : 'false');
-        $settings->set(self::KEY_GROUPS_ENABLED, $groupsEnabled ? 'true' : 'false');
-        $settings->set(self::KEY_EXCEL_ROLES, $excelRoles);
-
-        return $this->persist($settings);
+        return $this->commit(static function (\fs_settings $settings) use ($multiTariff, $groupsEnabled, $excelRoles): void {
+            $settings->set(self::KEY_MULTI_TARIFF, $multiTariff ? 'true' : 'false');
+            $settings->set(self::KEY_GROUPS_ENABLED, $groupsEnabled ? 'true' : 'false');
+            $settings->set(self::KEY_EXCEL_ROLES, $excelRoles);
+        });
     }
 
     // ---- internals ----
@@ -167,10 +166,37 @@ final class CatalogoOptions
      */
     private function write(string $key, string $value): bool
     {
-        $settings = $this->settings();
-        $settings->set($key, $value);
+        return $this->commit(static function (\fs_settings $settings) use ($key, $value): void {
+            $settings->set($key, $value);
+        });
+    }
 
-        return $this->persist($settings);
+    /**
+     * Mutates the settings store and persists it, rolling back the in-memory
+     * config when the write fails: `set()` alone would otherwise leave readers
+     * in this request exposing values that never reached disk.
+     *
+     * @param callable(\fs_settings): void $mutate
+     */
+    private function commit(callable $mutate): bool
+    {
+        $hadConfig = array_key_exists('config2', $GLOBALS);
+        $before = $GLOBALS['config2'] ?? [];
+
+        $settings = $this->settings();
+        $mutate($settings);
+
+        if ($this->persist($settings)) {
+            return true;
+        }
+
+        if ($hadConfig) {
+            $GLOBALS['config2'] = $before;
+        } else {
+            unset($GLOBALS['config2']);
+        }
+
+        return false;
     }
 
     private function settings(): \fs_settings
