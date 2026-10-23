@@ -39,6 +39,9 @@ final class FamiliaEstructuraMigrationFakeDb extends \fs_db2
     /** @var list<string> */
     public array $executed = [];
 
+    /** @var list<string> */
+    public array $selected = [];
+
     /** @var array{begin: int, commit: int, rollback: int} */
     public array $transactions = ['begin' => 0, 'commit' => 0, 'rollback' => 0];
 
@@ -71,6 +74,7 @@ final class FamiliaEstructuraMigrationFakeDb extends \fs_db2
     public function select($sql, $params = [])
     {
         $sql = trim($sql);
+        $this->selected[] = $sql;
 
         if (preg_match("/^SHOW TABLES LIKE '(.+?)';?$/i", $sql, $m)) {
             return isset($this->tables[$m[1]]) ? [['Tables_in_db' => $m[1]]] : [];
