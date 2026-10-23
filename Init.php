@@ -13,6 +13,8 @@ use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaBackfillMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaColumnDropMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaRegistry;
+use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
+use FSFramework\Plugins\catalogo_core\Services\FamiliaEstructuraMigration;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 use FSFramework\View\ViewHookRegistry;
 use Twig\Loader\FilesystemLoader;
@@ -141,6 +143,14 @@ final class Init
             self::ensureOpcionalesTarifaTables();
             self::ensureArticuloTarifaTables();
             self::ensureArticuloDetalleTables();
+            try {
+                // Familias-jerarquia (D3): flag-gated, idempotent, non-destructive
+                // copy of the legacy per-tariff structure. Runs only on the
+                // version-change path, after every referenced table exists.
+                self::migrateFamiliaEstructura();
+            } catch (\Throwable $e) {
+                error_log('[catalogo_core] familia-estructura migration failed: ' . $e->getMessage());
+            }
             self::ensureCaracteristicasTables();
             CaracteristicaRegistry::registerDefaults();
             try {
@@ -564,6 +574,26 @@ final class Init
             }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Flag-gated copy of the legacy family structure into the canonical
+     * per-list tables (familiaEstructura change, D3).
+     *
+     * The flag defaults to false, so before the operator opts in both data
+     * sources coexist and zero rows are copied. The optional DB handle is an
+     * internal test seam; production callers always resolve `plugin_db()`.
+     */
+    private static function migrateFamiliaEstructura(?\fs_db2 $db = null): void
+    {
+        if (!(new CatalogoOptions())->familyStructureEnabled()) {
+            return;
+        }
+
+        $db ??= self::plugin_db();
+        if ($db instanceof \fs_db2) {
+            FamiliaEstructuraMigration::migrateIfNeeded($db);
         }
     }
 

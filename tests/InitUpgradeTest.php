@@ -85,13 +85,22 @@ namespace Tests\CatalogoCore;
 use FSFramework\Plugins\catalogo_core\Init;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Tests\CatalogoCore\Fixtures\FamiliaEstructuraMigrationFakeDb;
 
 final class InitUpgradeTest extends TestCase
 {
     protected function setUp(): void
     {
         require_once __DIR__ . '/../Init.php';
+        require_once __DIR__ . '/fixtures/familia_estructura_migration_fake_db.php';
         \FSFramework\model\CatalogoCoreSeedStub::$seedCalls = 0;
+        $GLOBALS['config2'] = [];
+    }
+
+    protected function tearDown(): void
+    {
+        unset($GLOBALS['config2']);
+        parent::tearDown();
     }
 
     #[Test]
@@ -224,6 +233,101 @@ final class InitUpgradeTest extends TestCase
             $retire,
             'delete() must be gated by the fs_page::get() result so a second upgrade() run is a no-op'
         );
+    }
+
+    /**
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private function migrationTables(): array
+    {
+        return [
+            'catalogo_listas_precio' => [['codlista' => 'L1', 'nombre' => 'Lista 1']],
+            'tarif_tarifa_familia' => [[
+                'codtarifa' => 'L1', 'codfamilia' => 'F1', 'madre' => null,
+                'capitulo' => '', 'nivel' => 'N1', 'en_catalogo' => 1,
+                'en_tarifa' => 0, 'activa' => 1, 'orden' => 0,
+            ]],
+            'tarif_tarifa_articulo' => [[
+                'codtarifa' => 'L1', 'referencia' => 'A1', 'codfamilia' => 'F1',
+                'en_tarifa' => 1, 'en_catalogo' => 1, 'orden' => 0,
+            ]],
+            'catalogo_familia_estructura' => [],
+            'catalogo_articulo_familia_estructura' => [],
+        ];
+    }
+
+    private function invokeFamiliaMigration(FamiliaEstructuraMigrationFakeDb $db): void
+    {
+        $method = new \ReflectionMethod(Init::class, 'migrateFamiliaEstructura');
+        $method->setAccessible(true);
+        $method->invoke(null, $db);
+    }
+
+    /**
+     * D3 lifecycle gate: with the feature flag off the migration must not
+     * issue a single statement (zero rows copied).
+     */
+    #[Test]
+    public function familyStructureMigrationIsInertWhenFlagIsOff(): void
+    {
+        $db = new FamiliaEstructuraMigrationFakeDb($this->migrationTables());
+
+        $this->invokeFamiliaMigration($db);
+
+        $this->assertSame([], $db->executed, 'flag off must copy zero rows');
+        $this->assertSame(0, $db->transactions['begin'], 'flag off must open no transaction');
+    }
+
+    /**
+     * D3 lifecycle gate: with the flag on the migration runs after the tables
+     * exist and copies both steps.
+     */
+    #[Test]
+    public function familyStructureMigrationRunsWhenFlagIsOn(): void
+    {
+        $GLOBALS['config2']['catalogo_core.family_structure'] = 'true';
+        $db = new FamiliaEstructuraMigrationFakeDb($this->migrationTables());
+
+        $this->invokeFamiliaMigration($db);
+
+        $this->assertSame(2, $db->transactions['begin'], 'both migration steps must run');
+        $this->assertCount(1, $db->tables['catalogo_familia_estructura']);
+        $this->assertCount(1, $db->tables['catalogo_articulo_familia_estructura']);
+    }
+
+    /**
+     * The migration is wired in upgrade() after every ensure-tables step (it
+     * depends on the legacy and canonical tables) and never from the
+     * request-path init().
+     */
+    #[Test]
+    public function upgradeWiresFamilyMigrationAfterEnsureTablesOnly(): void
+    {
+        $src = (string) file_get_contents(__DIR__ . '/../Init.php');
+        $upgrade = $this->methodBody($src, 'public static function upgrade(): void');
+        $init = $this->methodBody($src, 'public function init(): void');
+
+        $ensureCatalog = mb_strpos($upgrade, 'self::ensureCatalogTables();');
+        $ensureDetail = mb_strpos($upgrade, 'self::ensureArticuloDetalleTables();');
+        $migrate = mb_strpos($upgrade, 'self::migrateFamiliaEstructura();');
+
+        $this->assertNotFalse($ensureCatalog);
+        $this->assertNotFalse($ensureDetail);
+        $this->assertNotFalse($migrate, 'upgrade() must wire the family-structure migration');
+        $this->assertLessThan($migrate, $ensureCatalog);
+        $this->assertLessThan($migrate, $ensureDetail);
+        $this->assertStringNotContainsString(
+            'migrateFamiliaEstructura',
+            $init,
+            'the migration must not run on the request path'
+        );
+
+        $method = $this->methodBody($src, 'private static function migrateFamiliaEstructura(');
+        $gate = mb_strpos($method, 'familyStructureEnabled()');
+        $call = mb_strpos($method, 'FamiliaEstructuraMigration::migrateIfNeeded');
+        $this->assertNotFalse($gate, 'the migration must be gated by the feature flag');
+        $this->assertNotFalse($call);
+        $this->assertLessThan($call, $gate, 'the flag must be checked before the migration call');
     }
 
     /** Extracts a method body by brace matching from its signature. */
