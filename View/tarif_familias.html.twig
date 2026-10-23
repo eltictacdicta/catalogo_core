@@ -117,6 +117,17 @@
    }] %}
 {% endif %}
 
+{# Canonical per-list structure editor — `ventas_familia` is hidden from the
+   menu, so the tree entry point exposes it expressly when the capability is on. #}
+{% if fsc.family_structure %}
+   {% set extra_buttons = extra_buttons|merge([{
+      'href': 'index.php?page=ventas_familia',
+      'class': 'btn-primary',
+      'icon': 'fa fa-sitemap',
+      'label': 'Estructura por lista'
+   }]) %}
+{% endif %}
+
 {% set extra_buttons = extra_buttons|merge([
    {'onclick': "document.dispatchEvent(new CustomEvent('familias-export-open', {bubbles: true}))", 'icon': 'fa fa-file-excel-o', 'label': 'Exportar Excel', 'class': 'btn-success'},
    {'onclick': "document.dispatchEvent(new CustomEvent('familias-import-open', {bubbles: true}))", 'icon': 'fa fa-file-excel-o', 'label': 'Importar Excel', 'class': 'btn-info'},

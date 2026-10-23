@@ -160,3 +160,58 @@ These are the only gaps that unit/contract tests cannot close; all require DDEV 
 **PASS WITH WARNINGS**
 
 Phase 2 and Phase 3 are implemented, wired, flag-gated and green: the full plugin suite reports **1421 tests / 5838 assertions / 0 failures / 0 errors / 2 pre-existing warnings / 1 skip**, every Phase 2/3 task has a named passing test, the base `familias` schema is untouched, the dep-free rule holds for production code, and the page-identity artifacts now describe the surviving `ventas_familia`/`tarif_familias` reality without resurrecting the retired page. The change is **not archive-ready** because Phase 4 remains intentionally unimplemented and because two substantive warnings must be resolved or explicitly accepted first: the D6 event payload can mis-gate family-structure writes (WARNING-1), and the "DDEV DB" migration evidence is fake-DB only (WARNING-2). No CRITICAL finding.
+
+## Remediation (post-verify, 2026-10-23)
+
+Appended after the verifier's findings; nothing above was rewritten.
+
+### Fix 1 — family-structure writes are no longer gated by the article event (WARNING-1)
+
+**Decision**: a family code is not an article reference. Family-structure writes
+are authorized by page access (`ventas_familia` in `fs_access` / role
+permissions) plus `allow_delete` for deletes. Only article-assignment writes
+keep dispatching `ArticlePermissionFilterEvent`, because there the subject is a
+real article reference.
+
+**Change**: removed the dispatch and the `dispatchFamilyStructureFilter()` helper
+from `Controller/VentasFamilia::guardarEstructuraFamilia()` (with its unused
+imports). `Controller/VentasArticulo` is unchanged.
+
+**Evidence**:
+- `tests/FamiliaEstructuraTreeTest.php::test_save_is_not_gated_by_the_article_permission_event`
+  — a denying listener is registered, the listener is never invoked, the save
+  persists the row and reports no error.
+- `tests/FamiliaEstructuraTreeTest.php::test_save_path_keeps_zero_article_event_references`
+  — regression guard against re-introducing the dispatch.
+- `ArticleFamilyAssignmentTest` stays green (7 tests / 28 assertions): the
+  article path still gates.
+- Design D6 + Data Flow and spec R-FJ-001 carry the amendment note.
+
+### Fix 2 — canonical structure UI is discoverable (WARNING-6)
+
+**Change**: `controller/tarif_familias.php` exposes `family_structure` from
+`CatalogoOptions::familyStructureEnabled()` via a `loadFamilyStructureFlag()`
+seam. `View/tarif_familias.html.twig` renders a toolbar button
+("Estructura por lista" → `index.php?page=ventas_familia`) only when the flag is
+on; flag-off renders nothing and the legacy tree behavior is untouched. No page
+was resurrected and no page name/menu changed.
+
+**Evidence**:
+- `tests/TarifFamiliasStructureLinkTest.php` — 5 tests / 11 assertions: flag-on
+  reaches the view contract, absent flag defaults off (and clears a stale
+  value), `private_core()` loads the flag, the link is inside the
+  `{% if fsc.family_structure %}` guard, and `page=ventas_familias` stays
+  unlinked.
+- Regressions green: `TarifFamiliasControllerContract` 13/24,
+  `TarifFamiliasHierarchy` 4/18, `TarifFamiliasToggle` 11/50,
+  `TarifFamiliasAddFamilia` 7/9, `TarifFamiliasFragment` 13/29,
+  `CatalogoCoreHookMarkers` 19/106.
+
+### Post-remediation suite result
+
+`ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml` —
+**Tests: 1427, Assertions: 5853, Failures: 0, Errors: 0, Warnings: 2, Skipped: 1**
+(two pre-existing warnings and the one pre-existing skip are unchanged).
+
+Phase 4 remains unimplemented and unchecked; this remediation created no Phase 4
+artifact.

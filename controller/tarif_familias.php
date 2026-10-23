@@ -27,6 +27,7 @@ use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore;
+use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
 use FSFramework\Plugins\catalogo_core\Services\TarifaFamiliaReorder;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -75,6 +76,15 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     /** @var boolean Filtrar solo activas */
     public $b_solo_activas;
 
+    /**
+     * Family-structure capability flag. When on, the toolbar exposes the
+     * canonical per-list structure editor (`ventas_familia`), which is hidden
+     * from the menu (`showonmenu => false`).
+     *
+     * @var bool
+     */
+    public $family_structure = false;
+
     public function __construct()
     {
         parent::__construct(__CLASS__, 'Familias', 'catalogo');
@@ -83,6 +93,8 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     protected function private_core()
     {
         parent::private_core();
+
+        $this->loadFamilyStructureFlag();
 
         // Permission — fbase_controller set this; we read it from the user directly.
         $this->allow_delete = $this->user->allow_delete_on($this->class_name);
@@ -144,6 +156,16 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         // Load tree
         $this->load_familias_tree();
         $this->load_familias_disponibles();
+    }
+
+    /**
+     * Loads the family-structure capability flag into the view data contract.
+     * Overridable seam so the discoverability contract stays testable without
+     * booting the controller's DB path.
+     */
+    protected function loadFamilyStructureFlag(): void
+    {
+        $this->family_structure = (new CatalogoOptions())->familyStructureEnabled();
     }
 
     /**

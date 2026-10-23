@@ -91,3 +91,34 @@ Chain strategy: stacked-to-main
 | R-FJ-008 | 4.3 |
 | R-MT-002 (modified) | 1.1, 1.2, 4.1, 4.4 |
 | R-MT-006 | 1.4, 2.1, 2.3 |
+
+## Remediation (post-verify, 2026-10-23)
+
+> Explicit remediation note. Phase 4 tasks above remain **unchecked** — this
+> section does not tick or create Phase 4 work.
+
+Two post-verify fixes landed on `feature/familias-estructura-pr3`:
+
+- **R1 — family-structure writes are not article edits (verify WARNING-1, D6).**
+  `Controller/VentasFamilia::guardarEstructuraFamilia()` no longer dispatches
+  `ArticlePermissionFilterEvent`, and the `dispatchFamilyStructureFilter()`
+  helper plus its unused imports were removed. Family-structure authorization is
+  page access (`ventas_familia` in `fs_access` / role permissions) plus
+  `allow_delete` for deletes. Article-assignment writes in `VentasArticulo` keep
+  dispatching the event (real article reference). Evidence:
+  `tests/FamiliaEstructuraTreeTest.php`
+  (`test_save_is_not_gated_by_the_article_permission_event`,
+  `test_save_path_keeps_zero_article_event_references`), design D6 + Data Flow
+  amendment, spec R-FJ-001 amendment note.
+- **R2 — canonical structure UI is discoverable (verify WARNING-6).**
+  `controller/tarif_familias.php` exposes `family_structure` from
+  `CatalogoOptions::familyStructureEnabled()` through a `loadFamilyStructureFlag()`
+  seam; `View/tarif_familias.html.twig` renders a toolbar link to
+  `index.php?page=ventas_familia` only when the flag is on. Flag-off renders
+  nothing and the legacy tree is untouched. Evidence:
+  `tests/TarifFamiliasStructureLinkTest.php` (5 tests / 11 assertions).
+
+Focused evidence: `FamiliaEstructuraTreeTest` 12/56 · `ArticleFamilyAssignmentTest`
+7/28 · `TarifFamiliasStructureLinkTest` 5/11. Full plugin suite re-run in this
+slice: 1427 tests / 5853 assertions / 0 failures / 0 errors / 2 pre-existing
+warnings / 1 pre-existing skip. Phase 5 tasks stay unchecked.
