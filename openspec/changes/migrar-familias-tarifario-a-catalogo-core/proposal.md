@@ -18,6 +18,17 @@ La gestión del catálogo hoy vive dividida: `tarifario` expone una UI jerárqui
 - **Traducciones**: claves con prefijo plugin en `plugins/catalogo_core/translations/*.yaml` (tarifario no tiene traducciones; no se copian textos sin prefijo).
 - **Compat de hooks**: los 4 view hooks que `tarifario` registra via `ViewHookRegistry` en páginas de `catalogo_core` deben seguir resolviendo sin romper `HookRegistrationTest` (los hooks pasan a apuntar a la UI absorbida o se declaran obsoletos con documento de deprecación — decisión en fase spec).
 
+> **Amendment 2026-10-23 (identidad de página)**: el `ventas_familias` plano fue
+> retirado en main (commit `3a5a42e`, Amendment 1 del change archivado
+> `absorber-familias-tarifa-en-catalogo-core`; `Init::retireVentasFamiliasPage()`
+> lo elimina al actualizar). La UI de este change extiende la página
+> superviviente `ventas_familia` (menú `catalogo`) y conserva `tarif_familias`
+> (menú `catalogo`) como entrada del árbol; nunca resucita la página retirada.
+> Las menciones a `VentasFamilias`/menú `ventas` que quedan en este proposal
+> describen el plan original y no son instrucciones vigentes. El detalle
+> reconciliado vive en `design.md` (D5 y nota de amendment), `tasks.md` (Fase 3)
+> y el delta spec (R-FJ-006).
+
 ### Out of Scope / Non-Goals
 - NO es disolución total de `tarifario`: el plugin conserva precios por artículo/lista, roles, grupos, historial de precios y sus ~14 controladores `tarif_*` restantes.
 - NO se migra la lógica de precios (por-artículo-por-lista, historial) — eso queda en `tarifario`.

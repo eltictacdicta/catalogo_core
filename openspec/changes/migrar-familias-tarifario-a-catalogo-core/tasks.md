@@ -23,7 +23,7 @@ Chain strategy: stacked-to-main
 |------|------|-----------|----------------------|-----------------|-------------------|
 | 1 | Extension tables + models + `familyStructureEnabled()` flag (D1, D2, D4) | PR 1 | phpunit -c plugins/catalogo_core/phpunit.xml --filter 'FamiliaEstructura|ArticuloFamiliaEstructura|CatalogoOptions' | N/A — unit-only (mock `fs_db2`; no DB flows) | New files + Init ensure-order line; additive, droppable |
 | 2 | `FamiliaEstructuraMigration` + flag-gated Init call + `FamiliaTreeGuard` (D3) | PR 2 (base = PR 1 branch) | phpunit -c plugins/catalogo_core/phpunit.xml --filter 'FamiliaEstructuraMigration|FamiliaTreeGuard|InitUpgrade' | DDEV integration: seed legacy rows → run migration twice → row counts stable | Revert PR 2; migration flag default-off means zero behavior change |
-| 3 | `VentasFamilias` tree UI + `VentasArticulo` assignment block (D5) | PR 3 (base = PR 2 branch) | phpunit -c plugins/catalogo_core/phpunit.xml --filter 'VentasFamilias|ArticleAssignment|HookPoints' | DDEV smoke: open ventas_familias with `?codlista=...`, re-parent POST, cycle POST | Revert PR 3 only; page name unchanged, fs_access intact |
+| 3 | `VentasFamilia` tree UI + `VentasArticulo` assignment block (D5; amended 2026-10-23 from the retired `VentasFamilias` page) | PR 3 (base = PR 2 branch) | phpunit -c plugins/catalogo_core/phpunit.xml --filter 'FamiliaEstructuraTree|ArticleFamilyAssignment|VentasFamilia' | DDEV smoke: open ventas_familia with `?codlista=...`, re-parent POST, cycle POST | Revert PR 3 only; surviving page names unchanged, fs_access intact |
 | 4 | `VentasCatalogoView` page + translations + full regression (D5, D7) | PR 4 (base = PR 3 branch) | phpunit -c plugins/catalogo_core/phpunit.xml | Full suite green in DDEV; HookRegistrationTest (tarifario) green | Revert PR 4 only (new page + translation keys) |
 
 ## Phase 1: Extension Tables & Models (foundation)
@@ -42,23 +42,29 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Tree UI & Article Assignment
 
-> **Phase 3 page-identity note (applied 2026-10-23)**: the flat `ventas_familias`
-> page was retired on main (Amendment 1, `Init::retireVentasFamiliasPage()`).
-> The Phase 3 UI therefore extends the existing `Controller/VentasFamilia.php`
+> **Phase 3 page-identity amendment (applied 2026-10-23)**: the flat
+> `ventas_familias` page was retired on main (commit `3a5a42e`, Amendment 1 of
+> the archived `absorber-familias-tarifa-en-catalogo-core` change;
+> `Init::retireVentasFamiliasPage()` deletes it on upgrade). The Phase 3 UI
+> therefore extends the surviving `Controller/VentasFamilia.php`
 > (name `ventas_familia`, menu `catalogo`) for the tree/structure/cycle work and
-> keeps `tarif_familias` as the tree entry point; no page is resurrected and no
-> `fs_access` row moves. `ventas_catalogo_view` remains deferred to task 4.1.
+> keeps `tarif_familias` (menu `catalogo`) as the family-tree entry point. No
+> page is resurrected and no `fs_access` row moves. The original Phase 3 bullets
+> named `VentasFamilias`/`ventas_familias`; they are amended in place above so
+> the plan matches reality. The pre-amendment text remains in git history for
+> audit; it is not a valid instruction. `ventas_catalogo_view` remains deferred
+> to task 4.1.
 
 
-- [x] 3.1 Modify `Controller/VentasFamilias.php`: list selector (active `catalogo_listas_precio` only, flag-gated), batch read `catalogo_familia_estructura WHERE codlista = ?` (no N+1, D5), structure-column save upsert via model, dispatch `ArticlePermissionFilterEvent` on structure writes (D6). **[TDD-RED]** Extend controller tests: flag-off hides selector/structure UI (inert), flag-off POST → structure not written.
-- [x] 3.2 Modify `View/ventas_familias.html.twig`: nested `<ul>` tree (depth from `madre` chain, never stored — D2/D5 assumptions), per-node `nivel`/`orden`/`activa`, "Estructura por lista" columns for selected `codlista` (R-FJ-001 tree-render scenario). CSRF field on all POST forms.
+- [x] 3.1 Modify `Controller/VentasFamilia.php` — surviving page `ventas_familia`, menu `catalogo` (amended 2026-10-23; the planned `Controller/VentasFamilias.php` page is retired on main and is NOT recreated): list selector (active `catalogo_listas_precio` only, flag-gated), batch read `catalogo_familia_estructura WHERE codlista = ?` (no N+1, D5), structure-column save upsert via model, dispatch `ArticlePermissionFilterEvent` on structure writes (D6). **[TDD-RED]** Extend controller tests: flag-off hides selector/structure UI (inert), flag-off POST → structure not written.
+- [x] 3.2 Modify `View/ventas_familia.html.twig` — surviving view for `ventas_familia` (amended 2026-10-23; the planned `View/ventas_familias.html.twig` belongs to the retired page): nested `<ul>` tree (depth from `madre` chain, never stored — D2/D5 assumptions), per-node `nivel`/`orden`/`activa`, "Estructura por lista" columns for selected `codlista` (R-FJ-001 tree-render scenario). CSRF field on all POST forms. `tarif_familias` stays the family-tree entry point (menu `catalogo`).
 - [x] 3.3 Cycle-rejection in save path: `editarFamilia` → `FamiliaTreeGuard::assertAcyclic()` before write; on `RuntimeException` → `new_error_msg()`, no `familias` row modified (R-FJ-001 cycle scenario). **[TDD-RED]** Controller test: cycle POST rejected with error message + row unchanged.
 - [x] 3.4 Modify `Controller/VentasArticulo.php` + view: "Asignación a familias" block per selected list writing `catalogo_articulo_familia_estructura` (D5, R-FJ-003), flag-gated, event dispatch on save (D6). **[TDD-RED]** Extend article controller tests: assignment upsert per list, L2 scoped view excludes L1 assignment (R-FJ-003 scenario 2).
-- [x] 3.5 Page-name preservation: assert `VentasFamilias::getPageData()` name still `ventas_familias`, menu `ventas` (R-FJ-006). **[TDD-RED]** Extend `tests/` fs_access regression test: existing access-row scenario + new `ventas_catalogo_view` registered under `ventas` menu.
+- [x] 3.5 Page-name preservation (amended 2026-10-23; the planned `ventas_familias`/menu `ventas` assertion is superseded because that page no longer exists): assert `VentasFamilia::getPageData()` name is `ventas_familia` with menu `catalogo`, and `tarif_familias` keeps its class-derived name under the `catalogo` menu (R-FJ-006). **[TDD-RED]** Extend `tests/` with an fs_access/page-identity regression test: surviving page names preserved, `Controller/VentasFamilias.php` absent, retirement cleanup still wired; the new `ventas_catalogo_view` page is deferred to task 4.1.
 
 ## Phase 4: Catalog View & Translations
 
-- [ ] 4.1 Create `Controller/VentasCatalogoView.php` (page `ventas_catalogo_view`, menu `ventas`, admin-only showonmenu — D5) + `View/ventas_catalogo_view.html.twig`: tree filtered `activa = TRUE AND en_catalogo = TRUE` for selected `codlista`, articles from `catalogo_articulo_familia_estructura WHERE en_catalogo = TRUE` (R-FJ-004 both scenarios). List identity ONLY `catalogo_listas_precio.codlista` (R-MT-002 modified scenario). **[TDD-RED]** `tests/VentasCatalogoViewControllerTest.php`: L1-only rendering, inactive structures hidden, empty state message.
+- [ ] 4.1 Create `Controller/VentasCatalogoView.php` (page `ventas_catalogo_view`, menu `catalogo` — amended 2026-10-23 with the page-identity reconciliation; still pending, not created by this slice, admin-only showonmenu — D5) + `View/ventas_catalogo_view.html.twig`: tree filtered `activa = TRUE AND en_catalogo = TRUE` for selected `codlista`, articles from `catalogo_articulo_familia_estructura WHERE en_catalogo = TRUE` (R-FJ-004 both scenarios). List identity ONLY `catalogo_listas_precio.codlista` (R-MT-002 modified scenario). **[TDD-RED]** `tests/VentasCatalogoViewControllerTest.php`: L1-only rendering, inactive structures hidden, empty state message.
 - [ ] 4.2 Frozen-hook compatibility: add `tests/ViewHookPointsTest.php` asserting the 4 hook points (`ventas_articulo_tabs_after`, `ventas_articulo_tab_pane_after`, `ventas_opcional_tabs_after`, `ventas_opcional_tab_pane_after`) still present in `ventas_articulo`/`ventas_opcional` templates (R-FJ-007; absorbed UI adds its own blocks, touches no hook point). **[TDD-RED]** before 4.1 template edits.
 - [ ] 4.3 Translations: add prefixed keys to `translations/messages.es.yaml` (+ fallback locale) — D7 seed set (`catalogo-core-familias-tree-title`, `-lista-selector`, `-estructura-capitulo`, `-estructura-orden`, `-estructura-en-catalogo`, `-estructura-en-tarifa`, `-estructura-activa`, `-ciclo-error`, `-articulos-asignacion-tab`, `-catalogo-view-title`, `-catalogo-view-empty`). **[TDD-RED]** `tests/TranslationAuditTest.php`: every key used by new templates starts with `catalogo-core-` and resolves (R-FJ-008).
 - [ ] 4.4 Dep-free audit: extend grep-audit test — no `require`/`require_once`/class reference to `plugins/tarifario/` anywhere in `plugins/catalogo_core/`; no `tarif_tarifa_familia`/`tarif_tarifa_articulo` reads outside `FamiliaEstructuraMigration` (D6 hard rule; R-MT-002 "no legacy codtarifa consulted"). No `fsframework.ini` `require` toward tarifario.

@@ -4,7 +4,7 @@
 
 ### Requirement: Hierarchical family tree UI (R-FJ-001)
 
-The plugin MUST provide a family management page (extending the existing `VentasFamilias` page name) that renders and edits the mother/daughter hierarchy already present in the data layer (`familias.madre`, `familias.nivel`, `familia::hijas()`, `familia::aux_all()`), without modifying the base `familias` table schema or `model/core/familia.php` logic beyond read-only use. The tree MUST expose per-node: mother (`madre`), chapter (`capitulo`-equivalent display), level (`nivel`), display order (`orden`), and active flag (`activa`).
+The plugin MUST provide a family management page (extending the surviving `VentasFamilia` page — page name `ventas_familia`, menu `catalogo`; the flat `VentasFamilias` page was retired and MUST NOT be revived) that renders and edits the mother/daughter hierarchy already present in the data layer (`familias.madre`, `familias.nivel`, `familia::hijas()`, `familia::aux_all()`), without modifying the base `familias` table schema or `model/core/familia.php` logic beyond read-only use. The family-tree entry point remains `tarif_familias` (menu `catalogo`). The retired `ventas_familias` page MUST NOT be resurrected. The tree MUST expose per-node: mother (`madre`), chapter (`capitulo`-equivalent display), level (`nivel`), display order (`orden`), and active flag (`activa`).
 
 #### Scenario: Tree renders nested hierarchy
 
@@ -117,21 +117,27 @@ The migration MUST run in FK order (families and `catalogo_listas_precio` first,
 - WHEN the migration runs
 - THEN the orphan row is skipped, the error is reported in the migration log, and the migration completes for the remaining valid rows
 
-### Requirement: fs_access preservation (R-FJ-006)
+### Requirement: Page identity preservation (R-FJ-006)
 
-The capability MUST preserve existing user access: the absorbed UI MUST keep the existing `VentasFamilias` page name and `fs_access` rows working. Any new page MUST register under the `ventas` menu with a consistent name. If a page rename is unavoidable, a `fs_access` migration step MUST copy permissions to the new page name with a passing test.
+The capability MUST preserve existing user access: the absorbed UI MUST keep the surviving family page names and their `fs_access` rows working. The surviving pages are `ventas_familia` (family detail, per-list structure, cycle guard; menu `catalogo`) and `tarif_familias` (family-tree entry point; menu `catalogo`). The retired `ventas_familias` page — removed on main in commit `3a5a42e` (Amendment 1 of the archived `absorber-familias-tarifa-en-catalogo-core` change) and cleaned up by `Init::retireVentasFamiliasPage()` — MUST NOT be resurrected. Any new page MUST register under the surviving `catalogo` menu with a consistent name. If a page rename is unavoidable, a `fs_access` migration step MUST copy permissions to the new page name with a passing test.
+
+> **Amendment 2026-10-23 (page identity)**: this requirement originally named
+> `VentasFamilias`/`ventas_familias` and the `ventas` menu. That page no longer
+> exists on main, so the requirement now names the surviving pages and the
+> `catalogo` menu. The intent is unchanged: preserve page identity, keep
+> `fs_access` intact, and never resurrect a retired page.
 
 #### Scenario: Existing access rows keep working
 
-- GIVEN a user with an `fs_access` row for `VentasFamilias`
+- GIVEN a user with an `fs_access` row for `ventas_familia` (or the `tarif_familias` tree entry point)
 - WHEN the absorbed UI is installed and the user logs in
 - THEN the user reaches the same page name with no access loss
 
 #### Scenario: New page registered consistently
 
-- GIVEN the catalog view page is new
+- GIVEN a new catalog page is added
 - WHEN the page list is built
-- THEN the page appears under the `ventas` menu with its `fs_access` row created on first admin visit
+- THEN the page appears under the `catalogo` menu with its `fs_access` row created on first admin visit
 
 ### Requirement: Hook compatibility during transition (R-FJ-007)
 

@@ -2,7 +2,20 @@
 
 ## Technical Approach
 
-`catalogo_core` absorbs the family-tree catalog surface (hierarchical family UI, per-list family structure, per-list article assignment, catalog view) using the **extension-table pattern** already proven by `tarif_familia_ext`: the base `familias` table and `model/core/familia.php` stay read-only. Two new canonical tables (`catalogo_familia_estructura`, `catalogo_articulo_familia_estructura`) map 1:1 from the legacy `tarif_tarifa_familia` / `tarif_tarifa_articulo` schemas (verified in `plugins/tarifario/model/table/`), with `codtarifa` renamed to `codlista` and FK retargeted from `tarif_tarifas` to `catalogo_listas_precio`. A non-destructive, idempotent migration service (following `CatalogLegacyTableMigration`) copies legacy data without dropping anything. The tree UI extends the existing `VentasFamilias` page (name preserved → `fs_access` intact). Integration with `tarifario` stays event/hook-based; no `require` in either direction.
+`catalogo_core` absorbs the family-tree catalog surface (hierarchical family UI, per-list family structure, per-list article assignment, catalog view) using the **extension-table pattern** already proven by `tarif_familia_ext`: the base `familias` table and `model/core/familia.php` stay read-only. Two new canonical tables (`catalogo_familia_estructura`, `catalogo_articulo_familia_estructura`) map 1:1 from the legacy `tarif_tarifa_familia` / `tarif_tarifa_articulo` schemas (verified in `plugins/tarifario/model/table/`), with `codtarifa` renamed to `codlista` and FK retargeted from `tarif_tarifas` to `catalogo_listas_precio`. A non-destructive, idempotent migration service (following `CatalogLegacyTableMigration`) copies legacy data without dropping anything. The tree UI extends the surviving `VentasFamilia` page (`ventas_familia`, menu `catalogo`) and keeps `tarif_familias` as the family-tree entry point (surviving page names preserved → `fs_access` intact). Integration with `tarifario` stays event/hook-based; no `require` in either direction.
+
+> **Amendment 2026-10-23 — page identity (supersedes the original D5 target).**
+> The flat `ventas_familias` page was retired on main in commit `3a5a42e`
+> (Amendment 1 of the archived `absorber-familias-tarifa-en-catalogo-core`
+> change) and is deleted on upgrade by `Init::retireVentasFamiliasPage()`.
+> The original design targeted `Controller/VentasFamilias.php` / page
+> `ventas_familias` / menu `ventas`; those targets no longer exist. Phase 3
+> therefore extends `Controller/VentasFamilia.php` (page `ventas_familia`, menu
+> `catalogo`) for the tree/structure/cycle work and leaves `tarif_familias`
+> (menu `catalogo`) as the tree entry point. The retired page MUST NOT be
+> recreated and no `fs_access` row is moved. References below are updated to
+> the surviving surfaces; the superseded plan is retained in git history for
+> audit, not as a current instruction.
 
 ## Architecture Decisions
 
@@ -68,16 +81,16 @@ Ordering (FK-safe, spec R-FJ-005):
 
 **Choice**: extend the `Init::ensureCatalogTables()` / `DEFAULT_SEED_MODELS` precedent. Order: `catalogo_listas_precio` (already installed by multitarifa) → `catalogo_familia_estructura` → `catalogo_articulo_familia_estructura` (spec R-MT-006 scenario). XMLs declare the FKs; the models are instantiated in that order so `fs_model` creates dependent tables after their parents. Add `catalogo_familia_estructura` and `catalogo_articulo_familia_estructura` to the ensure-list immediately after `catalogo_articulo_precios`.
 
-### D5: UI design — extend `VentasFamilias`, selector for list, no new primary page
+### D5: UI design — extend the surviving `VentasFamilia` page, selector for list, no new primary page
 
-**Choice**: the existing `Controller/VentasFamilias.php` (page name `ventas_familias`, menu `ventas`, PSR-4 `PageController`) is extended, NOT renamed — `fs_access` rows keep working (spec R-FJ-006). `familia.php` and the `familias` table are untouched.
+**Choice (amended 2026-10-23)**: the surviving `Controller/VentasFamilia.php` (page name `ventas_familia`, menu `catalogo`, PSR-4 `PageController`) is extended, NOT renamed — `fs_access` rows keep working (spec R-FJ-006). `tarif_familias` (class-derived page name, menu `catalogo`) stays the family-tree entry point and is not touched by this slice. The retired `Controller/VentasFamilias.php` is not recreated. `familia.php` and the `familias` table are untouched.
 
 - **Tree rendering**: reuse `familia::all()` (already returns the flattened hierarchical list via `aux_all()` with depth-prefixed `nivel`) for the default view, and `hijas()`/`madres()` for lazy re-parenting forms — exactly what the current controller does. The template switches from the flat search list to a nested `<ul>` tree (depth derived from `madre` chain client-side via the aux-prefixed `nivel`, or server-side by counting chain hops — implementation detail, depth is derived, never stored). Cycle rejection (R-FJ-001) is enforced in the **controller's save path** (`editarFamilia`): before saving, walk the `madre` chain of the target mother; if it reaches the child, `$this->new_error_msg()` and abort. (Model-level would be cleaner but `familia.php` is read-only per spec; the controller-level check is the extension point available. A dedicated service `Services/FamiliaTreeGuard::assertAcyclic()` keeps it testable.)
 - **Per-list structure editing**: a **list selector** (dropdown of `catalogo_listas_precio`, only `activa = TRUE`, multitariff-flag-gated like D6 of multitarifa) at the top of the page. The selected `codlista` drives an "Estructura por lista" column set (capitulo, orden, en_catalogo, en_tarifa, activa) rendered next to each tree node, reading `catalogo_familia_estructura` rows for that list (single `SELECT ... WHERE codlista = ?` batch, no N+1 per node). Saving a node's structure upserts the extension row via the new model. No tabs-per-list — one list in context at a time keeps the tree readable and the template simple; switching lists is a GET param reload (`?codlista=...`).
-- **Article assignment**: absorbed into the existing `VentasArticulo` page as a new "Asignación a familias" section/tab (per-list, same selector pattern), writing `catalogo_articulo_familia_estructura` — mirrors how multitarifa added the "Precios por lista" tab. Bulk family-side assignment (list all articles under a family node) lives in the `VentasFamilias` node detail, using `articulo::all_from_familia()`.
-- **Catalog view**: new page `Controller/VentasCatalogoView.php` (page name `ventas_catalogo_view`, menu `ventas`, `showonmenu` admin-only) rendering the tree filtered by the selected list: nodes where `activa = TRUE` AND `en_catalogo = TRUE`, articles from `catalogo_articulo_familia_estructura` where `en_catalogo = TRUE`, scoped strictly to `codlista` (spec R-FJ-004). This is a NEW page (the old tarifario `tarif_catalogo_view` keeps its own URL and is tarifario's problem until follow-up deprecation), so no `fs_access` risk — first admin visit creates the row.
+- **Article assignment**: absorbed into the existing `VentasArticulo` page as a new "Asignación a familias" section/tab (per-list, same selector pattern), writing `catalogo_articulo_familia_estructura` — mirrors how multitarifa added the "Precios por lista" tab. Bulk family-side assignment (list all articles under a family node) lives in the `VentasFamilia` node detail, using `articulo::all_from_familia()`.
+- **Catalog view**: new page `Controller/VentasCatalogoView.php` (page name `ventas_catalogo_view`, menu `catalogo` — amended 2026-10-23 from the retired `ventas` menu —, `showonmenu` admin-only) rendering the tree filtered by the selected list: nodes where `activa = TRUE` AND `en_catalogo = TRUE`, articles from `catalogo_articulo_familia_estructura` where `en_catalogo = TRUE`, scoped strictly to `codlista` (spec R-FJ-004). This is a NEW page (the old tarifario `tarif_catalogo_view` keeps its own URL and is tarifario's problem until follow-up deprecation), so no `fs_access` risk — first admin visit creates the row.
 - **Frozen hooks untouched**: `VentasArticulo` / `VentasOpcional` keep rendering `ViewHookRegistry` hook points (`ventas_articulo_tabs_after`, etc.) exactly as today; the absorbed UI adds tabs/blocks in catalogo_core's own templates and does not depend on the `@tarifario` hooks (spec R-FJ-007). `HookRegistrationTest` stays green because hook names, registration side, and template paths don't change in this change.
-- **Views**: Twig templates under `plugins/catalogo_core/View/` (`ventas_familias.html.twig` extended with tree + structure columns; `ventas_catalogo_view.html.twig` new; `ventas_articulo` gains the assignment block).
+- **Views**: Twig templates under `plugins/catalogo_core/View/` (`ventas_familia.html.twig` extended with tree + structure columns — amended 2026-10-23 from the retired `ventas_familias.html.twig`; `ventas_catalogo_view.html.twig` new; `ventas_articulo` gains the assignment block).
 
 ### D6: Cross-plugin contract — catalogo_core stays dep-free
 
@@ -104,7 +117,7 @@ Init.php boot
          each step: transaction + idempotent INSERT (ON CONFLICT DO NOTHING / INSERT IGNORE)
          zero DELETE/DROP/UPDATE on tarif_*
 
-VentasFamilias (page ventas_familias, unchanged name)
+VentasFamilia (page ventas_familia, menu catalogo, name preserved)
   familia::all()/hijas()/madres()  → tree render (depth derived from madre chain)
   + list selector (activa lists from catalogo_listas_precio)
   + estructura columns per selected codlista ← catalogo_familia_estructura (batch read)
@@ -131,7 +144,7 @@ Frozen hooks: ViewHookRegistry points unchanged; @tarifario/Hooks/* keep renderi
 | `Services/FamiliaTreeGuard.php` | Create (cycle check, unit-testable) |
 | `Services/CatalogoOptions.php` | Modify (`familyStructureEnabled()` flag, default false) |
 | `Init.php` | Modify (ensure-tables order D4; flag-gated migration call) |
-| `Controller/VentasFamilias.php` + `View/ventas_familias.html.twig` | Modify (tree UI, list selector, structure editor) |
+| `Controller/VentasFamilia.php` + `View/ventas_familia.html.twig` | Modify (tree UI, list selector, structure editor; amended 2026-10-23 from the retired `VentasFamilias` page) |
 | `Controller/VentasArticulo.php` + view | Modify (asignación block, per-list) |
 | `Controller/VentasCatalogoView.php` + `View/ventas_catalogo_view.html.twig` | Create (catalog view per list) |
 | `controller/` legacy wrappers if page discovery requires them | Create (mirror pattern of existing pages) |
@@ -165,7 +178,7 @@ Run via `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`;
 | Unit | Extension model tests — upsert by composite PK (re-save updates, no duplicate), `test()` validation, cascade declarations present in XML parse; anonymous fs_model subclass pattern | R-FJ-002/003 one-row-per-key |
 | Integration (ddev, DB) | Migration idempotency round-trip: seed legacy rows (incl. one orphan codtarifa), run migration twice, assert row counts stable + legacy tables untouched + orphan logged | R-FJ-005 full scenarios |
 | Integration | Tree rendering: seed familias with madre chain, assert `familia::all()` flattened order + controller tree data; re-parent POST (CSRF) updates `familias.madre`; cycle POST rejected with error, no row modified | R-FJ-001 scenarios |
-| Integration | fs_access preservation: page name `ventas_familias` unchanged in `getPageData()`; new `ventas_catalogo_view` under `ventas` menu | R-FJ-006 |
+| Integration | fs_access preservation: surviving page names unchanged in `getPageData()` (`ventas_familia`, menu `catalogo`; `tarif_familias`, menu `catalogo`); the retired `ventas_familias` page stays absent; new `ventas_catalogo_view` under the `catalogo` menu (deferred to Phase 4) | R-FJ-006 |
 | Regression | Hook compat: existing `HookRegistrationTest` (tarifario) stays green — asserted in verify, not modified; add catalogo_core test asserting the 4 hook points still present in `ventas_articulo`/`ventas_opcional` templates | R-FJ-007 |
 | Unit | Translation audit test — every key used by new templates starts with `catalogo-core-` and resolves in `messages.es.yaml` | R-FJ-008 |
 
@@ -179,5 +192,5 @@ Run via `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`;
 6. **Depth in the tree is derived** from the `madre` chain, never persisted beyond the legacy `nivel` display string carried verbatim.
 7. **No new Composer dependencies**; no `vendor/` commit step needed.
 8. **tarifario's family UI keeps working unchanged** during coexistence; post-migration edits diverge (canonical tables win). Deprecation is the referenced follow-up, out of scope.
-9. **Controller/view placement mirrors current catalogo_core practice**: PSR-4 `Controller/` pages with legacy wrappers only where page discovery requires them (verified pattern in `Controller/VentasFamilias.php`).
+9. **Controller/view placement mirrors current catalogo_core practice**: PSR-4 `Controller/` pages with legacy wrappers only where page discovery requires them (verified pattern in `Controller/VentasFamilia.php` + `controller/ventas_familia.php`; amended 2026-10-23 from the retired `VentasFamilias` page).
 10. **Hook templates and names are frozen** — this change adds no ViewHookRegistry registrations and alters no existing template hook points.
