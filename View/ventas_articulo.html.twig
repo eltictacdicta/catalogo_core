@@ -342,55 +342,51 @@
 
                         {% if fsc.family_structure %}
                         {# Task 3.4 (R-FJ-003): per-list article-to-family assignment.
-                           Separate form: HTML does not allow nested forms. #}
+                           The controls belong to the external forms #form_asignacion_lista
+                           and #form_asignacion_familia (after the article form): HTML does
+                           not allow nested forms, and a nested </form> would close the
+                           article form before its own save button. #}
                         <div class="panel panel-default" id="asignacion_familias">
                             <div class="panel-heading">
                                 <h3 class="panel-title">Asignación a familias</h3>
                             </div>
                             <div class="panel-body">
-                                <form method="get" action="{{ fsc.url() }}" class="form-inline">
-                                    <label for="asignacion_codlista">Lista de precios:</label>
-                                    <select class="form-control input-sm" id="asignacion_codlista" name="codlista"
-                                           >
-                                        {% for lista in fsc.listas_estructura %}
-                                        <option value="{{ lista.codlista }}" {% if lista.codlista == fsc.codlista_asignacion %}selected{% endif %}>
-                                            {{ lista.nombre }} ({{ lista.codlista }})
-                                        </option>
-                                        {% else %}
-                                        <option value="">Sin listas de precio activas</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button class="btn btn-sm btn-default" type="submit">Cambiar</button>
-                                </form>
+                                <label for="asignacion_codlista">Lista de precios:</label>
+                                <select class="form-control input-sm" id="asignacion_codlista" name="codlista"
+                                        form="form_asignacion_lista">
+                                    {% for lista in fsc.listas_estructura %}
+                                    <option value="{{ lista.codlista }}" {% if lista.codlista == fsc.codlista_asignacion %}selected{% endif %}>
+                                        {{ lista.nombre }} ({{ lista.codlista }})
+                                    </option>
+                                    {% else %}
+                                    <option value="">Sin listas de precio activas</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn btn-sm btn-default" type="submit" form="form_asignacion_lista">Cambiar</button>
 
-                                <form method="post" action="{{ fsc.url() }}" class="form-inline">
-                                    {{ csrf_field() }}
-                                    <input type="hidden" name="guardar_asignacion_familia" value="TRUE" />
-                                    <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}" />
-                                    <input type="hidden" name="asignacion_codlista" value="{{ fsc.codlista_asignacion }}" />
-                                    <label for="asignacion_codfamilia">Familia:</label>
-                                    <select class="form-control input-sm" id="asignacion_codfamilia" name="asignacion_codfamilia">
-                                        <option value="">Sin asignar</option>
-                                        {% for familia in fsc.familias_asignables %}
-                                        <option value="{{ familia.codfamilia }}"
-                                                {% if fsc.asignacion_actual and fsc.asignacion_actual.codfamilia == familia.codfamilia %}selected{% endif %}>
-                                            {{ familia.descripcion }}
-                                        </option>
-                                        {% endfor %}
-                                    </select>
-                                    <label class="checkbox-inline">
-                                        <input type="checkbox" name="asignacion_en_catalogo" value="1"
-                                               {% if not fsc.asignacion_actual or fsc.asignacion_actual.en_catalogo %}checked{% endif %} /> Catálogo
-                                    </label>
-                                    <label class="checkbox-inline">
-                                        <input type="checkbox" name="asignacion_en_tarifa" value="1"
-                                               {% if fsc.asignacion_actual and fsc.asignacion_actual.en_tarifa %}checked{% endif %} /> Tarifa
-                                    </label>
-                                    <input class="form-control input-sm" type="number" name="asignacion_orden"
-                                           value="{% if fsc.asignacion_actual %}{{ fsc.asignacion_actual.orden }}{% else %}0{% endif %}"
-                                           min="0" />
-                                    <button class="btn btn-sm btn-primary" type="submit">Guardar</button>
-                                </form>
+                                <label for="asignacion_codfamilia">Familia:</label>
+                                <select class="form-control input-sm" id="asignacion_codfamilia" name="asignacion_codfamilia"
+                                        form="form_asignacion_familia">
+                                    <option value="">Sin asignar</option>
+                                    {% for familia in fsc.familias_asignables %}
+                                    <option value="{{ familia.codfamilia }}"
+                                            {% if fsc.asignacion_actual and fsc.asignacion_actual.codfamilia == familia.codfamilia %}selected{% endif %}>
+                                        {{ familia.descripcion }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <label class="checkbox-inline">
+                                    <input type="checkbox" name="asignacion_en_catalogo" value="1" form="form_asignacion_familia"
+                                           {% if not fsc.asignacion_actual or fsc.asignacion_actual.en_catalogo %}checked{% endif %} /> Catálogo
+                                </label>
+                                <label class="checkbox-inline">
+                                    <input type="checkbox" name="asignacion_en_tarifa" value="1" form="form_asignacion_familia"
+                                           {% if fsc.asignacion_actual and fsc.asignacion_actual.en_tarifa %}checked{% endif %} /> Tarifa
+                                </label>
+                                <input class="form-control input-sm" type="number" name="asignacion_orden" form="form_asignacion_familia"
+                                       value="{% if fsc.asignacion_actual %}{{ fsc.asignacion_actual.orden }}{% else %}0{% endif %}"
+                                       min="0" />
+                                <button class="btn btn-sm btn-primary" type="submit" form="form_asignacion_familia">Guardar</button>
 
                                 {% if fsc.asignacion_actual %}
                                 <p class="help-block">
@@ -500,6 +496,20 @@
                     </button>
                 </div>
             </form>
+            {% if fsc.family_structure %}
+            {# Task 3.4 (R-FJ-003): real assignment forms, outside the article form.
+               The panel controls target them via the HTML5 `form` attribute. #}
+            <form id="form_asignacion_lista" action="{{ fsc.url() }}" method="get">
+                <input type="hidden" name="page" value="ventas_articulo" />
+                <input type="hidden" name="ref" value="{{ fsc.articulo.referencia }}" />
+            </form>
+            <form id="form_asignacion_familia" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <input type="hidden" name="guardar_asignacion_familia" value="TRUE" />
+                <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}" />
+                <input type="hidden" name="asignacion_codlista" value="{{ fsc.codlista_asignacion }}" />
+            </form>
+            {% endif %}
             {% if fsc.multi_tariff %}
             <form id="form_precios_lista" action="{{ fsc.url() }}" method="post">
                 {{ csrf_field() }}
