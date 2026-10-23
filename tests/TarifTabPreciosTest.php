@@ -286,6 +286,14 @@ final class TarifTabPreciosTest extends TestCase
                 $prop = new \ReflectionProperty(\fs_controller::class, 'csrf_valid');
                 $prop->setAccessible(true);
                 $prop->setValue($this, $valid);
+
+                // Core >= 0.30 makes requireCsrf() fail-closed when no previous
+                // validation ran: mirror the pre_private_core() validation.
+                if (property_exists(\fs_controller::class, 'csrf_checked')) {
+                    $checked = new \ReflectionProperty(\fs_controller::class, 'csrf_checked');
+                    $checked->setAccessible(true);
+                    $checked->setValue($this, true);
+                }
             }
         };
 
