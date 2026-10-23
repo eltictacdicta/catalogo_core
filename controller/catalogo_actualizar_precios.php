@@ -118,7 +118,9 @@ class catalogo_actualizar_precios extends fs_controller
         return [
             'codlista' => trim((string) ($_POST['codlista'] ?? '')),
             'codfamilia' => trim((string) ($_POST['codfamilia'] ?? '')),
-            'incluir_subfamilias' => $this->str2bool((string) ($_POST['incluir_subfamilias'] ?? 'FALSE')),
+            // Checkbox posts 'TRUE'; fs_model::str2bool() is model-only and
+            // does not understand form values (only DB truthy 't'/'1').
+            'incluir_subfamilias' => ($_POST['incluir_subfamilias'] ?? 'FALSE') === 'TRUE',
             'codgrupo' => ($_POST['codgrupo'] ?? '') !== '' ? (int) $_POST['codgrupo'] : null,
         ];
     }
@@ -154,7 +156,7 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
-        if (!$this->str2bool((string) ($_POST['confirm'] ?? 'FALSE'))) {
+        if (($_POST['confirm'] ?? 'FALSE') !== 'TRUE') {
             $this->new_error_msg('Debes marcar la casilla de confirmación para aplicar los cambios.');
             return;
         }

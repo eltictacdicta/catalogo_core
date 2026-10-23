@@ -183,6 +183,24 @@ final class VentasListaPrecioControllerTest extends TestCase
         $this->assertFalse($lista->delete(), 'The default list must not be deletable');
         $this->assertNotEmpty($lista->get_errors());
     }
+
+    // ---- Form flag decoding (regression: fatal on undefined method) ----
+
+    public function test_form_flags_use_the_posted_true_false_contract(): void
+    {
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+
+        $this->assertStringNotContainsString(
+            '$this->str2bool(',
+            $source,
+            'str2bool() belongs to fs_model: fs_controller has no such method and it cannot decode form values'
+        );
+        $this->assertStringContainsString(
+            "=== 'TRUE'",
+            $source,
+            'Checkbox flags are posted as TRUE/FALSE by the view; compare against TRUE explicitly'
+        );
+    }
 }
 
 /**

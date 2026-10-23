@@ -115,7 +115,9 @@ class ventas_listas_precio extends fs_controller
         $lista->codlista = (string) ($_POST['codlista'] ?? $lista->codlista);
         $lista->nombre = $this->no_html(trim((string) ($_POST['nombre'] ?? '')));
         $lista->coddivisa = (string) ($_POST['coddivisa'] ?? $lista->coddivisa);
-        $lista->activa = $this->str2bool((string) ($_POST['activa'] ?? 'TRUE'));
+        // The view posts 'TRUE'/'FALSE'; fs_model::str2bool() is model-only
+        // and would also report 'TRUE' as false (it only accepts 't'/'1').
+        $lista->activa = ($_POST['activa'] ?? 'TRUE') === 'TRUE';
 
         if ($lista->save()) {
             $this->new_message('Lista de precio guardada correctamente.');

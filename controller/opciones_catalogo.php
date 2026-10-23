@@ -66,8 +66,10 @@ class opciones_catalogo extends fs_controller
                 return;
             }
 
-            $multiTariff = $this->str2bool((string) ($_POST['multi_tariff'] ?? 'FALSE'));
-            $groupsEnabled = $this->str2bool((string) ($_POST['groups_enabled'] ?? 'FALSE'));
+            // Form checkboxes post 'TRUE'/'FALSE'; fs_model::str2bool() only
+            // understands DB truthy values ('t'/'1') and is not available here.
+            $multiTariff = ($_POST['multi_tariff'] ?? 'FALSE') === 'TRUE';
+            $groupsEnabled = ($_POST['groups_enabled'] ?? 'FALSE') === 'TRUE';
 
             $posted = $_POST['catalogo_excel_roles'] ?? [];
             $rawPosted = is_array($posted)
