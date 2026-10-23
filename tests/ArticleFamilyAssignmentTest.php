@@ -157,12 +157,53 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $controller = $this->makeController($this->listaModel(), $asignacionModel);
         $controller->request = $this->assignmentRequest('L1', 'F1');
         $controller->user = (object) ['nick' => 'admin'];
-        $controller->listas_estructura = [(object) ['codlista' => 'L1', 'activa' => true]];
 
         $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
 
         $this->assertNotEmpty($controller->errors);
         $this->assertSame([], $controller->messages);
+    }
+
+    public function test_save_resolves_active_lists_when_controller_state_is_empty(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $controller = $this->makeController($this->listaModel(), $this->assignmentStore($store));
+        $controller->family_structure = true;
+        $controller->articulo = $this->article('REF1');
+        $controller->user = (object) ['nick' => 'admin'];
+
+        // Regression: privateCore() dispatches the save BEFORE loadCatalogData()
+        // populates the derived state, so a real POST reaches the handler with
+        // listas_estructura still empty.
+        $this->assertSame([], $controller->listas_estructura);
+
+        $controller->request = $this->assignmentRequest('L1', 'F1');
+        $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
+
+        $this->assertSame([], $controller->errors);
+        $this->assertArrayHasKey('L1|REF1', $store);
+        $this->assertSame('F1', $store['L1|REF1']->codfamilia);
+    }
+
+    public function test_save_rejects_unknown_or_inactive_list(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $controller = $this->makeController($this->listaModel(), $this->assignmentStore($store));
+        $controller->family_structure = true;
+        $controller->articulo = $this->article('REF1');
+        $controller->user = (object) ['nick' => 'admin'];
+
+        foreach (['L9', 'L3'] as $codlista) {
+            $controller->request = $this->assignmentRequest($codlista, 'F1');
+            $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
+            $this->assertContains('Artículo o lista de precios no válida.', $controller->errors);
+        }
+
+        $this->assertCount(0, $store, 'Unknown or inactive lists must not persist anything');
     }
 
     public function test_save_upserts_one_row_per_list(): void
@@ -175,10 +216,8 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $controller->family_structure = true;
         $controller->articulo = $this->article('REF1');
         $controller->user = (object) ['nick' => 'admin'];
-        $controller->listas_estructura = [
-            (object) ['codlista' => 'L1', 'activa' => true],
-            (object) ['codlista' => 'L2', 'activa' => true],
-        ];
+
+        $this->assertSame([], $controller->listas_estructura);
 
         $controller->request = $this->assignmentRequest('L1', 'F1');
         $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
@@ -217,7 +256,6 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $controller->family_structure = true;
         $controller->articulo = $this->article('REF1');
         $controller->user = (object) ['nick' => 'admin'];
-        $controller->listas_estructura = [(object) ['codlista' => 'L1', 'activa' => true]];
         $controller->request = $this->assignmentRequest('L1', '');
 
         $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
@@ -246,7 +284,6 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $controller->family_structure = true;
         $controller->articulo = $this->article('REF1');
         $controller->user = (object) ['nick' => 'editor'];
-        $controller->listas_estructura = [(object) ['codlista' => 'L1', 'activa' => true]];
         $controller->request = $this->assignmentRequest('L1', 'F1');
 
         $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);

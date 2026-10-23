@@ -1081,6 +1081,26 @@ class VentasArticulo extends PageController
     }
 
     /**
+     * Active price-list codes resolved at save time. privateCore() dispatches
+     * the assignment save BEFORE loadCatalogData() hydrates
+     * `listas_estructura`, so the write path must not trust that derived
+     * property (it is always empty during a real POST).
+     *
+     * @return list<string>
+     */
+    private function activeListaCodes(): array
+    {
+        $codes = [];
+        foreach ($this->lista_precio_model()->all() as $lista) {
+            if (!empty($lista->activa)) {
+                $codes[] = (string) $lista->codlista;
+            }
+        }
+
+        return $codes;
+    }
+
+    /**
      * Upserts (codlista, referencia) for the current article. Flag-off aborts
      * before any read/write; a denied permission filter blocks persistence.
      */
@@ -1099,10 +1119,7 @@ class VentasArticulo extends PageController
         $defaultReferencia = $this->articulo !== null ? (string) $this->articulo->referencia : '';
         $referencia = trim((string) $request->request->get('sreferencia', $defaultReferencia));
         $codlista = trim((string) $request->request->get('asignacion_codlista', $this->codlista_asignacion));
-        $activeCodes = array_map(
-            static fn ($lista): string => (string) $lista->codlista,
-            $this->listas_estructura
-        );
+        $activeCodes = $this->activeListaCodes();
 
         if ($referencia === '' || !in_array($codlista, $activeCodes, true)) {
             $this->new_error_msg('Artículo o lista de precios no válida.');
