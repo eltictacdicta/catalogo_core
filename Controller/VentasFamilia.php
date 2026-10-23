@@ -227,7 +227,12 @@ class VentasFamilia extends PageController
             $this->listas_estructura
         );
 
-        $requested = trim((string) $this->request->query->get('codlista', ''));
+        // The structure save is a POST to a URL without `codlista`; keep the
+        // posted list so the page does not fall back to the default list.
+        $requested = trim((string) $this->request->query->get(
+            'codlista',
+            $this->request->request->get('estructura_codlista', '')
+        ));
         if ($requested !== '' && in_array($requested, $activeCodes, true)) {
             $this->codlista = $requested;
         } elseif ($this->listas_estructura !== []) {

@@ -201,6 +201,51 @@ final class FamiliaEstructuraTreeTest extends TestCase
         $this->assertNotEmpty($controller->estructura_tree);
     }
 
+    public function test_posted_list_is_kept_when_the_query_has_no_codlista(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $listaModel = new class extends \FSFramework\model\catalogo_lista_precio {
+            public function __construct() {}
+            public function all()
+            {
+                return [
+                    (object) ['codlista' => 'L1', 'nombre' => 'Lista 1', 'activa' => true, 'por_defecto' => true],
+                    (object) ['codlista' => 'L2', 'nombre' => 'Lista 2', 'activa' => true, 'por_defecto' => false],
+                ];
+            }
+            public function get_default()
+            {
+                return (object) ['codlista' => 'L1'];
+            }
+        };
+
+        $estructuraModel = new class extends \FSFramework\model\catalogo_familia_estructura {
+            /** @var list<string> */
+            public array $calls = [];
+            public function __construct() {}
+            public function all_from_list($codlista)
+            {
+                $this->calls[] = (string) $codlista;
+
+                return [];
+            }
+        };
+
+        $controller = $this->makeController($listaModel, $estructuraModel);
+        $controller->request = $this->structureRequest('A', 'L2');
+        $controller->familia = $this->familyModel();
+
+        $this->invoke($controller, 'loadFamiliaEstructura');
+
+        $this->assertSame(
+            'L2',
+            $controller->codlista,
+            'The posted list must survive the structure save instead of falling back to the default'
+        );
+        $this->assertSame(['L2'], $estructuraModel->calls);
+    }
+
     // ------------------------------------------------------------------
     // Structure save: flag-off inert, flag-on upsert, event gate
     // ------------------------------------------------------------------
