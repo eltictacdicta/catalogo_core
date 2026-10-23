@@ -380,6 +380,35 @@ final class FamiliaEstructuraTreeTest extends TestCase
         $this->assertStringContainsString('name="estructura_activa"', $view);
     }
 
+    /**
+     * A GET form replaces the whole query string, so the active-list selector
+     * must carry `page` (and the selected family `cod` when present) or
+     * "Cambiar" lands on `index.php?codlista=...` with no page.
+     */
+    public function test_view_list_selector_get_form_preserves_page_and_family(): void
+    {
+        $view = (string) file_get_contents(FS_FOLDER . self::VIEW);
+
+        $formStart = mb_strpos($view, '<form method="get" action="{{ fsc.url() }}" class="form-inline">');
+        $this->assertNotFalse($formStart, 'The active-list GET selector must exist');
+
+        $formEnd = mb_strpos($view, '</form>', $formStart);
+        $this->assertNotFalse($formEnd);
+
+        $form = mb_substr($view, $formStart, $formEnd - $formStart);
+
+        $this->assertMatchesRegularExpression(
+            '/name="page"\s+value="ventas_familia"/',
+            $form,
+            'The GET selector must keep page=ventas_familia'
+        );
+        $this->assertMatchesRegularExpression(
+            '/name="cod"\s+value="\{\{ fsc\.familia\.codfamilia \}\}"/',
+            $form,
+            'A selected family must survive the list change'
+        );
+    }
+
     public function test_view_has_csrf_on_every_post_form_and_no_raw_output(): void
     {
         $view = (string) file_get_contents(FS_FOLDER . self::VIEW);

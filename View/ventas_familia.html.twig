@@ -208,6 +208,8 @@ function delete_familia(url, codfamilia) {
                 </div>
                 <div class="panel-body">
                     <form method="get" action="{{ fsc.url() }}" class="form-inline">
+                        <input type="hidden" name="page" value="ventas_familia" />
+                        <input type="hidden" name="cod" value="{{ fsc.familia.codfamilia }}" />
                         <label for="codlista">Lista de precios:</label>
                         <select class="form-control input-sm" id="codlista" name="codlista">
                             {% for lista in fsc.listas_estructura %}
