@@ -231,11 +231,10 @@ final class FamiliaEstructuraTreeTest extends TestCase
         $store = new \ArrayObject();
         $estructuraModel = $this->structureStore($store);
 
-        $controller = $this->makeController(null, $estructuraModel);
+        $controller = $this->makeController($this->activeListaModel(['L1' => true]), $estructuraModel);
         $controller->family_structure = true;
         $controller->request = $this->structureRequest('F1', 'L1', ['estructura_orden' => '5', 'estructura_capitulo' => 'CAP']);
         $controller->user = (object) ['nick' => 'admin'];
-        $controller->listas_estructura = [(object) ['codlista' => 'L1', 'activa' => true]];
 
         $this->invoke($controller, 'guardarEstructuraFamilia');
 
@@ -255,6 +254,61 @@ final class FamiliaEstructuraTreeTest extends TestCase
         $this->assertSame(9, $store['L1|F1']->orden);
     }
 
+    /**
+     * Regression: the production dispatch runs BEFORE loadFamiliaEstructura(),
+     * so the save path must resolve the active lists itself. Pre-populating
+     * `listas_estructura` by hand used to hide a bug where every real POST was
+     * rejected with "Familia o lista de precios no válida.".
+     */
+    public function test_save_resolves_active_lists_at_save_time_without_preloading(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $listaModel = $this->activeListaModel(['L1' => true, 'L2' => false]);
+        $controller = $this->makeController($listaModel, $this->structureStore($store));
+        $controller->family_structure = true;
+        $controller->request = $this->structureRequest('F1', 'L1', ['estructura_orden' => '4']);
+        $controller->user = (object) ['nick' => 'admin'];
+
+        $this->assertSame([], $controller->listas_estructura, 'Precondition: the load phase has not run');
+        $this->assertSame('', $controller->codlista, 'Precondition: no list was selected by the load phase');
+
+        $this->invoke($controller, 'guardarEstructuraFamilia');
+
+        $this->assertSame([], $controller->errors, 'A valid POST must not be rejected when the load phase did not run');
+        $this->assertNotEmpty($controller->messages);
+        $this->assertCount(1, $store, 'The structure row must persist');
+        $this->assertSame('L1', $store['L1|F1']->codlista);
+        $this->assertSame('F1', $store['L1|F1']->codfamilia);
+
+        // The save path must not depend on loadFamiliaEstructura() having run
+        // first: it consults the price-list model directly and leaves the
+        // view-facing load collections untouched.
+        $this->assertSame([], $controller->listas_estructura, 'Save must not rely on pre-populated lists');
+        $this->assertSame('', $controller->codlista, 'Save must not depend on the selected-list state');
+        $this->assertSame(1, $listaModel->allCalls, 'Save must resolve the active lists from the model');
+    }
+
+    public function test_save_rejects_an_inactive_list_resolved_at_save_time(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $listaModel = $this->activeListaModel(['L1' => true, 'L2' => false]);
+        $controller = $this->makeController($listaModel, $this->structureStore($store));
+        $controller->family_structure = true;
+        $controller->request = $this->structureRequest('F1', 'L2');
+        $controller->user = (object) ['nick' => 'admin'];
+
+        $this->invoke($controller, 'guardarEstructuraFamilia');
+
+        $this->assertSame(['Familia o lista de precios no válida.'], $controller->errors);
+        $this->assertSame([], $controller->messages);
+        $this->assertCount(0, $store, 'An inactive list must never be written');
+        $this->assertSame(1, $listaModel->allCalls, 'The rejection must come from the save-time active-list read');
+    }
+
     public function test_save_is_not_gated_by_the_article_permission_event(): void
     {
         $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
@@ -269,11 +323,10 @@ final class FamiliaEstructuraTreeTest extends TestCase
         );
 
         $store = new \ArrayObject();
-        $controller = $this->makeController(null, $this->structureStore($store));
+        $controller = $this->makeController($this->activeListaModel(['L1' => true]), $this->structureStore($store));
         $controller->family_structure = true;
         $controller->request = $this->structureRequest('F1', 'L1', ['estructura_orden' => '7']);
         $controller->user = (object) ['nick' => 'editor'];
-        $controller->listas_estructura = [(object) ['codlista' => 'L1', 'activa' => true]];
 
         $this->invoke($controller, 'guardarEstructuraFamilia');
 
@@ -378,6 +431,37 @@ final class FamiliaEstructuraTreeTest extends TestCase
             'orden' => $orden,
             'descripcion' => $descripcion,
         ];
+    }
+
+    /** @param array<string,bool> $activaByCode codlista => activa */
+    private function activeListaModel(array $activaByCode): object
+    {
+        $rows = [];
+        foreach ($activaByCode as $codlista => $activa) {
+            $rows[] = (object) [
+                'codlista' => (string) $codlista,
+                'nombre' => 'Lista ' . $codlista,
+                'activa' => $activa,
+                'por_defecto' => false,
+            ];
+        }
+
+        return new class($rows) extends \FSFramework\model\catalogo_lista_precio {
+            /** @var list<object> */
+            private array $rows;
+            public int $allCalls = 0;
+
+            public function __construct(array $rows = []) { $this->rows = $rows; }
+
+            public function all()
+            {
+                $this->allCalls++;
+
+                return $this->rows;
+            }
+
+            public function get_default() { return false; }
+        };
     }
 
     private function familyModel(): object

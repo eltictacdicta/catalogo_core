@@ -333,10 +333,10 @@ class VentasFamilia extends PageController
 
         $codfamilia = trim((string) $this->request->request->get('estructura_codfamilia', ''));
         $codlista = trim((string) $this->request->request->get('estructura_codlista', $this->codlista));
-        $activeCodes = array_map(
-            static fn ($lista): string => (string) $lista->codlista,
-            $this->listas_estructura
-        );
+
+        // The save dispatch runs before loadFamiliaEstructura(), so the active
+        // lists must be resolved here instead of trusting the load-phase state.
+        $activeCodes = $this->activeListaCodes();
 
         if ($codfamilia === '' || !in_array($codlista, $activeCodes, true)) {
             $this->new_error_msg('Familia o lista de precios no válida.');
@@ -363,6 +363,24 @@ class VentasFamilia extends PageController
         }
 
         $this->new_error_msg('¡Imposible guardar la estructura de la familia!');
+    }
+
+    /**
+     * Active price-list codes, read straight from the model. Used by the save
+     * path, which is dispatched before the load phase.
+     *
+     * @return list<string>
+     */
+    private function activeListaCodes(): array
+    {
+        $codes = [];
+        foreach ($this->lista_precio_model()->all() as $lista) {
+            if (!empty($lista->activa)) {
+                $codes[] = (string) $lista->codlista;
+            }
+        }
+
+        return $codes;
     }
 
     /**
