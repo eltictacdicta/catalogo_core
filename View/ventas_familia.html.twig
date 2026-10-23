@@ -1,5 +1,56 @@
 {{ include('header.html.twig') }}
 
+{#
+ # Nested family tree for the per-list structure editor (task 3.2).
+ # Depth comes from node.nivel_visual, derived from the `madre` chain; it is
+ # never stored. Every node carries its own CSRF-protected POST form.
+ #}
+{% macro estructura_tree(nodes, fsc) %}
+<ul class="familia-tree">
+    {% for node in nodes %}
+    <li class="familia-tree-node" data-codfamilia="{{ node.codfamilia }}" data-nivel="{{ node.nivel_visual }}">
+        <div class="familia-tree-label">
+            <strong>{{ node.descripcion }}</strong>
+            <small class="text-muted">({{ node.codfamilia }})</small>
+            <span class="label label-default">Nivel {{ node.nivel_visual }}</span>
+            <span class="label {% if node.estructura.activa %}label-success{% else %}label-default{% endif %}">
+                {% if node.estructura.activa %}Activa{% else %}Inactiva{% endif %}
+            </span>
+            <span class="text-muted">Orden {{ node.estructura.orden }}</span>
+        </div>
+        <form method="post" action="{{ fsc.url() }}" class="form-inline familia-estructura-form">
+            {{ csrf_field() }}
+            <input type="hidden" name="save_estructura" value="1" />
+            <input type="hidden" name="estructura_codfamilia" value="{{ node.codfamilia }}" />
+            <input type="hidden" name="estructura_codlista" value="{{ fsc.codlista }}" />
+            <input class="form-control input-sm" type="text" name="estructura_capitulo"
+                   value="{{ node.estructura.capitulo }}" placeholder="Capítulo" autocomplete="off" />
+            <input class="form-control input-sm" type="text" name="estructura_nivel"
+                   value="{{ node.estructura.nivel }}" placeholder="Nivel" autocomplete="off" />
+            <input class="form-control input-sm" type="number" name="estructura_orden"
+                   value="{{ node.estructura.orden }}" min="0" />
+            <label class="checkbox-inline">
+                <input type="checkbox" name="estructura_en_catalogo" value="1"
+                       {% if node.estructura.en_catalogo %}checked{% endif %} /> Catálogo
+            </label>
+            <label class="checkbox-inline">
+                <input type="checkbox" name="estructura_en_tarifa" value="1"
+                       {% if node.estructura.en_tarifa %}checked{% endif %} /> Tarifa
+            </label>
+            <label class="checkbox-inline">
+                <input type="checkbox" name="estructura_activa" value="1"
+                       {% if node.estructura.activa %}checked{% endif %} /> Activa
+            </label>
+            <button class="btn btn-xs btn-primary" type="submit">Guardar</button>
+        </form>
+        {% if node.hijas_tree %}
+            {{ _self.estructura_tree(node.hijas_tree, fsc) }}
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endmacro %}
+
 <script type="text/javascript">
 function delete_familia(url, codfamilia) {
     bootbox.confirm({
@@ -11,21 +62,21 @@ function delete_familia(url, codfamilia) {
                 var form = document.createElement('form');
                 form.method = 'POST';
                 form.action = url;
-                
+
                 // Agregar campo delete
                 var deleteField = document.createElement('input');
                 deleteField.type = 'hidden';
                 deleteField.name = 'delete';
                 deleteField.value = codfamilia;
                 form.appendChild(deleteField);
-                
+
                 // Agregar token CSRF
                 var csrfField = document.createElement('input');
                 csrfField.type = 'hidden';
                 csrfField.name = 'form_token';
                 csrfField.value = document.querySelector('input[name="form_token"]').value;
                 form.appendChild(csrfField);
-                
+
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -101,6 +152,11 @@ function delete_familia(url, codfamilia) {
                             <span class="glyphicon glyphicon-trash"></span>&nbsp; {{ 'delete'|trans }}
                         </a>
                         {% endif %}
+                        {% if fsc.family_structure %}
+                        <a class="btn btn-sm btn-default" href="{{ fsc.url() }}">
+                            <span class="glyphicon glyphicon-tree-deciduous"></span>&nbsp; Estructura por lista
+                        </a>
+                        {% endif %}
                         <button class="btn btn-sm btn-primary" type="submit" onclick="this.disabled=true;this.form.submit();">
                             <span class="glyphicon glyphicon-floppy-disk"></span>&nbsp; {{ 'save'|trans }}
                         </button>
@@ -143,6 +199,37 @@ function delete_familia(url, codfamilia) {
             </div>
         </div>
     </div>
+    {% elseif fsc.family_structure %}
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="panel panel-default" id="estructura_por_lista">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Estructura por lista</h3>
+                </div>
+                <div class="panel-body">
+                    <form method="get" action="{{ fsc.url() }}" class="form-inline">
+                        <label for="codlista">Lista de precios:</label>
+                        <select class="form-control input-sm" id="codlista" name="codlista">
+                            {% for lista in fsc.listas_estructura %}
+                            <option value="{{ lista.codlista }}" {% if lista.codlista == fsc.codlista %}selected{% endif %}>
+                                {{ lista.nombre }} ({{ lista.codlista }})
+                            </option>
+                            {% else %}
+                            <option value="">Sin listas de precio activas</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-default" type="submit">Cambiar</button>
+                    </form>
+
+                    {% if fsc.getEstructuraTree()|length > 0 %}
+                        {{ _self.estructura_tree(fsc.getEstructuraTree(), fsc) }}
+                    {% else %}
+                        <div class="alert alert-info">No hay familias para mostrar.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
     {% else %}
     <div class="row">
         <div class="col-sm-12">
@@ -151,5 +238,23 @@ function delete_familia(url, codfamilia) {
     </div>
     {% endif %}
 </div>
+
+<style>
+.familia-tree {
+    list-style: none;
+    padding-left: 18px;
+    margin: 10px 0;
+}
+.familia-tree-node {
+    margin: 8px 0;
+}
+.familia-tree-label {
+    margin-bottom: 4px;
+}
+.familia-estructura-form input[type="text"],
+.familia-estructura-form input[type="number"] {
+    width: 110px;
+}
+</style>
 
 {{ include('footer.html.twig') }}
