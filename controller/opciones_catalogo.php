@@ -80,15 +80,17 @@ class opciones_catalogo extends fs_controller
                 array_column($this->roles, 'codrol')
             );
 
-            $options->setMultiTariff($multiTariff);
-            $options->setGroupsEnabled($groupsEnabled);
-            $options->setExcelRoles($normalized);
+            $saved = $options->saveAll($multiTariff, $groupsEnabled, $normalized);
 
             $this->multi_tariff = $multiTariff;
             $this->groups_enabled = $groupsEnabled;
             $this->granted_codes = $normalized === '' ? [] : explode(',', $normalized);
 
-            $this->new_message('Configuración guardada.');
+            if ($saved) {
+                $this->new_message('Configuración guardada.');
+            } else {
+                $this->new_error_msg('No se pudo guardar la configuración. Revisá los permisos de escritura de tmp/.');
+            }
         }
     }
 

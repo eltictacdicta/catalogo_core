@@ -161,4 +161,86 @@ final class CatalogoOptionsTest extends TestCase
 
         $this->assertArrayHasKey('catalogo_core.family_structure', $GLOBALS['config2']);
     }
+
+    // ---- Persistence (regression: options reported success without saving) ----
+
+    public function test_setters_persist_through_fs_settings_save(): void
+    {
+        $persisted = [];
+        $persister = static function (\fs_settings $settings) use (&$persisted): bool {
+            $persisted[] = $settings->get(CatalogoOptions::KEY_MULTI_TARIFF);
+
+            return true;
+        };
+
+        $options = new CatalogoOptions(null, $persister);
+
+        $this->assertTrue($options->setMultiTariff(true));
+        $this->assertSame(['true'], $persisted, 'set() must reach fs_settings::save()');
+    }
+
+    public function test_settings_are_filled_before_persisting(): void
+    {
+        $observed = [];
+        $persister = static function (\fs_settings $settings) use (&$observed): bool {
+            $observed = $settings->get(CatalogoOptions::KEY_GROUPS_ENABLED);
+
+            return true;
+        };
+
+        (new CatalogoOptions(null, $persister))->setGroupsEnabled(true);
+
+        $this->assertSame('true', $observed, 'set() must run before save()');
+    }
+
+    public function test_setter_returns_false_when_persistence_fails(): void
+    {
+        $persister = static fn (\fs_settings $settings): bool => false;
+
+        $options = new CatalogoOptions(null, $persister);
+
+        $this->assertFalse(
+            $options->setGroupsEnabled(true),
+            'A failed fs_settings::save() must be reported to the caller'
+        );
+    }
+
+    public function test_setter_returns_true_when_persistence_succeeds(): void
+    {
+        $persister = static fn (\fs_settings $settings): bool => true;
+
+        $options = new CatalogoOptions(null, $persister);
+
+        $this->assertTrue($options->setExcelRoles('A,B'));
+    }
+
+    public function test_save_all_persists_every_general_option_in_one_save(): void
+    {
+        $calls = [];
+        $persister = static function (\fs_settings $settings) use (&$calls): bool {
+            $calls[] = [
+                'multi' => $settings->get(CatalogoOptions::KEY_MULTI_TARIFF),
+                'groups' => $settings->get(CatalogoOptions::KEY_GROUPS_ENABLED),
+                'roles' => $settings->get(CatalogoOptions::KEY_EXCEL_ROLES),
+            ];
+
+            return true;
+        };
+
+        $options = new CatalogoOptions(null, $persister);
+
+        $this->assertTrue($options->saveAll(true, false, 'A,B'));
+        $this->assertSame(
+            [['multi' => 'true', 'groups' => 'false', 'roles' => 'A,B']],
+            $calls,
+            'saveAll() must write every key and persist exactly once'
+        );
+    }
+
+    public function test_save_all_reports_persistence_failure(): void
+    {
+        $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
+
+        $this->assertFalse($options->saveAll(false, true, ''));
+    }
 }
