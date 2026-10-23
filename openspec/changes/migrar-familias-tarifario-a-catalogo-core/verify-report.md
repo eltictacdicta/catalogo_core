@@ -3,26 +3,29 @@
 ```yaml
 schema: gentle-ai.verify-result/v1
 verdict: pass_with_warnings
-scope_verified: Phase 2 (2.1–2.4) + Phase 3 (3.1–3.5) + post-verify remediation R1/R2; Phase 1 regression re-run
-reverify_round: 2
+scope_verified: Phase 2 (2.1–2.4) + Phase 3 (3.1–3.5) + post-verify remediation R1/R2 + round-3 CodeRabbit major fixes; Phase 1 regression re-run
+reverify_round: 3
 remediation_commits: 4854f55, a541c63
+round3_fix_commits: bb20833, 1079500, 36b0793
+findings_resolved_round3: 3
 scope_deferred: Phase 4 (4.1–4.4) — explicitly out of scope, left unchecked
 blockers: 0
 critical_findings: 0
 requirements: 6/10 fully verified (2 partial, 2 deferred to Phase 4)
 scenarios: 21/26 verified (5 deferred to Phase 4)
 test_command: ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml
-test_result: "Tests: 1427, Assertions: 5853, Failures: 0, Errors: 0, Warnings: 2, Skipped: 1"
-test_output_hash: sha256:012e9b27d765dc10c878395f819ab03b3d447d00177b5cc5900640d9a10e7c60
+test_result: "Tests: 1434, Assertions: 5907, Failures: 0, Errors: 0, Warnings: 2, Skipped: 1"
+test_output_hash: sha256:c5a23b819477108cb7112550a54bcc187f446b1b3d6d02b4e3ccc84395aa6bde
 build_command: ddev exec composer phpstan
 build_result: "NOT AVAILABLE — vendor/dev-tools/bin/phpstan missing in this environment"
-evidence_revision: sha256:5b073f15d337bdacd26bd3e3dce7fc650800f0844d05aef463f60675eb1fa3a4
+evidence_revision: sha256:86462490aa0c93dc14221144b68122fe1771a77d17029ad9b0338cfbdca5359b
 ```
 
 - **Change**: `plugins/catalogo_core/openspec/changes/migrar-familias-tarifario-a-catalogo-core/` (plugin-local, `strict_tdd: true`).
 - **Branch**: `feature/familias-estructura-pr3` (own repo), based on `feature/familias-estructura-pr2b`; based on `main` at `d26d436`.
-- **Verification type**: independent, two rounds. Round 1 verified `fdcab83`; **round 2 re-verified the remediation commits `4854f55` and `a541c63`** on the same branch against the current working tree. Apply claims were not trusted in either round. No production behavior was changed by this verification.
+- **Verification type**: independent, three rounds. Round 1 verified `fdcab83`; round 2 re-verified `4854f55`/`a541c63`; **round 3 re-verified the CodeRabbit major fixes `bb20833`, `1079500`, `36b0793`** on the same branch against the current working tree. Apply claims were not trusted in any round. No production behavior was changed by this verification.
 - **Not performed**: no commit of code, no push, no PR, no merge, no archive. Phase 4 tasks remain unchecked by design.
+- **Round-3 re-verification**: three CodeRabbit `major` defects in the Phase 3 code were confirmed and fixed — save-path active-list resolution (`bb20833`), nested article-assignment forms (`1079500`), and the `ventas_familia` GET selector losing `page`/`cod` (`36b0793`). All three are independently confirmed below. The earlier round-2 contract tests missed them because they pre-populated state or asserted source fragments instead of production dispatch order and HTML form structure.
 - **Remediation re-verified in round 2**: (R1) family-structure writes no longer dispatch `ArticlePermissionFilterEvent` — authorization is page access; (R2) `tarif_familias` exposes a flag-gated link to the canonical `ventas_familia` structure editor. Artifacts were amended accordingly in `design.md` (D6 + Data Flow + D5 discoverability), the delta spec (R-FJ-001 authorization note), `tasks.md` (Remediation section) and this report (appendix + round-2 annotations). Phase 4 remains unchecked and no Phase 4 artifact exists.
 - **Artifact reconciliation performed in round 1**: page identity (`ventas_familias` → surviving `ventas_familia` / `tarif_familias`) is now reflected in the delta spec (R-FJ-001, R-FJ-006), `design.md` (Technical Approach, amendment note, D5, data flow, file changes, testing strategy, assumption 9), `tasks.md` (Phase 3 bullets 3.1–3.5, work-unit row, deferred 4.1 menu reference) and a historical note in `proposal.md`. The retired page is never resurrected; no Phase 4 artifact was created.
 
@@ -53,6 +56,26 @@ Base previously verified: `fdcab83`. Two remediation commits landed on `feature/
 
 **Round-2 suite result**: `Tests: 1427, Assertions: 5853, Failures: 0, Errors: 0, Warnings: 2, Skipped: 1` — the same two pre-existing warnings and the same pre-existing skip as round 1; zero new failures.
 
+## Round 3 (CodeRabbit majors) — re-verified 2026-10-23
+
+Three `major` defects reported by CodeRabbit after round 2 were confirmed on the pre-fix code and re-verified after their fixes. All three are Phase 3 functional defects, not cosmetic findings.
+
+| # | Defect (confirmed) | Fix commit | Independent confirmation |
+|---|---|---|---|
+| A | `guardarEstructuraFamilia()` validated against `$this->listas_estructura`, but `privateCore()` dispatches the save **before** `loadFamiliaEstructura()` (`Controller/VentasFamilia.php:96-108`), so the collection was empty and every real POST was rejected with `Familia o lista de precios no válida.` | `bb20833` | The save path now calls `activeListaCodes()` (`Controller/VentasFamilia.php:339,374-389`), which reads `lista_precio_model()->all()` and filters `activa`. `test_save_resolves_active_lists_at_save_time_without_preloading` asserts empty `listas_estructura`/`codlista` preconditions, one model read and a persisted row; `test_save_rejects_an_inactive_list_resolved_at_save_time` asserts the existing error and zero writes. Both pass (class 15/74). |
+| B | The assignment panel nested a GET and a POST `<form>` inside the main article form (pre-fix `View/ventas_articulo.html.twig`: forms at 351-364 and 366-393 inside the form opened at 78); the inner `</form>` closed the article form before its save button. | `1079500` | The panel (349-402) now contains **zero** `<form>` tags; controls target `#form_asignacion_lista` / `#form_asignacion_familia` via `form=` attributes. The two real forms live after the article `</form>` at 498 (`form_asignacion_lista` 502-505 with `page`/`ref`; `form_asignacion_familia` 506-511 with CSRF + `sreferencia` + `asignacion_codlista`). The article save button remains inside the main form before 498. `ArticleAssignmentFormStructureTest` 4/36 passes, including the main-form boundary check. |
+| C | The `ventas_familia` active-list selector was a GET form without hidden `page`, so submitting "Cambiar" replaced the query string with `index.php?codlista=…` and lost the page/family. | `36b0793` | `View/ventas_familia.html.twig:211-212` now carries `page=ventas_familia` and `cod={{ fsc.familia.codfamilia }}`. `test_view_list_selector_get_form_preserves_page_and_family` slices the GET form and asserts both. Passes (class 15/74). |
+
+**Unknown vs inactive list**: the rejection is a single `!in_array($codlista, $activeCodes, true)` branch (`Controller/VentasFamilia.php:341-344`). The inactive-list case is directly tested; an entirely unknown code exercises the same branch but has no dedicated test (noted as a minor evidence gap, not a functional concern).
+
+**Why round 2 missed these**: the round-2 evidence asserted source fragments (`FamiliaEstructuraTreeTest::test_save_upserts_structure_row_through_the_model` pre-populated `listas_estructura` and `codlista`, hiding the production dispatch order), and the view tests checked for panels/fields without checking nested `<form>` structure or GET-query preservation. Round 3 adds tests that assert the production preconditions (empty load state) and form topology. Residual lesson: invoke the save through `privateCore()`'s real order, not only through a reflective private-method call — see S6.
+
+**Out of scope (pre-existing, confirmed on `main`)**: `View/ventas_articulo.html.twig` still has an image upload `<form hx-post>` nested inside the main article form (current 470-476; `main` 412-418). It is present on `main` and is **not** introduced or fixed by this change; a real browser parse of the article form is still required before claiming the form is HTML-valid (WARNING-7). The CodeRabbit fix correctly covers only the assignment panel.
+
+**Round-3 suite result**: `Tests: 1434, Assertions: 5907, Failures: 0, Errors: 0, Warnings: 2, Skipped: 1` — +7 tests / +54 assertions versus round 2, with the same two pre-existing warnings and the same pre-existing skip; zero new failures.
+
+**Prior finding changes**: none of W1-W7/S1-S5 changes state. W7's caveat is strengthened (the remaining nested image form means a browser-level form smoke is still required); W1/W6 remain resolved; all other warnings remain as annotated in round 2.
+
 ## Evidence
 
 | # | Check | Command | Result |
@@ -79,6 +102,11 @@ Base previously verified: `fdcab83`. Two remediation commits landed on `feature/
 | 20 | No resurrected / Phase 4 page | `ls Controller/VentasFamilias.php Controller/VentasCatalogoView.php`; `grep "^- \[ \] 4\." tasks.md` | both files absent; 4.1–4.4 still unchecked |
 | 21 | Discoverability link gated | `tests/TarifFamiliasStructureLinkTest.php` + `View/tarif_familias.html.twig:120-129` | link inside `{% if fsc.family_structure %}`; flag-off contract test green; `page=ventas_familias` not linked |
 | 22 | tarifario hook regression (round 2) | `HookRegistrationTest` | **OK (4 tests, 9 assertions)** |
+| 23 | Round-3 structure save path | `FamiliaEstructuraTreeTest` | **OK (15 tests, 74 assertions)** — includes save-time active-list resolution, inactive rejection, GET selector page/cod |
+| 24 | Round-3 assignment form topology | `ArticleAssignmentFormStructureTest` | **OK (4 tests, 36 assertions)** — zero forms in panel, two external forms after main close, hidden fields, main save button ownership |
+| 25 | Round-3 full plugin suite | `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml --display-warnings --display-skipped` | **Tests: 1434, Assertions: 5907, Failures: 0, Errors: 0, Warnings: 2, Skipped: 1** — OK |
+| 26 | Pre-existing nested image form | `git show main:View/ventas_articulo.html.twig \| grep -n "<form\|</form>"` vs current | `main` has `<form hx-post>` inside the main form (412-418); current 470-476 — **pre-existing, out of scope** |
+| 27 | Phase 4 / retired page still absent | `ls Controller/VentasFamilias.php Controller/VentasCatalogoView.php`; `grep "^- \[ \] 4\." tasks.md` | both files absent; 4.1–4.4 unchecked |
 
 **Interpretation of the full-suite numbers**: the two warnings are pre-existing and unrelated to this change (both in the optional/pricing surfaces, not in the family-structure code). There are zero failures and zero errors.
 
@@ -171,6 +199,7 @@ Delta specs: `familias-jerarquia-catalogo` (R-FJ-001…008, 20 scenarios) + `mul
    - **Re-verify round 2: RESOLVED for discoverability.** `a541c63` adds a flag-gated toolbar entry on `tarif_familias` (`Estructura por lista` → `index.php?page=ventas_familia`), proven by `TarifFamiliasStructureLinkTest` 5/11 and the `{% if fsc.family_structure %}` guard. **Accepted residual**: the entry page still shows the legacy tariff-scoped tree and both trees coexist by design (D6 item 3); the canonical editor is now explicitly reachable, which was the actionable gap.
 7. **No live browser / real-DB smoke (WARNING, non-blocking if accepted).** See the checklist below.
    - **Re-verify round 2: STILL-OPEN (accepted as non-blocking).** The remediation was verified by unit/contract tests and static inspection; no HTTP render, authenticated POST or real-DB migration was executed. The checklist below now includes the `tarif_familias` link on/off smoke.
+   - **Re-verify round 3: STILL-OPEN.** The CodeRabbit form fix is verified at source level, but the pre-existing nested image `<form hx-post>` remains inside the main article form (`main` 412-418; current 470-476), so a real browser parse/submit smoke is still the only way to confirm the article form is valid end-to-end. The structure-save fix is likewise tested through the private save method, not a full `privateCore()` POST.
 
 ## Suggestions
 
@@ -183,6 +212,8 @@ Delta specs: `familias-jerarquia-catalogo` (R-FJ-001…008, 20 scenarios) + `mul
 4. When Phase 4 lands, replace the hardcoded Spanish strings with the prefixed translation keys (R-FJ-008) and add `tests/ViewHookPointsTest`.
    - **Round 2**: still-open; both belong to the unchecked Phase 4 tasks (4.2/4.3).
 5. Consider omitting the event's 4th argument for article-assignment writes, or renaming it from `codtarifa` to a list-neutral context, so a future listener cannot mistake `codlista` for a tariff code. (Accepted residual of WARNING-1.)
+6. Invoke the structure save through the real `privateCore()` dispatch order in at least one test (a POST with `save_estructura` and no preloaded state); the round-3 bug survived round 2 precisely because the test called the private method directly with pre-populated state. (Round 3 lesson.)
+7. Fix or explicitly track the pre-existing nested image `<form hx-post>` in `ventas_articulo` (present on `main`), and add a browser/DOM-level form smoke for the article save path.
 
 ## Live smoke still required (non-blocking warning)
 
@@ -209,7 +240,7 @@ These are the only gaps that unit/contract tests cannot close; all require DDEV 
 
 **PASS WITH WARNINGS**
 
-Phase 2 and Phase 3 are implemented, wired, flag-gated and green. **Round 2** re-ran the full plugin suite after the remediation: **1427 tests / 5853 assertions / 0 failures / 0 errors / 2 pre-existing warnings / 1 skip**. The two substantive round-1 warnings that were actionable are now closed: (WARNING-1) family-structure writes no longer dispatch `ArticlePermissionFilterEvent` — authorization is page access, and the article-assignment path still dispatches with a real `referencia`; (WARNING-6) the canonical editor is now discoverable through a flag-gated `tarif_familias` toolbar link. The change is **still not archive-ready** because Phase 4 remains intentionally unimplemented and the remaining warnings are honest: the "DDEV DB" migration evidence is fake-DB only (WARNING-2), the strict-TDD apply artifact is still missing (WARNING-3), task 4.4's literal legacy-read criterion is unresolved (WARNING-4), R-FJ-007's premise is stale (WARNING-5), and no live browser/real-DB smoke was executed (WARNING-7). No CRITICAL finding.
+Phase 2 and Phase 3 are implemented, wired, flag-gated and green. **Round 3** re-ran the full plugin suite after the CodeRabbit fixes: **1434 tests / 5907 assertions / 0 failures / 0 errors / 2 pre-existing warnings / 1 skip**. The three CodeRabbit `major` defects are confirmed and resolved: (A) the save path now resolves active lists at save time (`bb20833`), so real structure POSTs persist; (B) the assignment panel no longer nests forms and the real GET/POST forms live after the article form (`1079500`); (C) the active-list GET selector preserves `page=ventas_familia` and `cod` (`36b0793`). The round-1 actionable warnings remain closed: (WARNING-1) family-structure writes no longer dispatch `ArticlePermissionFilterEvent`; (WARNING-6) the canonical editor is discoverable via a flag-gated `tarif_familias` link. The change is **still not archive-ready** because Phase 4 remains intentionally unimplemented and the remaining warnings are honest: the "DDEV DB" migration evidence is fake-DB only (WARNING-2), the strict-TDD apply artifact is still missing (WARNING-3), task 4.4's literal legacy-read criterion is unresolved (WARNING-4), R-FJ-007's premise is stale (WARNING-5), and no live browser/real-DB smoke was executed (WARNING-7, now including the pre-existing nested image form). No CRITICAL finding.
 
 ## Remediation (post-verify, 2026-10-23)
 
@@ -266,7 +297,7 @@ was resurrected and no page name/menu changed.
 Phase 4 remains unimplemented and unchecked; this remediation created no Phase 4
 artifact.
 
-## Round 2 finding ledger (independent re-verify)
+## Finding ledger (rounds 2–3, independent re-verify)
 
 | # | Finding | Round 1 | Round 2 state | Evidence |
 |---|---|---|---|---|
@@ -282,5 +313,9 @@ artifact.
 | S3 | Run PHPStan / lint gate | open | **still-open** | `vendor/dev-tools/bin/phpstan` still absent. |
 | S4 | Phase 4 translations + `ViewHookPointsTest` | open | **still-open** | Phase 4 tasks 4.2/4.3 remain unchecked. |
 | S5 | Assignment event's 4th argument is `codlista` in a `codtarifa` slot | new (residual) | **accepted** | Runtime probe: `fourth_arg=L1`; current listener ignores `getCodtarifa()`, so no mis-gate today. |
+| CR-A | Structure save rejected every real POST (empty `listas_estructura` at save time) | new (round 3) | **resolved** | `bb20833`; `activeListaCodes()` at save time; `test_save_resolves_active_lists_at_save_time_without_preloading` + inactive rejection (class 15/74). |
+| CR-B | Assignment panel nested forms inside the article form | new (round 3) | **resolved** | `1079500`; panel 349-402 has zero `<form>`; forms 502-511 after main close 498; `ArticleAssignmentFormStructureTest` 4/36. |
+| CR-C | GET list selector dropped `page`/`cod` | new (round 3) | **resolved** | `36b0793`; hidden `page=ventas_familia` + `cod` at `View/ventas_familia.html.twig:211-212`; selector test in class 15/74. |
+| CR-D | Pre-existing nested image `<form hx-post>` inside the article form | pre-existing on `main` | **accepted (out of scope)** | `main` 412-418, current 470-476; not introduced by this change; needs a separate fix + browser smoke (W7/S7). |
 
 **Round 2 scope note**: Phase 4 remains out of scope and unchecked; the remediation created no Phase 4 artifact. No production code was modified by this verification.
