@@ -53,7 +53,7 @@ final class FamiliaEstructuraMigration
         $postgres = self::isPostgres($dialect);
 
         if (!self::tableExists($db, self::LEGACY_FAMILIES, $postgres)) {
-            // Fresh install without tarifario: nothing to copy.
+            // Fresh install without the legacy plugin: nothing to copy.
             return;
         }
 
