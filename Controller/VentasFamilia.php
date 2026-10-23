@@ -30,8 +30,6 @@ require_once FS_FOLDER . '/model/fs_extension.php';
 require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
-use FSFramework\Event\FSEventDispatcher;
-use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
 use FSFramework\Plugins\catalogo_core\Services\FamiliaTreeGuard;
 use Symfony\Component\HttpFoundation\Request;
@@ -314,7 +312,12 @@ class VentasFamilia extends PageController
 
     /**
      * Upserts one structure row for the selected list. Flag-off aborts before
-     * any read/write; a denied permission filter also blocks persistence.
+     * any read/write.
+     *
+     * Authorization is page access (`ventas_familia` in `fs_access` / role
+     * permissions), never the article permission event: a family code is not
+     * an article reference, so the article gate belongs only to the
+     * article-assignment writes in `VentasArticulo`.
      */
     private function guardarEstructuraFamilia(): void
     {
@@ -340,13 +343,6 @@ class VentasFamilia extends PageController
             return;
         }
 
-        $filterEvent = self::dispatchFamilyStructureFilter($codfamilia, (string) $this->user->nick, $codlista);
-        if ($filterEvent === null || !$filterEvent->isAllowed()) {
-            $this->new_error_msg('No tienes permisos para editar la estructura de familias: '
-                . ($filterEvent !== null ? $filterEvent->getDenialReason() : 'error del filtro'));
-            return;
-        }
-
         $row = $this->estructura_model()->get($codlista, $codfamilia);
         if (!$row) {
             $row = $this->nueva_estructura();
@@ -367,32 +363,6 @@ class VentasFamilia extends PageController
         }
 
         $this->new_error_msg('¡Imposible guardar la estructura de la familia!');
-    }
-
-    /**
-     * Neutral permission filter for structure writes (design D6). Reuses the
-     * frozen event contract: zero listeners resolve allow.
-     */
-    public static function dispatchFamilyStructureFilter(
-        string $codfamilia,
-        string $nick,
-        string $codlista = ''
-    ): ?ArticlePermissionFilterEvent {
-        $filterEvent = new ArticlePermissionFilterEvent(
-            $codfamilia,
-            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
-            $nick,
-            $codlista
-        );
-
-        try {
-            FSEventDispatcher::getInstance()->dispatch($filterEvent, ArticlePermissionFilterEvent::NAME);
-        } catch (\Throwable $e) {
-            error_log('ArticlePermissionFilterEvent listener error: ' . $e->getMessage());
-            $filterEvent->deny('permission filter error');
-        }
-
-        return $filterEvent;
     }
 
     /**

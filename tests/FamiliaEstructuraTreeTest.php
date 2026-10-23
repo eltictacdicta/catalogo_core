@@ -255,34 +255,45 @@ final class FamiliaEstructuraTreeTest extends TestCase
         $this->assertSame(9, $store['L1|F1']->orden);
     }
 
-    public function test_save_dispatches_permission_filter_and_deny_blocks_the_write(): void
+    public function test_save_is_not_gated_by_the_article_permission_event(): void
     {
         $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
 
+        $listenerCalls = 0;
         FSEventDispatcher::getInstance()->addListener(
             ArticlePermissionFilterEvent::NAME,
-            static function (ArticlePermissionFilterEvent $event): void {
+            static function (ArticlePermissionFilterEvent $event) use (&$listenerCalls): void {
+                $listenerCalls++;
                 $event->deny('estructura bloqueada');
             }
         );
 
-        $estructuraModel = new class extends \FSFramework\model\catalogo_familia_estructura {
-            public function __construct() {}
-            public function get($codlista, $codfamilia) { throw new \LogicException('denied write must not read'); }
-            public function save() { throw new \LogicException('denied write must not persist'); }
-        };
-
-        $controller = $this->makeController(null, $estructuraModel);
+        $store = new \ArrayObject();
+        $controller = $this->makeController(null, $this->structureStore($store));
         $controller->family_structure = true;
-        $controller->request = $this->structureRequest('F1', 'L1');
+        $controller->request = $this->structureRequest('F1', 'L1', ['estructura_orden' => '7']);
         $controller->user = (object) ['nick' => 'editor'];
         $controller->listas_estructura = [(object) ['codlista' => 'L1', 'activa' => true]];
 
         $this->invoke($controller, 'guardarEstructuraFamilia');
 
-        $this->assertNotEmpty($controller->errors);
-        $this->assertStringContainsString('estructura bloqueada', implode(' ', $controller->errors));
-        $this->assertSame([], $controller->messages);
+        $this->assertSame(0, $listenerCalls, 'Family-structure writes must not dispatch the article permission event');
+        $this->assertSame([], $controller->errors, 'A denying article listener must not block a family-structure save');
+        $this->assertCount(1, $store, 'The structure row must persist regardless of article listeners');
+        $this->assertSame(7, $store['L1|F1']->orden);
+        $this->assertNotEmpty($controller->messages);
+    }
+
+    public function test_save_path_keeps_zero_article_event_references(): void
+    {
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER);
+
+        $this->assertStringNotContainsString(
+            'ArticlePermissionFilterEvent',
+            $source,
+            'Family-structure writes are governed by page access; the article event must not gate them'
+        );
+        $this->assertStringNotContainsString('dispatchFamilyStructureFilter', $source);
     }
 
     // ------------------------------------------------------------------

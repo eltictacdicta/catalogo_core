@@ -96,7 +96,31 @@ Ordering (FK-safe, spec R-FJ-005):
 
 **Hard rule (grep-auditable)**: no `require`, `require_once`, `use`, or class reference to anything under `plugins/tarifario/` in `catalogo_core`, and no `require` declaration toward `tarifario` in `fsframework.ini`. Direction of knowledge is by event only:
 
-1. **`ArticlePermissionFilterEvent`** (existing, `FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent`): the new write paths (family-structure saves, article assignment saves, catalog view actions that mutate) dispatch the event with the affected action/referencia so `tarifario`'s `ArticlePermissionListener` (registered at boot, class_exists-guarded) keeps gating — zero coupling, already proven by multitarifa D2.
+1. **`ArticlePermissionFilterEvent`** (existing, `FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent`): the **article-assignment** write path dispatches the event with the real article `referencia` (and the list code in the `codtarifa` slot) so `tarifario`'s `ArticlePermissionListener` keeps gating — zero coupling, already proven by multitarifa D2. **Family-structure writes do not dispatch it** (see the amendment below).
+
+> **Amendment 2026-10-23 — family-structure writes are NOT article edits.**
+> The original D6 text made every new write path dispatch
+> `ArticlePermissionFilterEvent`. That was wrong for the family-structure save:
+> it passed `codfamilia` in the event's `referencia` slot, but `referencia` is
+> documented as an **article** reference, and `tarifario`'s listener resolves it
+> with `puede_editar_articulo_en_tarifa($codtarifa, $nick, $referencia)` against
+> the article-assignment table. A non-admin `EDITOR` (not `GESTOR`) on any
+> tariff — or a user with no tarifario role — would be denied a legitimate
+> family-structure save, and no listener can ever resolve a family code as an
+> article. The contract is therefore split by subject:
+>
+> - **Family-structure writes** (`Controller/VentasFamilia::guardarEstructuraFamilia()`,
+>   `catalogo_familia_estructura`): authorization comes from **page access**
+>   (`ventas_familia` in `fs_access` / role permissions) plus `allow_delete` for
+>   deletes. No `ArticlePermissionFilterEvent` is dispatched, because the subject
+>   is a family structure row, not an article.
+> - **Article-assignment writes** (`Controller/VentasArticulo::guardarAsignacionFamilia()`,
+>   `catalogo_articulo_familia_estructura`): the subject really is an article
+>   reference, so `ArticlePermissionFilterEvent` keeps gating exactly as before.
+>
+> The unused `VentasFamilia::dispatchFamilyStructureFilter()` helper and its
+> imports were removed. A denying listener can no longer block a family-structure
+> save (regression test: `FamiliaEstructuraTreeTest::test_save_is_not_gated_by_the_article_permission_event`).
 2. **`ViewHookRegistry` compatibility (R-FJ-007)**: `catalogo_core` MUST NOT remove/rename/shadow the 4 hook points in `ventas_articulo`/`ventas_opcional` templates. The absorbed UI renders from catalogo_core's own views; the tarifario hooks keep resolving via `@tarifario/Hooks/*.html.twig` during Twig build (TwigLoaderEvent namespace + TwigInitEvent registration, verified in `plugins/tarifario/Init.php`). Deprecating the hooks is a tarifario follow-up change.
 3. **Data reads**: `catalogo_core` reads ONLY its own tables (`familias`, `catalogo_*`). It never queries `tarif_tarifa_familia`/`tarif_tarifa_articulo` outside the migration service (which reads legacy tables one-way, copy-only, during migration). `tarifario` keeps reading/writing its own tables (frozen, read-only after migration); its family UI continues working until its follow-up deprecation — the two UIs coexist showing the same data through the two tables.
 4. **No dual-write (R-MT-006)**: writes go only to `catalogo_familia_estructura`. The frozen `tarif_*` tables receive no writes from this change; the coexistence divergence (edits after migration only in canonical tables) is accepted and documented as the migration-cutover semantics.
@@ -121,7 +145,8 @@ VentasFamilia (page ventas_familia, menu catalogo, name preserved)
   familia::all()/hijas()/madres()  → tree render (depth derived from madre chain)
   + list selector (activa lists from catalogo_listas_precio)
   + estructura columns per selected codlista ← catalogo_familia_estructura (batch read)
-  save node: CSRF → FamiliaTreeGuard::assertAcyclic → familia save (base) ; estructura save (extension upsert)
+  save node: CSRF → page access (fs_access/role) → FamiliaTreeGuard::assertAcyclic
+             → familia save (base) ; estructura save (extension upsert)   [no article event]
   re-parent cycle → new_error_msg, no write
 
 VentasArticulo → "Asignación a familias" block → catalogo_articulo_familia_estructura upsert

@@ -30,6 +30,17 @@ The plugin MUST provide a family management page (extending the surviving `Venta
 - WHEN the plugin installs and the tree UI is used
 - THEN no column is added to or removed from `familias` (all new state lives in extension tables)
 
+> **Amendment 2026-10-23 (authorization boundary — no requirement change).**
+> This requirement never asked `ArticlePermissionFilterEvent` to gate
+> family-structure writes, and it must not: a family code is not an article
+> reference. Family-structure saves and re-parents are authorized by page access
+> (`ventas_familia` in `fs_access` / role permissions) plus `allow_delete` for
+> deletes. Only the **article-assignment** writes (R-FJ-003,
+> `catalogo_articulo_familia_estructura`) carry a real article reference and
+> keep dispatching `ArticlePermissionFilterEvent`. This note records the decision
+> so a future implementation cannot re-introduce the mis-gate; requirement IDs
+> and scenarios above are unchanged.
+
 ### Requirement: Per-list family structure extension table (R-FJ-002)
 
 The system MUST persist per-price-list family structure in a new canonical table `catalogo_familia_estructura` (canonical equivalent of `tarif_tarifa_familia`), with columns mapping the legacy model (`codlista`, `madre`, `capitulo`, `nivel`, `en_catalogo`, `en_tarifa`, `activa`, `orden`), FK to `familias.codfamilia` and FK to `catalogo_listas_precio.codlista` (ON DELETE CASCADE). The table XML MUST live in `model/table/catalogo_familia_estructura.xml` and install after both `familias` and `catalogo_listas_precio`.
