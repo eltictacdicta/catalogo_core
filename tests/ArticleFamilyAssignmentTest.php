@@ -118,6 +118,30 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $this->assertNull($controller->asignacion_actual, 'The L1 assignment must not leak into L2');
     }
 
+    public function test_posted_list_is_kept_when_the_query_has_no_codlista(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $store = new \ArrayObject();
+        $store['L2|REF1'] = $this->assignmentRow('L2', 'REF1', 'F2');
+
+        $controller = $this->makeController($this->listaModel(), $this->assignmentStore($store));
+        $controller->articulo = $this->article('REF1');
+        $controller->request = Request::create('/index.php?page=ventas_articulo', 'POST', [
+            'asignacion_codlista' => 'L2',
+        ]);
+
+        $this->invoke($controller, 'loadAsignacionFamilias');
+
+        $this->assertSame(
+            'L2',
+            $controller->codlista_asignacion,
+            'The posted list must survive the save instead of falling back to the default'
+        );
+        $this->assertNotNull($controller->asignacion_actual);
+        $this->assertSame('F2', $controller->asignacion_actual->codfamilia);
+    }
+
     // ------------------------------------------------------------------
     // Saving
     // ------------------------------------------------------------------

@@ -1047,7 +1047,13 @@ class VentasArticulo extends PageController
             $this->listas_estructura
         );
 
-        $requested = trim((string) $this->request->query->get('codlista', ''));
+        // The assignment form posts the selected list; keep it after the save
+        // instead of falling back to the default (the POST action carries no
+        // query string with codlista).
+        $requested = trim((string) $this->request->query->get(
+            'codlista',
+            $this->request->request->get('asignacion_codlista', '')
+        ));
         if ($requested !== '' && in_array($requested, $activeCodes, true)) {
             $this->codlista_asignacion = $requested;
         } elseif ($this->listas_estructura !== []) {
