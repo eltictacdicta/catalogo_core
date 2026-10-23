@@ -263,6 +263,39 @@ final class ArticleFamilyAssignmentTest extends TestCase
         $this->assertCount(0, $store, 'An empty family must delete the assignment row');
     }
 
+    public function test_failed_delete_reports_an_error(): void
+    {
+        $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';
+
+        $asignacionModel = new class extends \FSFramework\model\catalogo_articulo_familia_estructura {
+            public function __construct() {}
+            public function get($codlista, $referencia)
+            {
+                return new class {
+                    public function delete()
+                    {
+                        return false;
+                    }
+                };
+            }
+            public function save()
+            {
+                throw new \LogicException('a failed delete must not fall through to an upsert');
+            }
+        };
+
+        $controller = $this->makeController($this->listaModel(), $asignacionModel);
+        $controller->family_structure = true;
+        $controller->articulo = $this->article('REF1');
+        $controller->user = (object) ['nick' => 'admin'];
+        $controller->request = $this->assignmentRequest('L1', '');
+
+        $this->invoke($controller, 'guardarAsignacionFamilia', $controller->request);
+
+        $this->assertContains('¡Imposible eliminar la asignación a familias!', $controller->errors);
+        $this->assertSame([], $controller->messages, 'A failed delete must not report success');
+    }
+
     public function test_save_rejects_unknown_family_code_without_writing(): void
     {
         $GLOBALS['config2'][CatalogoOptions::KEY_FAMILY_STRUCTURE] = 'true';

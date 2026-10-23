@@ -1146,10 +1146,15 @@ class VentasArticulo extends PageController
         $row = $model->get($codlista, $referencia);
 
         if ($codfamilia === '') {
-            if ($row && $row->delete()) {
+            if (!$row) {
+                $this->new_message('El artículo no tenía asignación en esta lista.');
+                return;
+            }
+
+            if ($row->delete()) {
                 $this->new_message('Asignación a familias eliminada.');
             } else {
-                $this->new_message('El artículo no tenía asignación en esta lista.');
+                $this->new_error_msg('¡Imposible eliminar la asignación a familias!');
             }
             return;
         }
