@@ -384,7 +384,7 @@ class articulo extends \fs_model
     /**
      * Devuelve un artículo a partir de su referencia
      * @param string $ref
-     * @return boolean|\articulo
+     * @return \FSFramework\model\articulo|false
      */
     public function get($ref)
     {
