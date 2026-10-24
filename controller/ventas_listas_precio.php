@@ -22,6 +22,7 @@ require_once FS_FOLDER . '/base/fs_controller.php';
 require_once FS_FOLDER . '/base/fs_settings.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/divisa.php';
 
 /**
  * Admin-gated CRUD page for the catalog price lists (multitarifa task 3.2,
@@ -36,11 +37,29 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_preci
  * catalogo_lista_precio. The page is the ONLY place where inactive lists
  * remain visible/editable (R-MT-001 reactivation point). It NEVER rewrites
  * articulos.pvp (R-MT-003).
+ *
+ * The currency is chosen from the catalog configured in admin_divisas (never
+ * free text); new lists default to the session/company currency, EUR in
+ * practice, and a stored value that was removed from the catalog stays
+ * selectable so unrelated edits are never blocked.
  */
 class ventas_listas_precio extends fs_controller
 {
     /** @var list<\FSFramework\model\catalogo_lista_precio> all lists (inactive included) */
     public array $listas = [];
+
+    /**
+     * Currencies configured in admin_divisas: the only selectable values.
+     *
+     * @var list<\divisa>
+     */
+    public array $divisas = [];
+
+    /** @var list<string> configured currency codes (uppercase) */
+    public array $coddivisas = [];
+
+    /** Preselected currency for new lists. */
+    public string $coddivisa_defecto = 'EUR';
 
     /** Multi-tariff master flag: hides the CRUD UI when off (R-CO-003). */
     public bool $multi_tariff = false;
@@ -53,6 +72,9 @@ class ventas_listas_precio extends fs_controller
     protected function private_core()
     {
         $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions())->multiTariffEnabled();
+        $this->divisas = $this->loadDivisas();
+        $this->coddivisas = $this->configuredDivisaCodes();
+        $this->coddivisa_defecto = $this->resolveDefaultDivisa();
         $this->listas = $this->loadListas();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -99,6 +121,73 @@ class ventas_listas_precio extends fs_controller
         return (new \FSFramework\model\catalogo_lista_precio())->all();
     }
 
+    /**
+     * @return list<\divisa>
+     */
+    private function loadDivisas(): array
+    {
+        return (new \divisa())->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function configuredDivisaCodes(): array
+    {
+        $codes = [];
+        foreach ($this->divisas as $divisa) {
+            $code = strtoupper(trim((string) $divisa->coddivisa));
+            if ($code !== '') {
+                $codes[] = $code;
+            }
+        }
+
+        return $codes;
+    }
+
+    /**
+     * Default currency for a new list: the session/company currency when it is
+     * configured, otherwise EUR, otherwise the first configured one.
+     */
+    private function resolveDefaultDivisa(): string
+    {
+        $preferred = strtoupper(trim((string) ($this->default_items?->coddivisa() ?? '')));
+
+        if ($preferred !== '' && in_array($preferred, $this->coddivisas, true)) {
+            return $preferred;
+        }
+
+        if (in_array('EUR', $this->coddivisas, true)) {
+            return 'EUR';
+        }
+
+        return $this->coddivisas[0] ?? 'EUR';
+    }
+
+    /**
+     * A list may only hold a currency configured in admin_divisas. The value it
+     * already stores stays selectable so an unrelated edit never gets blocked
+     * by a currency that was removed from the catalog afterwards.
+     */
+    private function isSelectableDivisa(string $coddivisa, string $current = ''): bool
+    {
+        if ($coddivisa === '') {
+            return false;
+        }
+
+        if ($current !== '' && $coddivisa === $current) {
+            return true;
+        }
+
+        if ($this->coddivisas === []) {
+            // No catalog configured: keep the model's 3-char validation as the
+            // only gate instead of blocking list creation entirely.
+            return mb_strlen($coddivisa) === 3;
+        }
+
+        return in_array($coddivisa, $this->coddivisas, true);
+    }
+
     private function saveList(bool $create): void
     {
         $lista = new \FSFramework\model\catalogo_lista_precio();
@@ -112,9 +201,21 @@ class ventas_listas_precio extends fs_controller
             $lista = $found;
         }
 
+        $current = $create ? '' : strtoupper(trim((string) $lista->coddivisa));
+        $coddivisa = strtoupper(trim((string) ($_POST['coddivisa'] ?? '')));
+        if ($coddivisa === '') {
+            $coddivisa = $this->coddivisa_defecto;
+        }
+
+        if (!$this->isSelectableDivisa($coddivisa, $current)) {
+            $this->new_error_msg('La divisa seleccionada no está configurada en Divisas.');
+
+            return;
+        }
+
         $lista->codlista = (string) ($_POST['codlista'] ?? $lista->codlista);
         $lista->nombre = $this->no_html(trim((string) ($_POST['nombre'] ?? '')));
-        $lista->coddivisa = (string) ($_POST['coddivisa'] ?? $lista->coddivisa);
+        $lista->coddivisa = $coddivisa;
         // The view posts 'TRUE'/'FALSE'; fs_model::str2bool() is model-only
         // and would also report 'TRUE' as false (it only accepts 't'/'1').
         $lista->activa = ($_POST['activa'] ?? 'TRUE') === 'TRUE';

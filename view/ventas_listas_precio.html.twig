@@ -42,7 +42,15 @@
                <input type="text" name="nombre" maxlength="50" class="form-control" placeholder="Nombre" required />
             </div>
             <div class="form-group">
-               <input type="text" name="coddivisa" maxlength="3" class="form-control" placeholder="Divisa" value="EUR" />
+               <select name="coddivisa" class="form-control" title="Divisa">
+                  {% for divisa in fsc.divisas %}
+                  <option value="{{ divisa.coddivisa }}"{% if divisa.coddivisa|upper == fsc.coddivisa_defecto %} selected{% endif %}>
+                     {{ divisa.coddivisa }} - {{ divisa.descripcion }}
+                  </option>
+                  {% else %}
+                  <option value="{{ fsc.coddivisa_defecto }}" selected>{{ fsc.coddivisa_defecto }}</option>
+                  {% endfor %}
+               </select>
             </div>
             <div class="checkbox">
                <label>
@@ -83,7 +91,17 @@
                      <input type="hidden" name="action" value="edit" />
                      <input type="hidden" name="codlista" value="{{ lista.codlista }}" />
                      <input type="text" name="nombre" maxlength="50" class="form-control input-sm" value="{{ lista.nombre }}" />
-                     <input type="text" name="coddivisa" maxlength="3" class="form-control input-sm" value="{{ lista.coddivisa }}" />
+                     {% set coddivisa_actual = lista.coddivisa|upper %}
+                     <select name="coddivisa" class="form-control input-sm" title="Divisa">
+                        {% for divisa in fsc.divisas %}
+                        <option value="{{ divisa.coddivisa }}"{% if divisa.coddivisa|upper == coddivisa_actual %} selected{% endif %}>{{ divisa.coddivisa }} - {{ divisa.descripcion }}</option>
+                        {% else %}
+                        <option value="{{ coddivisa_actual }}" selected>{{ coddivisa_actual }}</option>
+                        {% endfor %}
+                        {% if coddivisa_actual not in fsc.coddivisas %}
+                        <option value="{{ coddivisa_actual }}" selected>{{ coddivisa_actual }} (no configurada)</option>
+                        {% endif %}
+                     </select>
                      <input type="hidden" name="activa" value="{% if lista.activa %}TRUE{% else %}FALSE{% endif %}" />
                      <button class="btn btn-xs btn-default" type="submit">Guardar</button>
                   </form>

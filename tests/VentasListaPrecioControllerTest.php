@@ -201,6 +201,79 @@ final class VentasListaPrecioControllerTest extends TestCase
             'Checkbox flags are posted as TRUE/FALSE by the view; compare against TRUE explicitly'
         );
     }
+
+    // ---- Currency selection comes from admin_divisas, never free text ----
+
+    public function test_view_renders_currency_selects_from_configured_divisas(): void
+    {
+        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+
+        $this->assertStringContainsString('{% for divisa in fsc.divisas %}', $content);
+        $this->assertStringContainsString('<select name="coddivisa"', $content);
+        $this->assertStringNotContainsString(
+            '<input type="text" name="coddivisa"',
+            $content,
+            'The currency must be chosen from admin_divisas, not typed'
+        );
+    }
+
+    public function test_controller_loads_divisas_and_its_default(): void
+    {
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+
+        $this->assertStringContainsString("require_once FS_FOLDER . '/plugins/catalogo_core/model/core/divisa.php';", $source);
+        $this->assertStringContainsString('(new \divisa())->all()', $source, 'Configured currencies must be read from the divisa model');
+        $this->assertStringContainsString('$this->coddivisa_defecto = $this->resolveDefaultDivisa();', $source);
+    }
+
+    public function test_only_configured_currencies_are_selectable(): void
+    {
+        require_once FS_FOLDER . self::CONTROLLER_FILE;
+
+        $controller = (new \ReflectionClass('ventas_listas_precio'))->newInstanceWithoutConstructor();
+        $this->setControllerProperty($controller, 'divisas', [
+            (object) ['coddivisa' => 'EUR'],
+            (object) ['coddivisa' => 'USD'],
+        ]);
+        $this->setControllerProperty($controller, 'coddivisas', ['EUR', 'USD']);
+
+        $method = new \ReflectionMethod('ventas_listas_precio', 'isSelectableDivisa');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($controller, 'EUR'));
+        $this->assertTrue($method->invoke($controller, 'USD'));
+        $this->assertFalse(
+            $method->invoke($controller, 'XYZ'),
+            'A currency missing from admin_divisas must be rejected on save'
+        );
+        $this->assertTrue(
+            $method->invoke($controller, 'XYZ', 'XYZ'),
+            'The value already stored stays selectable when editing an existing list'
+        );
+        $this->assertFalse($method->invoke($controller, ''), 'An empty currency is never selectable');
+    }
+
+    public function test_currency_validation_degrades_to_length_check_without_catalog(): void
+    {
+        require_once FS_FOLDER . self::CONTROLLER_FILE;
+
+        $controller = (new \ReflectionClass('ventas_listas_precio'))->newInstanceWithoutConstructor();
+        $this->setControllerProperty($controller, 'divisas', []);
+        $this->setControllerProperty($controller, 'coddivisas', []);
+
+        $method = new \ReflectionMethod('ventas_listas_precio', 'isSelectableDivisa');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($controller, 'EUR'), 'Without a catalog the model 3-char rule remains the gate');
+        $this->assertFalse($method->invoke($controller, 'EURO'));
+    }
+
+    private function setControllerProperty(object $controller, string $property, $value): void
+    {
+        $prop = new \ReflectionProperty('ventas_listas_precio', $property);
+        $prop->setAccessible(true);
+        $prop->setValue($controller, $value);
+    }
 }
 
 /**
