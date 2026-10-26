@@ -147,3 +147,18 @@ remove-optional-from-article-confirm: "Remove this optional from the article?"
 remove-optional-group-from-article-confirm: "Remove this group from the article?"
 optional-select-group: "Select a group."
 optional-select-optional: "Select an optional."
+
+# Family structure and catalog view (familias-jerarquia, D7). Every key is
+# plugin-prefixed so it can never collide with another plugin's copy.
+catalogo-core-familias-tree-title: "Family tree"
+catalogo-core-lista-selector: "Price list"
+catalogo-core-estructura-capitulo: "Chapter"
+catalogo-core-estructura-orden: "Order"
+catalogo-core-estructura-en-catalogo: "In catalog"
+catalogo-core-estructura-en-tarifa: "In tariff"
+catalogo-core-estructura-activa: "Active"
+catalogo-core-ciclo-error: "Cannot save: the selected mother family depends on this family."
+catalogo-core-articulos-asignacion-tab: "Families"
+catalogo-core-catalogo-view-title: "Catalog by family"
+catalogo-core-catalogo-view-empty: "This list has no families visible in the catalog."
+catalogo-core-catalogo-view-disabled: "The per-list family structure is disabled. Enable it in the catalog options."

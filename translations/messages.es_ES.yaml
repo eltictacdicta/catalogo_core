@@ -178,3 +178,18 @@ add-optional-group: "Añadir grupo"
 add-optional-loose: "Añadir opcional suelto"
 remove-optional-group: "Quitar grupo"
 no-optionals-groups-assigned: "Este artículo no tiene grupos de opcionales asignados."
+
+# Family structure and catalog view (familias-jerarquia, D7). Every key is
+# plugin-prefixed so it can never collide with another plugin's copy.
+catalogo-core-familias-tree-title: "Árbol de familias"
+catalogo-core-lista-selector: "Lista de precio"
+catalogo-core-estructura-capitulo: "Capítulo"
+catalogo-core-estructura-orden: "Orden"
+catalogo-core-estructura-en-catalogo: "En catálogo"
+catalogo-core-estructura-en-tarifa: "En tarifa"
+catalogo-core-estructura-activa: "Activa"
+catalogo-core-ciclo-error: "No se puede guardar: la familia madre elegida depende de esta familia."
+catalogo-core-articulos-asignacion-tab: "Familias"
+catalogo-core-catalogo-view-title: "Catálogo por familia"
+catalogo-core-catalogo-view-empty: "Esta lista no tiene familias visibles en el catálogo."
+catalogo-core-catalogo-view-disabled: "La estructura de familias por lista está deshabilitada. Actívala en las opciones del catálogo."

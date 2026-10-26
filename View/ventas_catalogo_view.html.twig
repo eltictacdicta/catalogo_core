@@ -1,0 +1,99 @@
+{#
+    Catalog view of one price list (familias-jerarquia task 4.1, R-FJ-004).
+
+    Read-only: family tree filtered to activa AND en_catalogo for the selected
+    codlista, with the articles assigned to each visible family. One list in
+    context at a time; switching lists is a GET reload (?codlista=...).
+
+    This template renders entirely from catalogo_core: it declares no
+    render_hook markers and never reaches into another plugin's templates
+    (R-FJ-007).
+#}
+{% import _self as catalog %}
+
+{% macro tree(nodes) %}
+    <ul class="list-unstyled catalog-tree">
+        {% for node in nodes %}
+            <li class="catalog-node" data-codfamilia="{{ node.codfamilia }}" data-depth="{{ node.depth }}">
+                <div class="catalog-node-header">
+                    <strong>{{ node.descripcion }}</strong>
+                    <small class="text-muted">[{{ node.codfamilia }}]</small>
+                    {% if node.capitulo is not empty %}
+                        <span class="label label-default">{{ 'catalogo-core-estructura-capitulo'|trans }}: {{ node.capitulo }}</span>
+                    {% endif %}
+                    <span class="label label-default">{{ 'catalogo-core-estructura-orden'|trans }}: {{ node.orden }}</span>
+                </div>
+                {% if node.articles is not empty %}
+                    <ul class="list-unstyled catalog-node-articles">
+                        {% for article in node.articles %}
+                            <li>
+                                <span class="glyphicon glyphicon-tag" aria-hidden="true"></span>
+                                {{ article.referencia }}
+                                {% if article.descripcion is not empty %}&mdash; {{ article.descripcion }}{% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                {% if node.children is not empty %}
+                    {{ catalog.tree(node.children) }}
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+{% endmacro %}
+
+{% include 'header.html.twig' %}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="page-header">
+                <h1>
+                    <i class="fa fa-book" aria-hidden="true"></i>&nbsp;
+                    {{ 'catalogo-core-catalogo-view-title'|trans }}
+                    {% if fsc.list_name is not empty %}<small>{{ fsc.list_name }}</small>{% endif %}
+                </h1>
+            </div>
+        </div>
+    </div>
+
+    {% if not fsc.enabled %}
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="alert alert-info">{{ 'catalogo-core-catalogo-view-disabled'|trans }}</div>
+            </div>
+        </div>
+    {% else %}
+        <div class="row">
+            <div class="col-sm-12">
+                <form method="get" action="index.php" class="form-inline">
+                    <input type="hidden" name="page" value="ventas_catalogo_view"/>
+                    <div class="form-group">
+                        <label for="codlista">{{ 'catalogo-core-lista-selector'|trans }}</label>
+                        <select name="codlista" id="codlista" class="form-control" onchange="this.form.submit()">
+                            {% for list in fsc.lists %}
+                                <option value="{{ list.codlista }}"{% if list.codlista == fsc.codlista %} selected{% endif %}>{{ list.nombre }} ({{ list.codlista }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <noscript>
+                        <button type="submit" class="btn btn-default">OK</button>
+                    </noscript>
+                </form>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-sm-12">
+                <h2>{{ 'catalogo-core-familias-tree-title'|trans }}</h2>
+                {% if fsc.empty %}
+                    <div class="alert alert-info">{{ 'catalogo-core-catalogo-view-empty'|trans }}</div>
+                {% else %}
+                    {{ catalog.tree(fsc.tree) }}
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+{% include 'footer.html.twig' %}
