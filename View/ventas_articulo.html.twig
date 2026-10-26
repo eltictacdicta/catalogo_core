@@ -340,6 +340,83 @@
                         </div>
                         {% endif %}
 
+                        {% if fsc.family_structure %}
+                        {# Section: Asignación a familias (familias-jerarquia 3.4, R-FJ-003).
+                           Una lista de precio en contexto por vez (?codlista=); los campos usan
+                           form="form_asignacion_familia" porque ese <form> vive fuera del formulario
+                           principal: HTML no admite formularios anidados. #}
+                        <div class="panel panel-default" id="familias_asignacion">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">Asignación a familias</h3>
+                            </div>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-4">
+                                        <div class="form-group">
+                                            <label class="control-label" for="codlista_estructura">Lista de precio:</label>
+                                            <select name="codlista" id="codlista_estructura" class="form-control"
+                                                    hx-get="{{ fsc.url() }}"
+                                                    hx-trigger="change"
+                                                    hx-target="body"
+                                                    hx-select="body"
+                                                    hx-swap="outerHTML"
+                                                    hx-push-url="true"
+                                                    hx-boost="true">
+                                                {% for lista in fsc.listas_estructura %}
+                                                <option value="{{ lista.codlista }}"{% if lista.codlista == fsc.codlista_estructura %} selected{% endif %}>{{ lista.nombre }} ({{ lista.codlista }})</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-5">
+                                        <div class="form-group">
+                                            <label class="control-label" for="codfamilia_estructura">Familia:</label>
+                                            <select name="codfamilia" id="codfamilia_estructura" class="form-control" form="form_asignacion_familia">
+                                                <option value="">Sin asignar</option>
+                                                {% for familia in fsc.familias %}
+                                                <option value="{{ familia.codfamilia }}"{% if fsc.asignacion_familia and fsc.asignacion_familia.codfamilia == familia.codfamilia %} selected{% endif %}>{{ familia.descripcion }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            <label class="control-label" for="orden_estructura">Orden:</label>
+                                            <input class="form-control" type="number" min="0" step="1" name="orden" id="orden_estructura"
+                                                   form="form_asignacion_familia" autocomplete="off"
+                                                   value="{% if fsc.asignacion_familia %}{{ fsc.asignacion_familia.orden }}{% else %}0{% endif %}"/>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-sm-4">
+                                        <div class="checkbox">
+                                            <label>
+                                                <input type="checkbox" name="en_catalogo" value="TRUE" form="form_asignacion_familia"
+                                                       {% if fsc.asignacion_familia is null or fsc.asignacion_familia.en_catalogo %}checked{% endif %}/>
+                                                Visible en el catálogo
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <div class="checkbox">
+                                            <label>
+                                                <input type="checkbox" name="en_tarifa" value="TRUE" form="form_asignacion_familia"
+                                                       {% if fsc.asignacion_familia is null or fsc.asignacion_familia.en_tarifa %}checked{% endif %}/>
+                                                Visible en la tarifa
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="help-block">
+                                    La asignación es por lista de precio: cada lista guarda su propia familia.
+                                    «Sin asignar» elimina la asignación de la lista seleccionada.
+                                </p>
+                                <button class="btn btn-sm btn-primary" type="submit" form="form_asignacion_familia">Guardar asignación</button>
+                            </div>
+                        </div>
+                        {% endif %}
+
                         {# Section: Stock #}
                         <div class="panel panel-default" id="stock-articulo">
                             <div class="panel-heading">
@@ -443,6 +520,17 @@
                 {{ csrf_field() }}
                 <input type="hidden" name="guardar_precios_lista" value="TRUE" />
                 <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}" />
+            </form>
+            {% endif %}
+            {% if fsc.family_structure %}
+            {# Asignación a familias (familias-jerarquia 3.4): form propio, fuera del
+               formulario principal, porque HTML no admite formularios anidados.
+               El codlista viaja como hidden para que el guardado quede scoped. #}
+            <form id="form_asignacion_familia" action="{{ fsc.url() }}" method="post">
+                {{ csrf_field() }}
+                <input type="hidden" name="guardar_asignacion_familia" value="TRUE" />
+                <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}" />
+                <input type="hidden" name="codlista" value="{{ fsc.codlista_estructura }}" />
             </form>
             {% endif %}
         </div>

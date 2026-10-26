@@ -28,6 +28,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/model/core/impuesto.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_precio.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_familia_estructura.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_grupo_rel.php';
@@ -50,6 +51,7 @@ require_once FS_FOLDER . '/src/Controller/PageController.php';
 use FSFramework\Event\FSEventDispatcher;
 use FSFramework\Controller\PageController;
 use FSFramework\Core\Html;
+use FSFramework\model\catalogo_articulo_familia_estructura;
 use FSFramework\model\catalogo_articulo_opcional;
 use FSFramework\model\catalogo_articulo_opcional_grupo;
 use FSFramework\model\catalogo_idioma;
@@ -63,6 +65,7 @@ use FSFramework\model\tarif_tarifa_articulo_etiqueta;
 use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa_familia;
 use FSFramework\Plugins\catalogo_core\Event\ArticlePermissionFilterEvent;
+use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore;
 use FSFramework\Translation\FSTranslator;
@@ -120,6 +123,26 @@ class VentasArticulo extends PageController
 
     /** @var array<string,float> codlista => per-list price rows of the current article */
     public array $precios_por_lista = [];
+
+    /**
+     * Family-structure capability flag (familias-jerarquia D3 lifecycle gate).
+     * With the flag off the assignment block is neither rendered nor written.
+     */
+    public bool $family_structure = false;
+
+    /** @var list<catalogo_lista_precio> active lists offered by the assignment selector */
+    public array $listas_estructura = [];
+
+    /** Price list the assignment block is scoped to (?codlista=), '' when none. */
+    public string $codlista_estructura = '';
+
+    /**
+     * Assignment of the current article on the selected list only
+     * (R-FJ-003 scenario 2: another list's assignment is never exposed).
+     *
+     * @var catalogo_articulo_familia_estructura|null
+     */
+    public ?catalogo_articulo_familia_estructura $asignacion_familia = null;
 
     public function __construct()
     {
@@ -225,6 +248,8 @@ class VentasArticulo extends PageController
             $this->eliminarArticulo($this->request);
         } elseif ($this->request->request->has('guardar_precios_lista')) {
             $this->guardarPreciosPorLista($this->request);
+        } elseif ($this->request->request->has('guardar_asignacion_familia')) {
+            $this->guardarAsignacionFamilia($this->request);
         } elseif ($this->request->request->has('sreferencia')) {
             $this->editarArticulo($this->request);
         }
@@ -409,6 +434,21 @@ class VentasArticulo extends PageController
     protected function familia_model(): \familia
     {
         return new \familia();
+    }
+
+    protected function lista_precio_model(): catalogo_lista_precio
+    {
+        return new catalogo_lista_precio();
+    }
+
+    protected function articulo_familia_estructura_model(): catalogo_articulo_familia_estructura
+    {
+        return new catalogo_articulo_familia_estructura();
+    }
+
+    protected function catalogo_options(): CatalogoOptions
+    {
+        return new CatalogoOptions();
     }
 
     protected function tarifa_familia_model(): tarif_tarifa_familia
@@ -950,6 +990,7 @@ class VentasArticulo extends PageController
         $this->loadOpcionalesDisponibles();
         $this->loadGruposDisponibles();
         $this->loadPreciosPorLista();
+        $this->loadAsignacionFamilias();
     }
 
     /**
@@ -1062,6 +1103,226 @@ class VentasArticulo extends PageController
         if ($saved > 0) {
             $this->new_message('Precios por lista guardados (' . $saved . ').');
         }
+    }
+
+    /**
+     * Family assignment block (familias-jerarquia D5, R-FJ-003).
+     *
+     * Exposes the active price lists, the list the block is scoped to and the
+     * current assignment of THIS article on THAT list. The assignment is read
+     * with a single query for the article (no per-list round-trip, no N+1) and
+     * filtered in memory, so a sibling list's row is never exposed.
+     *
+     * Inert when `CatalogoOptions::familyStructureEnabled()` is off: no list, no
+     * assignment and zero reads.
+     */
+    protected function loadAsignacionFamilias(): void
+    {
+        $this->family_structure = $this->catalogo_options()->familyStructureEnabled();
+        $this->listas_estructura = [];
+        $this->codlista_estructura = '';
+        $this->asignacion_familia = null;
+
+        if (!$this->family_structure) {
+            return;
+        }
+
+        foreach ($this->lista_precio_model()->all() as $lista) {
+            if ($lista->activa) {
+                $this->listas_estructura[] = $lista;
+            }
+        }
+
+        $this->codlista_estructura = $this->resolveCodlistaEstructura();
+
+        $referencia = (string) ($this->articulo?->referencia ?? '');
+        if ($this->codlista_estructura === '' || $referencia === '') {
+            return;
+        }
+
+        // ONE query for the article; the selected list scopes the exposed row.
+        foreach ($this->articulo_familia_estructura_model()->all_from_article($referencia) as $asignacion) {
+            if ((string) $asignacion->codlista === $this->codlista_estructura) {
+                $this->asignacion_familia = $asignacion;
+                break;
+            }
+        }
+    }
+
+    /**
+     * Resolves the list the assignment block is scoped to: the supplied code is
+     * kept only when it is an ACTIVE list, otherwise the default list, otherwise
+     * the first active list, otherwise '' (mirrors resolveCodtarifa()).
+     */
+    protected function resolveCodlistaEstructura(): string
+    {
+        $supplied = $this->suppliedCodlistaEstructura();
+        if ($supplied !== '' && $this->findListaEstructura($supplied) !== null) {
+            return $supplied;
+        }
+
+        foreach ($this->listas_estructura as $lista) {
+            if ($lista->por_defecto) {
+                return (string) $lista->codlista;
+            }
+        }
+
+        return $this->listas_estructura === [] ? '' : (string) $this->listas_estructura[0]->codlista;
+    }
+
+    /**
+     * Raw codlista supplied by the request (query first, then POST body).
+     */
+    protected function suppliedCodlistaEstructura(): string
+    {
+        if ($this->request->query->has('codlista')) {
+            return trim((string) $this->request->query->get('codlista'));
+        }
+
+        if ($this->request->request->has('codlista')) {
+            return trim((string) $this->request->request->get('codlista'));
+        }
+
+        return '';
+    }
+
+    /**
+     * The active list matching $codlista, or null when it is not offered.
+     */
+    protected function findListaEstructura(string $codlista): ?catalogo_lista_precio
+    {
+        foreach ($this->listas_estructura as $lista) {
+            if ((string) $lista->codlista === $codlista) {
+                return $lista;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The loaded familia matching $codfamilia, or null when it does not exist.
+     * Reuses the already-loaded family list, so the guard costs no query.
+     */
+    protected function findFamilia(string $codfamilia): ?\familia
+    {
+        foreach ($this->familias as $familia) {
+            if ((string) $familia->codfamilia === $codfamilia) {
+                return $familia;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Family-assignment dispatch helper (D6): the write path reuses the EXISTING
+     * event with ACTION_EDIT_ARTICLE + referencia, exactly like the per-list
+     * price save. Public static so the dispatch semantics are unit-testable
+     * without a Kernel.
+     *
+     * @return ArticlePermissionFilterEvent|null the dispatched event (null on transport error)
+     */
+    public static function dispatchFamilyAssignmentFilter(string $referencia, string $nick): ?ArticlePermissionFilterEvent
+    {
+        $filterEvent = new ArticlePermissionFilterEvent(
+            $referencia,
+            ArticlePermissionFilterEvent::ACTION_EDIT_ARTICLE,
+            $nick
+        );
+
+        try {
+            FSEventDispatcher::getInstance()->dispatch($filterEvent, ArticlePermissionFilterEvent::NAME);
+        } catch (\Throwable $e) {
+            error_log('ArticlePermissionFilterEvent listener error: ' . $e->getMessage());
+            $filterEvent->deny('permission filter error');
+        }
+
+        return $filterEvent;
+    }
+
+    /**
+     * Upserts the article's family assignment for ONE price list
+     * (R-FJ-003): writes `catalogo_articulo_familia_estructura` for
+     * (codlista, referencia) only, never a legacy `tarif_*` table.
+     *
+     * An empty family clears the assignment of the selected list. The permission
+     * filter is dispatched BEFORE persistence; a deny blocks the write and
+     * surfaces the listener reason. Inert (zero writes) when the family
+     * structure flag is off.
+     */
+    protected function guardarAsignacionFamilia(Request $request): void
+    {
+        if (!$this->family_structure) {
+            return;
+        }
+
+        if (!$this->validateFormToken()) {
+            $this->new_error_msg('Token de seguridad inválido. Recarga la página e inténtalo de nuevo.');
+            return;
+        }
+
+        $referencia = (string) ($this->articulo?->referencia ?? '');
+        if ($referencia === '') {
+            $this->new_error_msg('No se pudo identificar el artículo de la asignación.');
+            return;
+        }
+
+        $codlista = trim((string) $request->request->get('codlista', ''));
+        if ($codlista === '' || $this->findListaEstructura($codlista) === null) {
+            $this->new_error_msg('Lista de precio no válida para la asignación.');
+            return;
+        }
+
+        $filterEvent = self::dispatchFamilyAssignmentFilter($referencia, (string) $this->user->nick);
+        if ($filterEvent === null || !$filterEvent->isAllowed()) {
+            $this->new_error_msg('No tienes permisos para asignar familias a este artículo: '
+                . ($filterEvent !== null ? $filterEvent->getDenialReason() : 'error del filtro'));
+            return;
+        }
+
+        $model = $this->articulo_familia_estructura_model();
+        $codfamilia = trim((string) $request->request->get('codfamilia', ''));
+
+        if ($codfamilia === '') {
+            $existing = $model->get($codlista, $referencia);
+            if ($existing === false) {
+                $this->new_message('El artículo no tenía familia asignada en la lista ' . $codlista . '.');
+                return;
+            }
+
+            if (!$existing->delete()) {
+                $this->new_error_msg('No se pudo quitar la asignación de familia de la lista ' . $codlista . '.');
+                return;
+            }
+
+            $this->new_message('Asignación de familia eliminada de la lista ' . $codlista . '.');
+            return;
+        }
+
+        if ($this->findFamilia($codfamilia) === null) {
+            $this->new_error_msg('Familia no válida para la asignación.');
+            return;
+        }
+
+        $asignacion = $model->get($codlista, $referencia);
+        if ($asignacion === false) {
+            $asignacion = $this->articulo_familia_estructura_model();
+        }
+
+        $asignacion->codlista = $codlista;
+        $asignacion->referencia = $referencia;
+        $asignacion->codfamilia = $codfamilia;
+        $asignacion->en_catalogo = $request->request->getBoolean('en_catalogo');
+        $asignacion->en_tarifa = $request->request->getBoolean('en_tarifa');
+        $asignacion->orden = $request->request->getInt('orden');
+
+        if (!$asignacion->save()) {
+            $this->new_error_msg('No se pudo guardar la asignación de familia de la lista ' . $codlista . '.');
+            return;
+        }
+
+        $this->new_message('Asignación de familia guardada para la lista ' . $codlista . '.');
     }
 
     private function loadGruposDisponibles(): void

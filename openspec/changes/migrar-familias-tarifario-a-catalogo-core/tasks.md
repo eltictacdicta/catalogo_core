@@ -42,10 +42,28 @@ Chain strategy: pending
 
 ## Phase 3: Tree UI & Article Assignment
 
+> **DEFERRED (2026-10-26): 3.1, 3.2, 3.3 and 3.5 are blocked, not pending.**
+> They target `Controller/VentasFamilias.php` / `View/ventas_familias.html.twig`
+> (page `ventas_familias`, menu `ventas`) and assert that page still exists.
+> That page was **retired** two days after this design was written
+> (`3a5a42ef`, 2026-09-06, "repuntar menu familias a catalogo y retirar
+> ventas_familias"), and `Init::retireVentasFamiliasPage()` deletes its
+> `fs_pages` row on every boot, so 3.5 asks to verify the opposite of what the
+> code does.
+>
+> Current families UI candidates: `controller/tarif_familias.php` (1492 lines,
+> legacy `HtmxCrudController`, the real families CRUD) and
+> `Controller/VentasFamilia.php` (160 lines, PSR-4, single-family detail page).
+> Choosing between them changes the cost and the architecture of this change, so
+> it is an explicit decision, not an implementation detail.
+>
+> **Decision taken:** deliver the unblocked work first — 3.4 plus Phase 4 — and
+> settle the tree-UI target before touching 3.1/3.2/3.3/3.5.
+
 - [ ] 3.1 Modify `Controller/VentasFamilias.php`: list selector (active `catalogo_listas_precio` only, flag-gated), batch read `catalogo_familia_estructura WHERE codlista = ?` (no N+1, D5), structure-column save upsert via model, dispatch `ArticlePermissionFilterEvent` on structure writes (D6). **[TDD-RED]** Extend controller tests: flag-off hides selector/structure UI (inert), flag-off POST → structure not written.
 - [ ] 3.2 Modify `View/ventas_familias.html.twig`: nested `<ul>` tree (depth from `madre` chain, never stored — D2/D5 assumptions), per-node `nivel`/`orden`/`activa`, "Estructura por lista" columns for selected `codlista` (R-FJ-001 tree-render scenario). CSRF field on all POST forms.
 - [ ] 3.3 Cycle-rejection in save path: `editarFamilia` → `FamiliaTreeGuard::assertAcyclic()` before write; on `RuntimeException` → `new_error_msg()`, no `familias` row modified (R-FJ-001 cycle scenario). **[TDD-RED]** Controller test: cycle POST rejected with error message + row unchanged.
-- [ ] 3.4 Modify `Controller/VentasArticulo.php` + view: "Asignación a familias" block per selected list writing `catalogo_articulo_familia_estructura` (D5, R-FJ-003), flag-gated, event dispatch on save (D6). **[TDD-RED]** Extend article controller tests: assignment upsert per list, L2 scoped view excludes L1 assignment (R-FJ-003 scenario 2).
+- [x] 3.4 Modify `Controller/VentasArticulo.php` + view: "Asignación a familias" block per selected list writing `catalogo_articulo_familia_estructura` (D5, R-FJ-003), flag-gated, event dispatch on save (D6). **[TDD-RED]** Extend article controller tests: assignment upsert per list, L2 scoped view excludes L1 assignment (R-FJ-003 scenario 2).
 - [ ] 3.5 Page-name preservation: assert `VentasFamilias::getPageData()` name still `ventas_familias`, menu `ventas` (R-FJ-006). **[TDD-RED]** Extend `tests/` fs_access regression test: existing access-row scenario + new `ventas_catalogo_view` registered under `ventas` menu.
 
 ## Phase 4: Catalog View & Translations
