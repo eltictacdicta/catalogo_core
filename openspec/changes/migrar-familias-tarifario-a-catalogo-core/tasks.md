@@ -75,11 +75,11 @@ Chain strategy: pending
 
 ## Phase 5: Regression & Verification
 
-- [ ] 5.1 Run full suite green: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_core/phpunit.xml`; fix fallout.
-- [ ] 5.2 Migration idempotency re-run in DDEV: `FamiliaEstructuraMigrationIdempotencyTest` (task 2.4) passes — double run, counts stable, legacy tables untouched (R-FJ-005 full scenarios).
-- [ ] 5.3 Run `HookRegistrationTest` (tarifario suite) — stays green (R-FJ-007 regression); plus `tests/ViewHookPointsTest` from catalogo_core side.
-- [ ] 5.4 Inert-when-off verification: with `familyStructureEnabled()` false, full flow produces zero structure UI, zero migration, zero writes (flag-off tests green).
-- [ ] 5.5 Update change docs: mark spec scenarios covered by test classes (coverage map below); note verify-report readiness.
+- [x] 5.1 Full suite green: **1462 tests / 6025 assertions**, 2 warnings + 1 skipped (all pre-existing).
+- [x] 5.2 Idempotency re-run in DDEV: `FamiliaEstructuraMigrationIdempotencyTest` passes 4/4 against the real database (double run, counts stable, `tarif_*` untouched, orphan logged).
+- [x] 5.3 `HookRegistrationTest` (tarifario) **4/4 OK**, and `tests/ViewHookPointsTest` (catalogo_core) green: the 4 host hook points survive.
+- [x] 5.4 Inert when off: `disabledCapabilityReportsItselfAndQueriesNothing` (0 queries), `test_flag_off_exposes_no_block_state_and_reads_nothing`, `test_flag_off_assignment_post_writes_nothing`, `test_template_gates_the_block_on_the_family_structure_flag` and `familiaEstructuraMigrationIsGatedByTheFamilyStructureFlag` all green.
+- [x] 5.5 Coverage map updated below. **Verify-report readiness: NOT ready to archive** — 3.1/3.2/3.3/3.5 remain deferred pending the tree-UI target decision (see the Phase 3 note).
 
 ## Coverage Map
 
