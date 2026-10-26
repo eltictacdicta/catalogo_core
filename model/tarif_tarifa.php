@@ -26,13 +26,6 @@ namespace FSFramework\model;
 class tarif_tarifa extends \fs_model
 {
     /**
-     * Closed whitelist of currencies allowed per tariff. Any value outside
-     * this list fails test() and is rejected by the controller POST handler.
-     * Hard whitelist by design (proposal Q1/Q3) — extension requires a new SDD.
-     */
-    public const ALLOWED_CURRENCIES = ['EUR', 'MXN', 'USD'];
-
-    /**
      * Código de la tarifa. Clave primaria.
      * @var string
      */
@@ -57,8 +50,10 @@ class tarif_tarifa extends \fs_model
     public $por_defecto;
 
     /**
-     * ISO 4217 currency code (whitelisted: EUR, MXN, USD). Single source of
-     * truth for the tariff's currency; views read it to render the symbol.
+     * ISO 4217 currency code (3 characters). Single source of truth for the
+     * tariff's currency; views read it to render the symbol. Which codes can be
+     * chosen is decided by the `admin_divisas` catalog (change
+     * `tarifas-divisa-catalogo`), not by a hardcoded list here.
      * @var string
      */
     public $coddivisa;
@@ -159,8 +154,8 @@ class tarif_tarifa extends \fs_model
         }
 
         $this->coddivisa = strtoupper(trim((string) $this->coddivisa));
-        if (!in_array($this->coddivisa, self::ALLOWED_CURRENCIES, true)) {
-            $this->new_error_msg("Moneda no permitida. Use EUR, MXN o USD.");
+        if (preg_match('/^[A-Z0-9]{3}$/', $this->coddivisa) !== 1) {
+            $this->new_error_msg("Moneda no válida. Debe ser un código ISO de 3 caracteres.");
             return FALSE;
         }
 

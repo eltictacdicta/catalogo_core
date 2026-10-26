@@ -301,12 +301,15 @@
                </div>
                <div class="form-group">
                   <label>Moneda <span class="text-danger">*</span></label>
-                  <select class="form-control" name="coddivisa" id="modal_coddivisa" required>
-                     <option value="EUR"{% if tarifa is defined and tarifa.coddivisa == 'EUR' %} selected{% endif %}>EUR — Euro</option>
-                     <option value="MXN"{% if tarifa is defined and tarifa.coddivisa == 'MXN' %} selected{% endif %}>MXN — Peso mexicano</option>
-                     <option value="USD"{% if tarifa is defined and tarifa.coddivisa == 'USD' %} selected{% endif %}>USD — Dólar estadounidense</option>
+                  <select class="form-control" name="coddivisa" id="modal_coddivisa"
+                          data-default="{{ fsc.coddivisa_defecto }}" required>
+                     {% for divisa in fsc.divisas %}
+                     <option value="{{ divisa.coddivisa }}">{{ divisa.coddivisa }} — {{ divisa.descripcion }}</option>
+                     {% else %}
+                     <option value="{{ fsc.coddivisa_defecto }}">{{ fsc.coddivisa_defecto }}</option>
+                     {% endfor %}
                   </select>
-                  <p class="help-block">La moneda de la tarifa determina el símbolo que se muestra en los precios. No se aplica conversión automática de divisas; los precios numéricos se interpretan en la moneda seleccionada.</p>
+                  <p class="help-block">Las monedas disponibles son las configuradas en <a href="index.php?page=admin_divisas">Divisas</a>. La moneda de la tarifa determina el símbolo que se muestra en los precios. No se aplica conversión automática de divisas; los precios numéricos se interpretan en la moneda seleccionada.</p>
                </div>
             </div>
             <div class="modal-footer">
@@ -433,6 +436,19 @@
       });
    }
 
+   function seleccionar_coddivisa(cod)
+   {
+      var $sel = $('#modal_coddivisa');
+      var valor = String(cod || $sel.data('default') || 'EUR').toUpperCase();
+      var existe = $sel.find('option').filter(function() { return this.value === valor; }).length > 0;
+      if (!existe) {
+         // Divisa histórica que ya no está en el catálogo: se mantiene
+         // seleccionable para no bloquear la edición de la tarifa.
+         $sel.append($('<option>').attr('value', valor).text(valor + ' (no configurada)'));
+      }
+      $sel.val(valor);
+   }
+
    function editar_tarifa(cod, nombre, activa, por_defecto, coddivisa)
    {
       $('#modal_codtarifa').val(cod);
@@ -440,7 +456,7 @@
       $('#modal_nombre').val(nombre);
       $('#modal_activa').prop('checked', activa);
       $('#modal_por_defecto').prop('checked', por_defecto);
-      $('#modal_coddivisa').val(coddivisa || 'EUR');
+      seleccionar_coddivisa(coddivisa);
       $('#modal_title').text('Editar tarifa');
       $('#heredar_group').hide();
       // Ocultar grupo en edición (se gestiona desde el botón de la tabla)
@@ -457,7 +473,7 @@
       $('#modal_por_defecto').prop('checked', false);
       $('#modal_heredar_de').val('');
       $('#modal_codgrupo').val('');
-      $('#modal_coddivisa').val('EUR');
+      seleccionar_coddivisa('');
       $('#modal_title').text('Nueva tarifa');
       $('#heredar_group').show();
       $('#modal_codgrupo').closest('.form-group').show();

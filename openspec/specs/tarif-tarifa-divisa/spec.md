@@ -10,11 +10,16 @@ when the code moved to `catalogo_core` (change
 `migrar-tarif-tarifas-a-catalogo-core`, 2026-09-13). The requirement ids
 (`R-TAR-CUR-*`) are preserved so existing references stay valid.
 
+Updated by change `tarifas-divisa-catalogo` (2026-10-26): the closed
+`ALLOWED_CURRENCIES` whitelist (`EUR`, `MXN`, `USD`) was replaced by the
+`admin_divisas` catalog. R-TAR-CUR-001/003/005/007 changed; the rest is
+unchanged.
+
 ## Requirements
 
 ### Requirement: `tarif_tarifa::coddivisa` property (R-TAR-CUR-001)
 
-`tarif_tarifa` MUST expose `public string $coddivisa`. Constructor with no `$data` sets it to `'EUR'`; with `$data['coddivisa']` it normalizes the value via `trim()` + `strtoupper()` before assigning it (the controller also validates against the whitelist — R-007).
+`tarif_tarifa` MUST expose `public $coddivisa`. Constructor with no `$data` sets it to `'EUR'`; with `$data['coddivisa']` it normalizes the value via `trim()` + `strtoupper()` before assigning it. The model MUST NOT own a hardcoded currency whitelist; the selectable set is the `admin_divisas` catalog (R-TAR-CUR-007).
 
 #### Scenario: Default currency on empty constructor
 
@@ -44,21 +49,22 @@ XML schema MUST add `<columna><nombre>coddivisa</nombre><tipo>character varying(
 - WHEN `save()` runs
 - THEN the emitted UPDATE contains `coddivisa = 'USD'`
 
-### Requirement: Closed whitelist `ALLOWED_CURRENCIES` (R-TAR-CUR-003, R-TAR-CUR-005)
+### Requirement: ISO 4217 format validation, no closed whitelist (R-TAR-CUR-003, R-TAR-CUR-005)
 
-The class MUST expose `public const ALLOWED_CURRENCIES = ['EUR', 'MXN', 'USD'];`. `test()` MUST reject (case-insensitive, post-trim) any `coddivisa` not in the whitelist, returning FALSE and calling `new_error_msg("Moneda no permitida. Use EUR, MXN o USD.")`.
+`test()` MUST normalize `coddivisa` with `trim()` + `strtoupper()` and MUST reject (returning FALSE with an explicit `new_error_msg`) any value that does not match the ISO 4217 shape `^[A-Z0-9]{3}$`. The class MUST NOT expose a hardcoded `ALLOWED_CURRENCIES` list and MUST NOT restrict the value to a fixed set of codes: which currencies exist is configuration, owned by `admin_divisas`.
 
-#### Scenario: Invalid currency rejected
+#### Scenario: Any catalog currency passes the model
 
-- GIVEN `$model->coddivisa = 'GBP'`
+- GIVEN `$model->coddivisa = 'ars'`
 - WHEN `test()` runs
-- THEN returns FALSE AND the error message contains `EUR, MXN o USD`
+- THEN returns TRUE
+- AND `$model->coddivisa === 'ARS'`
 
-#### Scenario: Valid currencies accepted case-insensitive
+#### Scenario: Malformed codes rejected
 
-- GIVEN the 3 valid currencies in lower/upper/mixed case (9 combinations)
+- GIVEN `coddivisa` in `'EU'`, `'EURO'`, `''`, `'U$D'`
 - WHEN `test()` runs for each
-- THEN returns TRUE for all 9
+- THEN each returns FALSE and emits an error message
 
 ### Requirement: DEF seed + idempotent column migration (R-TAR-CUR-004, R-TAR-CUR-006)
 
@@ -76,21 +82,41 @@ The class MUST expose `public const ALLOWED_CURRENCIES = ['EUR', 'MXN', 'USD'];`
 - WHEN the function runs
 - THEN exactly one `exec()` is called with `ALTER TABLE tarif_tarifas ADD COLUMN coddivisa VARCHAR(3) NOT NULL DEFAULT 'EUR'`
 
-### Requirement: Controller-side normalization + validation (R-TAR-CUR-007)
+### Requirement: Controller-side catalog validation (R-TAR-CUR-007)
 
-`tarif_tarifas::guardar_tarifa()` MUST read `$_POST['coddivisa']`, apply `trim()` + `strtoupper()`, validate against `tarif_tarifa::ALLOWED_CURRENCIES`, then assign to `$tarifa->coddivisa`. On invalid input MUST call `new_error_msg` with the whitelist message and abort BEFORE `$tarifa->save()`.
+`tarif_tarifas::guardar_tarifa()` MUST read `$_POST['coddivisa']`, apply `trim()` + `strtoupper()`, fall back to the page's default currency when the field is empty, and validate the result against the currency codes configured in `admin_divisas`. A currency already stored in the edited tariff MUST remain acceptable so an unrelated edit is never blocked. On invalid input it MUST call `new_error_msg` and abort BEFORE `$tarifa->save()`. When no currency is configured at all it MUST degrade to the model's ISO format check. The page MUST expose the configured currencies and the default currency to the view, and the currency select MUST be built from them.
 
 #### Scenario: Lowercase input is normalized
 
-- GIVEN POST `coddivisa=usd`
+- GIVEN POST `coddivisa=usd` with `USD` configured
 - WHEN `guardar_tarifa()` runs
 - THEN `$tarifa->coddivisa === 'USD'` and `save()` is called
 
-#### Scenario: Invalid input aborts without save
+#### Scenario: Currency outside the catalog aborts without save
 
-- GIVEN POST `coddivisa=GBP`
-- WHEN `guardar_tarifa()` runs
-- THEN `new_error_msg` is called with the whitelist message AND `save()` is NOT called
+- GIVEN `EUR` and `USD` configured, `GBP` not configured
+- WHEN POST carries `coddivisa=GBP` on a tariff whose stored currency is `EUR`
+- THEN `new_error_msg` is called AND `save()` is NOT called
+
+#### Scenario: Configured currency outside the old whitelist is accepted
+
+- GIVEN `ARS` configured in `admin_divisas`
+- WHEN POST carries `coddivisa=ARS`
+- THEN the save is accepted and `coddivisa = 'ARS'`
+
+#### Scenario: Stored currency removed from the catalog stays editable
+
+- GIVEN a tariff stored with `coddivisa = 'GBP'` after `GBP` was removed from the catalog
+- WHEN the operator renames that tariff
+- THEN the save is accepted and `GBP` is preserved
+- AND `GBP` is not offered when creating a new tariff
+
+#### Scenario: Empty catalog degrades to format validation
+
+- GIVEN no currencies configured in `admin_divisas`
+- WHEN POST carries a three-character currency
+- THEN the save is accepted
+- AND a value that is not exactly three alphanumeric characters is rejected
 
 ### Requirement: Copy operations preserve destination currency (R-TAR-CUR-008)
 

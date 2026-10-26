@@ -30,6 +30,7 @@ require_once 'plugins/catalogo_core/model/core/caracteristica_scope_value.php';
 require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_articulo.php';
 require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_familia.php';
 require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_global.php';
+require_once 'plugins/catalogo_core/model/core/divisa.php';
 
 use FSFramework\model\tarif_tarifa;
 use FSFramework\model\catalogo_caracteristica_articulo;
@@ -87,6 +88,18 @@ class tarif_tarifas extends fbase_controller
      */
     public $grupo_rol_model;
 
+    /**
+     * Divisas configuradas en admin_divisas: el conjunto seleccionable.
+     * @var array
+     */
+    public $divisas = [];
+
+    /**
+     * Divisa preseleccionada al crear una tarifa.
+     * @var string
+     */
+    public $coddivisa_defecto = 'EUR';
+
     public function __construct()
     {
         parent::__construct(__CLASS__, 'Tarifas', 'tarifario');
@@ -99,6 +112,9 @@ class tarif_tarifas extends fbase_controller
         $this->tarifa = new tarif_tarifa();
         $this->tarifa_familia = new tarif_tarifa_familia();
         $this->tarifa_articulo = new tarif_tarifa_articulo();
+
+        $this->divisas = $this->loadDivisas();
+        $this->coddivisa_defecto = $this->resolveDefaultDivisa();
 
         $this->grupo_tarifa_model = $this->loadTarifarioModel('FSFramework\\model\\tarif_grupo_tarifa');
         $this->grupo_rol_model = $this->loadTarifarioModel('FSFramework\\model\\tarif_grupo_rol');
@@ -148,6 +164,81 @@ class tarif_tarifas extends fbase_controller
 
         // Cargar tarifas
         $this->resultados = $this->tarifa->all();
+    }
+
+    /**
+     * Divisas configuradas en `admin_divisas`. Es la única fuente de códigos
+     * seleccionables para una tarifa.
+     *
+     * @return array
+     */
+    protected function loadDivisas(): array
+    {
+        return (new \divisa())->all();
+    }
+
+    /**
+     * Códigos configurados, en mayúsculas. Seam sobreescribible para que la
+     * validación sea testeable sin base de datos.
+     *
+     * @return list<string>
+     */
+    protected function configuredDivisaCodes(): array
+    {
+        $codes = [];
+        foreach ($this->divisas as $divisa) {
+            $code = strtoupper(trim((string) $divisa->coddivisa));
+            if ($code !== '') {
+                $codes[] = $code;
+            }
+        }
+
+        return $codes;
+    }
+
+    /**
+     * Divisa preseleccionada al crear una tarifa: la de la sesión/empresa si
+     * está configurada, si no EUR, si no la primera del catálogo.
+     */
+    private function resolveDefaultDivisa(): string
+    {
+        $configured = $this->configuredDivisaCodes();
+        $preferred = strtoupper(trim((string) ($this->default_items?->coddivisa() ?? '')));
+
+        if ($preferred !== '' && in_array($preferred, $configured, true)) {
+            return $preferred;
+        }
+
+        if (in_array('EUR', $configured, true)) {
+            return 'EUR';
+        }
+
+        return $configured[0] ?? 'EUR';
+    }
+
+    /**
+     * Solo se acepta una divisa configurada. La que la tarifa ya guarda sigue
+     * siendo válida para no bloquear una edición no relacionada cuando esa
+     * divisa se borró del catálogo después.
+     */
+    private function isSelectableDivisa(string $coddivisa, string $current = ''): bool
+    {
+        if ($coddivisa === '') {
+            return false;
+        }
+
+        if ($current !== '' && $coddivisa === $current) {
+            return true;
+        }
+
+        $configured = $this->configuredDivisaCodes();
+        if ($configured === []) {
+            // Catálogo vacío: el formato ISO del modelo queda como única
+            // barrera en lugar de impedir crear tarifas.
+            return preg_match('/^[A-Z0-9]{3}$/', $coddivisa) === 1;
+        }
+
+        return in_array($coddivisa, $configured, true);
     }
 
     /**
@@ -206,15 +297,18 @@ class tarif_tarifas extends fbase_controller
         $tarifa->activa = isset($_POST['activa']);
         $tarifa->por_defecto = isset($_POST['por_defecto']);
 
-        // Validar coddivisa (per-tariff currency). El modelo también
-        // valida en test(), pero hacerlo en el controller garantiza un
-        // abort temprano antes de generar SQL y un mensaje de error
-        // explícito al usuario vía new_error_msg. La normalización
-        // strtoupper/trim evita que 'usd' o ' usd ' se rechacen
-        // incorrectamente por case-sensitivity o espacios.
+        // Validar coddivisa (per-tariff currency) contra el catálogo de
+        // admin_divisas. El modelo solo valida el formato ISO de tres
+        // caracteres; qué monedas existen es una decisión de configuración.
+        // La normalización strtoupper/trim evita que 'usd' o ' usd ' se
+        // rechacen incorrectamente por case-sensitivity o espacios.
         $coddivisa = isset($_POST['coddivisa']) ? strtoupper(trim((string) $_POST['coddivisa'])) : '';
-        if (!in_array($coddivisa, tarif_tarifa::ALLOWED_CURRENCIES, true)) {
-            $this->new_error_msg('Moneda no válida. Use EUR, MXN o USD.');
+        if ($coddivisa === '') {
+            $coddivisa = $this->coddivisa_defecto;
+        }
+        $coddivisa_actual = $is_new ? '' : strtoupper(trim((string) $tarifa->coddivisa));
+        if (!$this->isSelectableDivisa($coddivisa, $coddivisa_actual)) {
+            $this->new_error_msg('La moneda seleccionada no está configurada en Divisas.');
             return;
         }
         $tarifa->coddivisa = $coddivisa;

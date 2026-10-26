@@ -17,21 +17,19 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for tarif_tarifas::guardar_tarifa() — coddivisa POST validation.
- * Implements design §7.3 tests #13-#14 of tarifario-tarifa-coddivisa.
+ * Originally implemented design §7.3 tests #13-#14 of tarifario-tarifa-coddivisa;
+ * retargeted by change `tarifas-divisa-catalogo`: the selectable set is now the
+ * `admin_divisas` catalog, not the hardcoded ALLOWED_CURRENCIES list.
  *
  * Relocated from tarifario when the tarifas CRUD page moved to catalogo_core.
  *
- * Strict TDD: this file ships BEFORE the production validation (T10 RED
- * -> T11 GREEN). The 2 tests below must FAIL on this commit and PASS
- * once T11 lands in controller/tarif_tarifas.php.
- *
  * Mocking strategy: anonymous subclass of tarif_tarifas that skips the
  * parent constructor (no DB, no FS init), overrides private_core() to a
- * no-op, and re-declares guardar_tarifa() as public. The model
- * ($this->tarifa) is itself an anonymous subclass of tarif_tarifa that
- * records every save() call. get($cod) returns the same tracked object
- * so the controller goes down the "edición" branch (no new instance
- * created) and we can observe what coddivisa value reaches save().
+ * no-op, re-declares guardar_tarifa() as public and stubs the currency
+ * catalog seam. The model ($this->tarifa) is itself an anonymous subclass of
+ * tarif_tarifa that records every save() call. get($cod) returns the same
+ * tracked object so the controller goes down the "edición" branch (no new
+ * instance created) and we can observe what coddivisa value reaches save().
  */
 final class TarifTarifasGuardarTest extends TestCase
 {
@@ -143,6 +141,10 @@ final class TarifTarifasGuardarTest extends TestCase
         $controller = new class($this, $this->trackedModel) extends \tarif_tarifas {
             public $outer;
             public $tarifa;
+
+            /** @var list<string> stub of the admin_divisas catalog */
+            public array $catalog = ['EUR', 'MXN', 'USD'];
+
             public function __construct($outer, $mockTarifa)
             {
                 // Skip parent::__construct — heavy FS init would try to
@@ -155,6 +157,14 @@ final class TarifTarifasGuardarTest extends TestCase
             {
                 // no-op: do NOT call parent::private_core(); the parent
                 // would re-instantiate $this->tarifa and clobber our mock.
+            }
+            protected function configuredDivisaCodes(): array
+            {
+                return $this->catalog;
+            }
+            public function set_catalog(array $codes): void
+            {
+                $this->catalog = $codes;
             }
             public function call_guardar_tarifa(): void
             {
@@ -184,10 +194,10 @@ final class TarifTarifasGuardarTest extends TestCase
     }
 
     /**
-     * Test #13 — POST with coddivisa='GBP' must be rejected BEFORE save()
-     * runs, with the whitelist error message emitted via new_error_msg.
+     * A currency that the catalog does not configure must be rejected BEFORE
+     * save() runs, with an explicit error pointing at the Divisas page.
      */
-    public function test_guardar_tarifa_rejects_invalid_coddivisa(): void
+    public function test_guardar_tarifa_rejects_a_currency_missing_from_the_catalog(): void
     {
         $_POST = [
             'action' => 'guardar_tarifa',
@@ -201,22 +211,39 @@ final class TarifTarifasGuardarTest extends TestCase
         $this->assertSame(
             0,
             $this->saveCount,
-            'save() must not be called when coddivisa is invalid'
+            'save() must not be called when the currency is not configured'
         );
-        $errors = $this->controller->get_errors();
-        $this->assertNotEmpty(
+        $errors = implode(' | ', $this->controller->get_errors());
+        $this->assertStringContainsString(
+            'Divisas',
             $errors,
-            'new_error_msg should have been called with the whitelist message'
+            'The error must tell the operator where the currency is configured'
         );
-        $combined = implode(' | ', $errors);
-        $this->assertStringContainsString('EUR', $combined);
-        $this->assertStringContainsString('MXN', $combined);
-        $this->assertStringContainsString('USD', $combined);
     }
 
     /**
-     * Test #14 — POST with coddivisa='usd' must be normalized to 'USD' on
-     * the model and save() must be called exactly once.
+     * A currency configured in the catalog is accepted even when it was never
+     * part of the removed ALLOWED_CURRENCIES list.
+     */
+    public function test_guardar_tarifa_accepts_a_catalog_currency_outside_the_old_whitelist(): void
+    {
+        $this->controller->set_catalog(['EUR', 'MXN', 'USD', 'ARS']);
+        $_POST = [
+            'action' => 'guardar_tarifa',
+            'codtarifa' => 'TEST',
+            'nombre' => 'Tarifa Test',
+            'coddivisa' => 'ARS',
+        ];
+
+        $this->controller->call_guardar_tarifa();
+
+        $this->assertSame(1, $this->saveCount, 'save() must be called for a configured currency');
+        $this->assertSame('ARS', $this->lastSavedCoddivisa);
+        $this->assertEmpty($this->controller->get_errors());
+    }
+
+    /**
+     * Lowercase input must be normalized to uppercase on the model.
      */
     public function test_guardar_tarifa_normalizes_lowercase_coddivisa(): void
     {
@@ -243,6 +270,66 @@ final class TarifTarifasGuardarTest extends TestCase
         $this->assertEmpty(
             $errors,
             'No error should be emitted for a valid currency'
+        );
+    }
+
+    /**
+     * A tariff that already stores a currency which was later removed from the
+     * catalog must stay editable: the stored value remains selectable.
+     */
+    public function test_guardar_tarifa_keeps_a_stored_currency_dropped_from_the_catalog(): void
+    {
+        $this->trackedModel->coddivisa = 'GBP';
+        $_POST = [
+            'action' => 'guardar_tarifa',
+            'codtarifa' => 'TEST',
+            'nombre' => 'Tarifa Renombrada',
+            'coddivisa' => 'GBP',
+        ];
+
+        $this->controller->call_guardar_tarifa();
+
+        $this->assertSame(
+            1,
+            $this->saveCount,
+            'Renaming a tariff must not be blocked by a historic currency'
+        );
+        $this->assertSame('GBP', $this->lastSavedCoddivisa);
+    }
+
+    /**
+     * With no currency configured at all, the model's ISO format check is the
+     * only gate: creating tariffs must stay possible.
+     */
+    public function test_guardar_tarifa_degrades_to_format_validation_without_catalog(): void
+    {
+        $this->controller->set_catalog([]);
+        $_POST = [
+            'action' => 'guardar_tarifa',
+            'codtarifa' => 'TEST',
+            'nombre' => 'Tarifa Test',
+            'coddivisa' => 'GBP',
+        ];
+
+        $this->controller->call_guardar_tarifa();
+
+        $this->assertSame(1, $this->saveCount, 'A three-character currency must pass when nothing is configured');
+        $this->assertSame('GBP', $this->lastSavedCoddivisa);
+    }
+
+    /**
+     * The tariff modal renders the currency options from the catalog instead of
+     * the hardcoded EUR/MXN/USD triple.
+     */
+    public function test_view_builds_the_currency_options_from_the_catalog(): void
+    {
+        $content = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/tarif_tarifas.html.twig');
+
+        $this->assertStringContainsString('{% for divisa in fsc.divisas %}', $content);
+        $this->assertStringNotContainsString(
+            '<option value="MXN"',
+            $content,
+            'The hardcoded currency triple must be gone'
         );
     }
 }
