@@ -321,6 +321,80 @@ final class InitUpgradeTest extends TestCase
     }
 
     /**
+     * Familias-jerarquia task 2.3 (D3 lifecycle hook): the legacy family
+     * structure migration must stay inert while the capability flag is off —
+     * the gate is an early return placed before the call, so flag-off executes
+     * zero statements and copies zero rows.
+     */
+    #[Test]
+    public function familiaEstructuraMigrationIsGatedByTheFamilyStructureFlag(): void
+    {
+        $src = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Init.php');
+
+        $helper = $this->methodBody($src, 'private static function migrateFamiliaEstructura(): void');
+
+        $this->assertStringContainsString(
+            '(new CatalogoOptions())->familyStructureEnabled()',
+            $helper,
+            'the boot migration must be gated by the family-structure capability flag'
+        );
+
+        $guard = mb_strpos($helper, 'familyStructureEnabled()');
+        $call = mb_strpos($helper, 'FamiliaEstructuraMigration::migrateIfNeeded($db)');
+        $this->assertNotFalse($guard);
+        $this->assertNotFalse($call, 'the helper must call the migration service with the boot db');
+        $this->assertLessThan(
+            $call,
+            $guard,
+            'the flag check must precede the migration call (flag off → no migration)'
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/if\s*\(\s*!\s*\(new CatalogoOptions\(\)\)->familyStructureEnabled\(\)\s*\)\s*\{\s*return;/s',
+            $helper,
+            'flag off must short-circuit with a return before touching the database'
+        );
+
+        // The gate itself behaves as documented: absent key → off.
+        $this->assertFalse((new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions([]))->familyStructureEnabled());
+    }
+
+    /**
+     * Familias-jerarquia task 2.3: the migration must run on the boot path and
+     * after the ensure-tables step, so the canonical structure tables exist
+     * before the copy is attempted.
+     */
+    #[Test]
+    public function familiaEstructuraMigrationRunsAfterEnsureTables(): void
+    {
+        $src = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Init.php');
+
+        $init = $this->methodBody($src, 'public function init(): void');
+        $this->assertStringContainsString(
+            'self::migrateFamiliaEstructura();',
+            $init,
+            'init() must wire the flag-gated family-structure migration'
+        );
+        $this->assertLessThan(
+            mb_strpos($init, 'self::migrateFamiliaEstructura();'),
+            mb_strpos($init, 'self::ensureCaracteristicasTables();'),
+            'init() must ensure the catalog tables before running the migration'
+        );
+
+        $upgrade = $this->methodBody($src, 'public static function upgrade(): void');
+        $this->assertStringContainsString(
+            'self::migrateFamiliaEstructura();',
+            $upgrade,
+            'upgrade() must run the same flag-gated migration on activation'
+        );
+        $this->assertLessThan(
+            mb_strpos($upgrade, 'self::migrateFamiliaEstructura();'),
+            mb_strpos($upgrade, 'self::ensureCatalogTables();'),
+            'the structure tables are installed by ensureCatalogTables() and must be ensured first'
+        );
+    }
+
+    /**
      * Multitarifa task 2.4 (D4): Init::init() must register the first-party
      * GroupPermissionListener unconditionally on the permission filter event.
      */

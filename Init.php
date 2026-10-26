@@ -13,6 +13,8 @@ use FSFramework\Plugins\catalogo_core\Services\CatalogLegacyTableMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaBackfillMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaColumnDropMigration;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaRegistry;
+use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
+use FSFramework\Plugins\catalogo_core\Services\FamiliaEstructuraMigration;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 use FSFramework\View\ViewHookRegistry;
 use Twig\Loader\FilesystemLoader;
@@ -99,6 +101,7 @@ final class Init
         } catch (\Throwable $e) {
             error_log('[catalogo_core] caracteristicas backfill failed: ' . $e->getMessage());
         }
+        self::migrateFamiliaEstructura();
         try {
             self::registerViewExtensions();
         } catch (\Throwable $e) {
@@ -152,6 +155,7 @@ final class Init
             } catch (\Throwable $e) {
                 error_log('[catalogo_core] caracteristicas backfill failed: ' . $e->getMessage());
             }
+            self::migrateFamiliaEstructura();
             try {
                 // CAR-15 clause 1 (D12 opcional flags): parity-gated, no soak,
                 // idempotent, refuses under the explicit legacy opt-out. It runs
@@ -564,6 +568,34 @@ final class Init
             }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Familias-jerarquia (D3 lifecycle hook): copies the legacy per-tariff
+     * family structure into the canonical per-price-list tables.
+     *
+     * Guarded by `CatalogoOptions::familyStructureEnabled()` (default off):
+     * enabling the capability is the operator's explicit go-live moment, so
+     * before it the migration executes zero statements and copies zero rows.
+     * Idempotent and non-destructive, so it is safe to run on every boot.
+     */
+    private static function migrateFamiliaEstructura(): void
+    {
+        try {
+            if (!(new CatalogoOptions())->familyStructureEnabled()) {
+                return;
+            }
+
+            $db = self::plugin_db();
+            if (!$db instanceof \fs_db2) {
+                return;
+            }
+
+            require_once FS_FOLDER . '/plugins/catalogo_core/Services/FamiliaEstructuraMigration.php';
+            FamiliaEstructuraMigration::migrateIfNeeded($db);
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] familia-estructura migration failed: ' . $e->getMessage());
         }
     }
 
