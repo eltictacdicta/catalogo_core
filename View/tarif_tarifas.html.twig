@@ -439,12 +439,16 @@
    function seleccionar_coddivisa(cod)
    {
       var $sel = $('#modal_coddivisa');
+      // Las opciones históricas las agrega la edición de una tarifa: no deben
+      // sobrevivir al siguiente uso del modal, porque una tarifa NUEVA no
+      // puede elegir una moneda fuera del catálogo.
+      $sel.find('option[data-historica]').remove();
       var valor = String(cod || $sel.data('default') || 'EUR').toUpperCase();
       var existe = $sel.find('option').filter(function() { return this.value === valor; }).length > 0;
       if (!existe) {
          // Divisa histórica que ya no está en el catálogo: se mantiene
          // seleccionable para no bloquear la edición de la tarifa.
-         $sel.append($('<option>').attr('value', valor).text(valor + ' (no configurada)'));
+         $sel.append($('<option>').attr('value', valor).attr('data-historica', '1').text(valor + ' (no configurada)'));
       }
       $sel.val(valor);
    }

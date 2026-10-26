@@ -167,7 +167,7 @@ The 8 no-arg `fsc.simbolo_divisa()` call sites MUST be replaced with `fsc.simbol
 
 ### Requirement: Python tool emits `tarifa_coddivisa` in JSON (R-TAR-CUR-011)
 
-`plugins/tarifario/tools/tarifa_excel_to_json.py` MUST emit a `tarifa_coddivisa` field in the JSON metadata, defaulting to `'EUR'`. The class docstring MUST document: "El JSON puede llevar `tarifa_coddivisa: 'USD' | 'EUR' | 'MXN'`. El importador PHP actual ignora este campo; el operador debe crear la tarifa destino con la moneda correcta antes de importar."
+`plugins/tarifario/tools/tarifa_excel_to_json.py` MUST emit a `tarifa_coddivisa` field in the JSON metadata, defaulting to `'EUR'`. The class docstring MUST document that the field is an ISO 4217 three-letter code configured in `admin_divisas` (the `divisas` catalog), with `EUR`/`MXN`/`USD` as examples only — not as an exclusive whitelist — and that the current PHP importer ignores the field, so the operator must create the destination tariff with the correct currency before importing.
 
 #### Scenario: Default currency in JSON output
 

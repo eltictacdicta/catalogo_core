@@ -57,11 +57,22 @@ grep -rn "EUR, MXN o USD" plugins/     -> 0 resultados
 
 ## Limitaciones
 
-- Sin smoke en navegador: el modal de tarifas requiere sesión de admin y datos
-  reales; el select y el JS se validaron por parse de Twig y por test estructural.
-- El perfil `phpstan-plugins.neon` indexa `catalogo_core` en
-  `scanDirectories`; la ausencia de errores confirma que no rompe el análisis,
-  no que el controlador esté tipado de punta a punta.
+- Sin smoke en navegador (modal admin con datos reales); validado por parse de
+  Twig 3 y test estructural de la vista.
+- `phpstan-plugins.neon` indexa `catalogo_core` en `scanDirectories`: sin
+  errores, pero eso no prueba tipado completo del controlador.
+
+## Revisión de CodeRabbit
+
+`coderabbit review --agent --base-commit <padre>` sobre el commit del change:
+1 hallazgo `minor`, corregido.
+
+- **Selector de moneda — opciones históricas persistentes.** La opción
+  `(no configurada)` que agregaba la edición sobrevivía al abrir "Nueva
+  tarifa", ofreciendo una moneda que el controlador rechaza para tarifas
+  nuevas. `seleccionar_coddivisa()` ahora elimina las opciones marcadas con
+  `data-historica` antes de seleccionar y solo agrega la de la tarifa en
+  edición.
 
 ## Riesgos residuales
 

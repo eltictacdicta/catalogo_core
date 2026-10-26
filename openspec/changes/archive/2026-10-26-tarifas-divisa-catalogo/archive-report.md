@@ -66,12 +66,19 @@ TDD: RED verificado antes de implementar (4 fallos en
 
 ### Deuda registrada (no incluida)
 
-- `plugins/tarifario/tools/tarifa_excel_to_json.py` sigue documentando
-  `tarifa_coddivisa: 'USD' | 'EUR' | 'MXN'` como conjunto de ejemplo
-  (R-TAR-CUR-011 no cambió; es documentación, no validación).
 - El `help-block` del modal de artículos que menciona conversión de divisas no
   se revisó en este change.
 - Versionado del plugin (`fsframework.ini`) sin tocar: no se pidió release.
+
+### Post-archivo (2026-10-26)
+
+Se cerró el residuo de documentación del convertidor Python: el docstring de
+`plugins/tarifario/tools/tarifa_excel_to_json.py` decía `Whitelist: EUR | MXN |
+USD`, que dejó de ser cierto con este change. Se reescribió para indicar que el
+código debe estar configurado en `admin_divisas` y que EUR/MXN/USD son solo
+ejemplos, y se ajustó `R-TAR-CUR-011` en el canónico para exigir esa redacción.
+El archivo vive en el repo del plugin `tarifario`; el cambio es solo de
+documentación (no altera la salida de la herramienta).
 
 ### Mecánica de archivo
 

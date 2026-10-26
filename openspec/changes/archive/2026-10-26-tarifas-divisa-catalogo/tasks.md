@@ -31,7 +31,9 @@ de producción (`TarifTarifasGuardarTest` 4 fallos, `TarifTarifaCoddivisaFormatT
       moneda por defecto.
 - [x] **T3.2** JS `seleccionar_coddivisa()`: tolera una moneda histórica
       ausente del catálogo agregándola como `(no configurada)` antes de
-      seleccionarla; la usan tanto el alta como la edición.
+      seleccionarla; la usan tanto el alta como la edición, y las opciones
+      históricas se limpian en cada apertura para que una tarifa nueva no pueda
+      elegirlas (hallazgo de CodeRabbit).
 - [x] **T3.3** Enlace y aclaración en el `help-block` hacia `admin_divisas`.
 
 ## T4 — Pruebas
