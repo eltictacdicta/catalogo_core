@@ -81,17 +81,21 @@ final class VentasArticuloFamilyAssignmentTest extends TestCase
      */
     private function loadProductionChain(): void
     {
-        if (class_exists(\FSFramework\Plugins\catalogo_core\Controller\VentasArticulo::class, false)) {
-            return;
+        // The doubles are fixtures of THIS test class: they must be loaded on
+        // every run, so they stay outside the production-chain guard below.
+        // Requiring them is idempotent, and doing it first is safe only because
+        // the chain they extend is loaded right before on a cold process; when
+        // the guard short-circuits, another test already loaded that chain.
+        if (!class_exists(\FSFramework\Plugins\catalogo_core\Controller\VentasArticulo::class, false)) {
+            require_once FS_FOLDER . '/base/fs_controller.php';
+            require_once FS_FOLDER . '/base/fs_app.php';
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_familia_estructura.php';
+            require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php';
         }
 
-        require_once FS_FOLDER . '/base/fs_controller.php';
-        require_once FS_FOLDER . '/base/fs_app.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_familia_estructura.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php';
         // The doubles extend legacy models, so they load after the chain.
         require_once __DIR__ . '/../Support/FakeFamilyAssignmentModel.php';
 
