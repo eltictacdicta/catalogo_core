@@ -27,6 +27,9 @@ use FSFramework\model\tarif_tarifa_etiqueta_familia;
 use FSFramework\model\tarif_tarifa;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaResolver;
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaValorStore;
+use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
+use FSFramework\Plugins\catalogo_core\Services\FamiliaEstructuraStore;
+use FSFramework\Plugins\catalogo_core\Services\FamiliaTreeGuard;
 use FSFramework\Plugins\catalogo_core\Services\TarifaFamiliaReorder;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -75,6 +78,24 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     /** @var boolean Filtrar solo activas */
     public $b_solo_activas;
 
+    /**
+     * Capacidad "estructura de familias por lista" (familias-jerarquia D5).
+     * Flag off ⇒ la página opera sobre `tarif_tarifa_familia` (rollback exacto).
+     */
+    public $family_structure = false;
+
+    /** @var array<int, object> Listas de precio activas para el selector. */
+    public $listas_estructura = [];
+
+    /** @var string Lista en contexto (`?codlista=`), '' cuando el flag está off. */
+    public $codlista_estructura = '';
+
+    /** @var array<string, object> codfamilia => fila de estructura de la lista en contexto. */
+    public $estructura_por_familia = [];
+
+    /** @var FamiliaEstructuraStore|null */
+    private $estructura_store = null;
+
     public function __construct()
     {
         parent::__construct(__CLASS__, 'Familias', 'catalogo');
@@ -93,29 +114,45 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             ->addOrderBy(['capitulo' => 'asc'])
             ->rowSwap(true);
 
-        // Ensure familia tables once per process
-        if (!self::$tables_ensured) {
-            self::$tables_ensured = true;
-            if (class_exists(\FSFramework\Plugins\catalogo_core\Init::class)) {
-                \FSFramework\Plugins\catalogo_core\Init::ensureFamiliasTarifaTables();
-            }
-        }
-
-        $this->tarifa_familia = new tarif_tarifa_familia();
-        $this->tarifa_etiqueta_familia = new tarif_tarifa_etiqueta_familia();
-        $this->tarifa = new tarif_tarifa();
         $this->familias_tree = [];
         $this->editing_familia = null;
         $this->familias_disponibles = [];
+        $this->tarifas = [];
 
-        // Load tariffs
-        $this->tarifas = $this->tarifa->all();
+        // Dual-source switch (familias-jerarquia D5). Flag off keeps the legacy
+        // `tarif_tarifa_familia` behaviour byte-for-byte; flag on operates on
+        // `catalogo_familia_estructura` scoped by the selected price list.
+        $this->init_family_structure();
 
-        // Get selected tariff
-        $this->codtarifa = isset($_REQUEST['codtarifa']) ? trim($_REQUEST['codtarifa']) : '';
-        if (empty($this->codtarifa)) {
-            $default = $this->tarifa->get_default();
-            $this->codtarifa = $default ? $default->codtarifa : '';
+        if ($this->family_structure) {
+            // Canonical path: the legacy models are not instantiated, so the
+            // flag-on request performs zero reads and writes on tarif_*.
+            $this->tarifa_familia = null;
+            $this->tarifa_etiqueta_familia = null;
+            $this->tarifa = null;
+            $this->codtarifa = isset($_REQUEST['codtarifa']) ? trim($_REQUEST['codtarifa']) : '';
+        } else {
+            // Ensure familia tables once per process
+            if (!self::$tables_ensured) {
+                self::$tables_ensured = true;
+                if (class_exists(\FSFramework\Plugins\catalogo_core\Init::class)) {
+                    \FSFramework\Plugins\catalogo_core\Init::ensureFamiliasTarifaTables();
+                }
+            }
+
+            $this->tarifa_familia = new tarif_tarifa_familia();
+            $this->tarifa_etiqueta_familia = new tarif_tarifa_etiqueta_familia();
+            $this->tarifa = new tarif_tarifa();
+
+            // Load tariffs
+            $this->tarifas = $this->tarifa->all();
+
+            // Get selected tariff
+            $this->codtarifa = isset($_REQUEST['codtarifa']) ? trim($_REQUEST['codtarifa']) : '';
+            if (empty($this->codtarifa)) {
+                $default = $this->tarifa->get_default();
+                $this->codtarifa = $default ? $default->codtarifa : '';
+            }
         }
 
         // Active-only filter
@@ -138,12 +175,299 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         } elseif (isset($_POST['action']) && $_POST['action'] === 'delete') {
             $this->delete_familia();
         } elseif (isset($_GET['edit'])) {
-            $this->editing_familia = $this->tarifa_familia->get($this->codtarifa, $_GET['edit']);
+            $this->editing_familia = $this->find_familia_row((string) $_GET['edit']);
         }
 
         // Load tree
         $this->load_familias_tree();
         $this->load_familias_disponibles();
+    }
+
+    // ------------------------------------------------------------------
+    // Dual-source seams (familias-jerarquia D5/D6)
+    // ------------------------------------------------------------------
+
+    /**
+     * Resolves the capability flag and the list in context. With the flag off
+     * nothing else happens: no list is read and no structure row is touched.
+     */
+    private function init_family_structure(): void
+    {
+        $this->family_structure = false;
+        $this->listas_estructura = [];
+        $this->codlista_estructura = '';
+        $this->estructura_por_familia = [];
+
+        if (!$this->catalogo_options()->familyStructureEnabled()) {
+            return;
+        }
+
+        $this->family_structure = true;
+
+        foreach ($this->lista_precio_model()->all() as $lista) {
+            if ($lista->activa) {
+                $this->listas_estructura[] = $lista;
+            }
+        }
+
+        $this->codlista_estructura = $this->resolve_codlista_estructura();
+    }
+
+    /**
+     * The supplied `codlista` is kept only when it is an active list; otherwise
+     * the default list wins, then the first active list, then ''.
+     */
+    private function resolve_codlista_estructura(): string
+    {
+        $supplied = isset($_REQUEST['codlista']) ? trim((string) $_REQUEST['codlista']) : '';
+        foreach ($this->listas_estructura as $lista) {
+            if ($supplied !== '' && (string) $lista->codlista === $supplied) {
+                return $supplied;
+            }
+        }
+
+        foreach ($this->listas_estructura as $lista) {
+            if (!empty($lista->por_defecto)) {
+                return (string) $lista->codlista;
+            }
+        }
+
+        return $this->listas_estructura === [] ? '' : (string) $this->listas_estructura[0]->codlista;
+    }
+
+    protected function catalogo_options(): CatalogoOptions
+    {
+        return new CatalogoOptions();
+    }
+
+    protected function lista_precio_model()
+    {
+        require_once 'plugins/catalogo_core/model/core/catalogo_lista_precio.php';
+
+        return new \FSFramework\model\catalogo_lista_precio();
+    }
+
+    protected function familia_estructura_store(): FamiliaEstructuraStore
+    {
+        if (null === $this->estructura_store) {
+            $this->estructura_store = new FamiliaEstructuraStore(
+                $this->db,
+                (string) ($this->user->nick ?? '')
+            );
+        }
+
+        return $this->estructura_store;
+    }
+
+    /**
+     * Authoritative cycle check (walks `familias.madre`).
+     *
+     * @throws \RuntimeException on cycle
+     */
+    protected function familia_tree_guard(string $codfamilia, ?string $madre): void
+    {
+        FamiliaTreeGuard::assertAcyclic($this->db, $codfamilia, $madre);
+    }
+
+    /**
+     * Structure rows of the list in context (canonical path only).
+     *
+     * @return array<int, object>
+     */
+    private function estructura_rows(bool $onlyActive = false): array
+    {
+        if (!$this->family_structure || $this->codlista_estructura === '') {
+            return [];
+        }
+
+        $rows = $this->familia_estructura_store()->rows($this->codlista_estructura, $onlyActive);
+        if (!$onlyActive) {
+            $this->estructura_por_familia = [];
+            foreach ($rows as $row) {
+                $this->estructura_por_familia[(string) $row->codfamilia] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * All rows of the tree for the active source (legacy or canonical).
+     *
+     * @return array<int, object>
+     */
+    private function all_familia_rows(): array
+    {
+        if ($this->family_structure) {
+            return $this->estructura_rows();
+        }
+
+        return $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+    }
+
+    /**
+     * One row of the active source, or false when it is not in the list.
+     *
+     * @return object|false
+     */
+    private function find_familia_row(string $codfamilia)
+    {
+        if ($this->family_structure) {
+            if ($this->estructura_por_familia === [] && $this->codlista_estructura !== '') {
+                $this->estructura_rows();
+            }
+
+            return $this->estructura_por_familia[$codfamilia] ?? false;
+        }
+
+        return $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+    }
+
+    /**
+     * Direct children of a family in the active source.
+     *
+     * @return array<int, object>
+     */
+    private function hijas_de(string $codfamilia): array
+    {
+        if ($this->family_structure) {
+            return $this->familia_estructura_store()->children($this->codlista_estructura, $codfamilia);
+        }
+
+        return $this->tarifa_familia->hijas($this->codtarifa, $codfamilia);
+    }
+
+    /**
+     * Runs both cycle checks before a `madre` change. A failure reports the
+     * reason and returns false, so the caller writes nothing.
+     */
+    private function guard_estructura_ciclo(string $codfamilia, ?string $madre): bool
+    {
+        try {
+            $this->familia_tree_guard($codfamilia, $madre);
+            $this->familia_estructura_store()->assertAcyclicInList(
+                $this->codlista_estructura,
+                $codfamilia,
+                $madre
+            );
+        } catch (\RuntimeException $e) {
+            $this->new_error_msg($e->getMessage());
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Persists one structure row of the list in context (canonical path).
+     *
+     * @param array<string, mixed> $values
+     */
+    private function save_estructura_row(string $codfamilia, array $values): bool
+    {
+        if (
+            array_key_exists('madre', $values)
+            && !$this->guard_estructura_ciclo($codfamilia, $values['madre'])
+        ) {
+            return false;
+        }
+
+        if (!$this->familia_estructura_store()->save($this->codlista_estructura, $codfamilia, $values)) {
+            $this->new_error_msg(
+                $this->familia_estructura_store()->lastError() ?: 'Error al guardar la familia.'
+            );
+
+            return false;
+        }
+
+        $this->estructura_por_familia = [];
+
+        return true;
+    }
+
+    /**
+     * Applies a chapter map on the active source.
+     *
+     * @param array<string, string> $chapters
+     */
+    private function recalculate_chapters(array $chapters): bool
+    {
+        if ($this->family_structure) {
+            $ok = $this->familia_estructura_store()->saveChapterMap($this->codlista_estructura, $chapters);
+            if (!$ok) {
+                $this->new_error_msg(
+                    $this->familia_estructura_store()->lastError() ?: 'Error al guardar el orden.'
+                );
+            }
+
+            return $ok;
+        }
+
+        return (bool) $this->tarifa_familia->apply_chapter_map($this->codtarifa, $chapters);
+    }
+
+    /**
+     * Persists a `madre` change on the active source.
+     *
+     * Flag off: the legacy model writes and its result is ignored, exactly as
+     * before. Flag on: both cycle guards run first and a rejected/denied write
+     * reports the reason and returns false.
+     */
+    private function persist_madre(object $fam): bool
+    {
+        if (!$this->family_structure) {
+            $fam->save();
+
+            return true;
+        }
+
+        return $this->save_estructura_row((string) $fam->codfamilia, ['madre' => $fam->madre]);
+    }
+
+    /**
+     * PRG/fragment response for a failed canonical save.
+     */
+    private function respond_save_failure(): void
+    {
+        if ($this->requireHtmx()) {
+            $this->noContentWithFlash();
+        } else {
+            header('Location: ' . $this->listUrl());
+            exit;
+        }
+    }
+
+    /**
+     * Writes `familias.descripcion` (the base table stays writable; only its
+     * schema is frozen).
+     */
+    private function save_familia_descripcion(string $codfamilia, string $descripcion): bool
+    {
+        require_once 'plugins/catalogo_core/model/core/familia.php';
+        $base = new \FSFramework\model\familia();
+        $row = $base->get($codfamilia);
+        if (!$row) {
+            return true;
+        }
+
+        $row->descripcion = trim($descripcion);
+
+        return (bool) $row->save();
+    }
+
+    /**
+     * Count of articles assigned to a family structure of one list.
+     */
+    private function count_estructura_articulos(string $codlista, string $codfamilia): int
+    {
+        $data = $this->db->select(
+            'SELECT COUNT(*) AS total FROM catalogo_articulo_familia_estructura'
+            . ' WHERE codlista = ? AND codfamilia = ?',
+            [$codlista, $codfamilia]
+        );
+
+        return ($data && isset($data[0]['total'])) ? (int) $data[0]['total'] : 0;
     }
 
     /**
@@ -216,6 +540,10 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     protected function listUrl(): string
     {
         $url = $this->url();
+        if ($this->family_structure && $this->codlista_estructura !== '') {
+            $url .= '&codlista=' . urlencode($this->codlista_estructura);
+        }
+
         return $this->codtarifa
             ? $url . '&codtarifa=' . urlencode($this->codtarifa)
             : $url;
@@ -236,7 +564,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         }
 
         // Build current madre map from DB
-        $allFamilias = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $allFamilias = $this->all_familia_rows();
         $madreByCode = [];
         foreach ($allFamilias as $fam) {
             $madreByCode[$fam->codfamilia] = $fam->madre;
@@ -250,13 +578,15 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
-        if ($this->tarifa_familia->apply_chapter_map($this->codtarifa, $result['chapters'])) {
+        if ($this->recalculate_chapters($result['chapters'])) {
             $this->new_message('Orden guardado correctamente.');
             // Reload tree and render full tbody with fresh data
             $this->load_familias_tree();
             $this->renderTbodyFragment($this->get_familias_flat());
         } else {
-            $this->new_error_msg('Error al guardar el orden.');
+            if (!$this->family_structure) {
+                $this->new_error_msg('Error al guardar el orden.');
+            }
             $this->noContentWithFlash();
         }
     }
@@ -270,7 +600,9 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         if (empty($madre)) {
             $madre = null;
         }
-        $capitulo = $this->tarifa_familia->suggest_capitulo($this->codtarifa, $madre);
+        $capitulo = $this->family_structure
+            ? $this->familia_estructura_store()->suggestCapitulo($this->codlista_estructura, $madre)
+            : $this->tarifa_familia->suggest_capitulo($this->codtarifa, $madre);
 
         $this->renderFragment('partials/familias/capitulo_preview', [
             'capitulo' => $capitulo,
@@ -291,7 +623,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
-        $this->editing_familia = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+        $this->editing_familia = $this->find_familia_row($codfamilia);
         if (!$this->editing_familia) {
             $this->new_error_msg('Familia no encontrada en esta tarifa.');
             $this->noContentWithFlash();
@@ -315,7 +647,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
-        $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+        $fam = $this->find_familia_row((string) $codfamilia);
         if (!$fam) {
             $this->new_error_msg('Familia no encontrada en esta tarifa.');
             $this->noContentWithFlash();
@@ -328,17 +660,22 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
-        $madre_actual = $this->tarifa_familia->get($this->codtarifa, $fam->madre);
+        $madre_actual = $this->find_familia_row((string) $fam->madre);
         $nueva_madre = null;
         if ($madre_actual && !is_null($madre_actual->madre)) {
             $nueva_madre = $madre_actual->madre;
         }
 
         $fam->madre = $nueva_madre;
-        $fam->save();
+        if (!$this->persist_madre($fam)) {
+            if ($this->family_structure) {
+                $this->noContentWithFlash();
+                return;
+            }
+        }
 
         // Re-derive the full order and structure server-side
-        $allFamilias = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $allFamilias = $this->all_familia_rows();
         $flatOrder = array_map(fn($f) => $f->codfamilia, $allFamilias);
         $madreMapAfter = [];
         foreach ($allFamilias as $f) {
@@ -347,7 +684,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
         $result = TarifaFamiliaReorder::plan($flatOrder, $madreMapAfter);
         if ($result['ok']) {
-            $this->tarifa_familia->apply_chapter_map($this->codtarifa, $result['chapters']);
+            $this->recalculate_chapters($result['chapters']);
         }
 
         $this->new_message('Familia promovida correctamente.');
@@ -369,7 +706,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
-        $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+        $fam = $this->find_familia_row((string) $codfamilia);
         if (!$fam) {
             $this->new_error_msg('Familia no encontrada en esta tarifa.');
             $this->noContentWithFlash();
@@ -392,10 +729,15 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         }
 
         $fam->madre = $hermano_anterior->codfamilia;
-        $fam->save();
+        if (!$this->persist_madre($fam)) {
+            if ($this->family_structure) {
+                $this->noContentWithFlash();
+                return;
+            }
+        }
 
         // Re-derive the full order and structure server-side
-        $allFamilias = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $allFamilias = $this->all_familia_rows();
         $flatOrder = array_map(fn($f) => $f->codfamilia, $allFamilias);
         $madreMapAfter = [];
         foreach ($allFamilias as $f) {
@@ -404,7 +746,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
         $result = TarifaFamiliaReorder::plan($flatOrder, $madreMapAfter);
         if ($result['ok']) {
-            $this->tarifa_familia->apply_chapter_map($this->codtarifa, $result['chapters']);
+            $this->recalculate_chapters($result['chapters']);
         }
 
         $this->new_message('Familia degradada correctamente.');
@@ -430,7 +772,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             }
             // Re-fetch the updated model for the row fragment
             $codfamilia = $_POST['codfamilia'] ?? '';
-            $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+            $fam = $this->find_familia_row((string) $codfamilia);
             if ($fam) {
                 $this->renderRowFragment($fam);
             } else {
@@ -521,9 +863,21 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         if (empty($codfamilia)) {
             return ['success' => false, 'error' => 'Código de familia no proporcionado'];
         }
-        $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+        $fam = $this->find_familia_row($codfamilia);
         if (!$fam) {
             return ['success' => false, 'error' => 'Familia no encontrada'];
+        }
+
+        if ($this->family_structure) {
+            $nuevo = !(bool) $fam->{$codigo};
+            if (!$this->save_estructura_row($codfamilia, [$codigo => $nuevo])) {
+                return [
+                    'success' => false,
+                    'error' => $this->familia_estructura_store()->lastError() ?: 'Error al guardar',
+                ];
+            }
+
+            return ['success' => true, $codigo => $nuevo];
         }
 
         // Read the effective familia value for this tarifa, then flip it.
@@ -561,10 +915,23 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         if (empty($codfamilia)) {
             return ['success' => false, 'error' => 'Código de familia no proporcionado'];
         }
-        $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
+        $fam = $this->find_familia_row((string) $codfamilia);
         if (!$fam) {
             return ['success' => false, 'error' => 'Familia no encontrada'];
         }
+
+        if ($this->family_structure) {
+            $nuevo = !(bool) $fam->activa;
+            if (!$this->save_estructura_row((string) $codfamilia, ['activa' => $nuevo])) {
+                return [
+                    'success' => false,
+                    'error' => $this->familia_estructura_store()->lastError() ?: 'Error al guardar',
+                ];
+            }
+
+            return ['success' => true, 'activa' => $nuevo];
+        }
+
         $fam->activa = !$fam->activa;
         if ($fam->save()) {
             return ['success' => true, 'activa' => $fam->activa];
@@ -578,7 +945,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     private function get_siblings($familia)
     {
-        $all = $this->tarifa_familia->all_by_capitulo($this->codtarifa);
+        $all = $this->all_familia_rows();
         $siblings = [];
         foreach ($all as $f) {
             if ($f->madre === $familia->madre) {
@@ -590,6 +957,14 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     private function load_familias_tree()
     {
+        if ($this->family_structure) {
+            $this->familias_tree = $this->codlista_estructura === ''
+                ? []
+                : $this->build_tree($this->estructura_rows($this->b_solo_activas));
+
+            return;
+        }
+
         if (empty($this->codtarifa)) {
             return;
         }
@@ -642,6 +1017,12 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
      */
     private function save_familia(): void
     {
+        if ($this->family_structure) {
+            $this->save_familia_estructura();
+
+            return;
+        }
+
         $codfamilia = isset($_POST['codfamilia']) ? trim($_POST['codfamilia']) : '';
 
         $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
@@ -722,12 +1103,88 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     }
 
     /**
+     * Canonical save of the family node for the list in context (flag on).
+     *
+     * Same response contract as the legacy save; the structure row is written
+     * only when the cycle guards and the permission filter allow it. Tags have
+     * no canonical counterpart in this change, so they are not written here.
+     */
+    private function save_familia_estructura(): void
+    {
+        $codfamilia = isset($_POST['codfamilia']) ? trim((string) $_POST['codfamilia']) : '';
+
+        $fam = $codfamilia === '' ? false : $this->find_familia_row($codfamilia);
+        if (!$fam) {
+            $this->new_error_msg('Familia no encontrada en esta lista.');
+            $this->respond_save_failure();
+
+            return;
+        }
+
+        $madre = isset($_POST['madre']) ? trim((string) $_POST['madre']) : '';
+        $madre = $madre === '' ? null : $madre;
+
+        if (!$this->guard_estructura_ciclo($codfamilia, $madre)) {
+            $this->respond_save_failure();
+
+            return;
+        }
+
+        $values = [
+            'madre' => $madre,
+            'capitulo' => isset($_POST['capitulo']) ? trim((string) $_POST['capitulo']) : '',
+            'en_catalogo' => isset($_POST['en_catalogo']),
+            'en_tarifa' => isset($_POST['en_tarifa']),
+            'activa' => isset($_POST['activa']),
+        ];
+
+        // The permission filter runs inside the store save, BEFORE persisting:
+        // a denial leaves the structure AND the base description untouched.
+        if (!$this->familia_estructura_store()->save($this->codlista_estructura, $codfamilia, $values)) {
+            $this->new_error_msg(
+                $this->familia_estructura_store()->lastError() ?: 'Error al guardar la familia.'
+            );
+            $this->respond_save_failure();
+
+            return;
+        }
+
+        $this->estructura_por_familia = [];
+
+        if (isset($_POST['descripcion']) && !$this->save_familia_descripcion($codfamilia, (string) $_POST['descripcion'])) {
+            $this->new_error_msg('Error al guardar la descripción de la familia base.');
+            $this->respond_save_failure();
+
+            return;
+        }
+
+        if (isset($_POST['etiquetas'])) {
+            $this->new_advice('Las etiquetas no se guardan con la estructura por lista activa.');
+        }
+
+        $this->new_message('Familia guardada correctamente.');
+        if ($this->requireHtmx()) {
+            $this->load_familias_tree();
+            $this->renderTbodyFragment($this->get_familias_flat(), ['events' => ['fs:modal-close' => []]]);
+        } else {
+            header('Location: ' . $this->listUrl());
+            exit;
+        }
+    }
+
+    /**
      * Add familia to tariff by name: links an existing catalog familia on an
      * exact (case-insensitive) name match, otherwise creates the base catalog
      * familia first and then links it. Same response pattern as save.
      */
     private function add_familia_to_tarifa(): void
     {
+        if ($this->family_structure) {
+            $this->add_familia_to_lista();
+
+            return;
+        }
+
         $familia_nombre = isset($_POST['familia_nombre']) ? trim($_POST['familia_nombre']) : '';
         $madre = isset($_POST['madre']) ? trim($_POST['madre']) : '';
 
@@ -820,6 +1277,90 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     }
 
     /**
+     * Canonical "add familia" for the list in context (flag on): resolves or
+     * creates the base catalog familia, then upserts its structure row.
+     */
+    private function add_familia_to_lista(): void
+    {
+        $familia_nombre = isset($_POST['familia_nombre']) ? trim((string) $_POST['familia_nombre']) : '';
+        $madre = isset($_POST['madre']) ? trim((string) $_POST['madre']) : '';
+
+        if ($familia_nombre === '') {
+            $this->new_error_msg('Debe indicar el nombre de la familia.');
+            $this->respond_save_failure();
+
+            return;
+        }
+
+        require_once 'plugins/catalogo_core/model/core/familia.php';
+        $familia_base_model = new \FSFramework\model\familia();
+
+        $existente = $this->find_familia_by_descripcion($familia_base_model->all(), $familia_nombre);
+        if (null !== $existente) {
+            $codfamilia = (string) $existente->codfamilia;
+            if ($this->find_familia_row($codfamilia)) {
+                $this->new_error_msg('Esta familia ya existe en la lista.');
+                $this->respond_save_failure();
+
+                return;
+            }
+        } else {
+            $nueva = new \FSFramework\model\familia();
+            $nueva->codfamilia = $this->suggest_familia_code(
+                $familia_nombre,
+                function ($candidate) use ($familia_base_model) {
+                    return false !== $familia_base_model->get($candidate);
+                }
+            );
+            if (null === $nueva->codfamilia) {
+                $this->new_error_msg('No se pudo generar un código único para la familia.');
+                $this->respond_save_failure();
+
+                return;
+            }
+            $nueva->descripcion = $familia_nombre;
+            if (!$nueva->save()) {
+                $this->new_error_msg('Error al crear la familia en el catálogo.');
+                $this->respond_save_failure();
+
+                return;
+            }
+            $codfamilia = (string) $nueva->codfamilia;
+        }
+
+        $madre = $madre === '' ? null : $madre;
+        if (
+            !$this->familia_estructura_store()->add(
+                $this->codlista_estructura,
+                $codfamilia,
+                $madre,
+                [
+                    'en_catalogo' => isset($_POST['en_catalogo']),
+                    'en_tarifa' => isset($_POST['en_tarifa']),
+                    'activa' => isset($_POST['activa']),
+                ]
+            )
+        ) {
+            $this->new_error_msg(
+                $this->familia_estructura_store()->lastError() ?: 'Error al añadir la familia.'
+            );
+            $this->respond_save_failure();
+
+            return;
+        }
+
+        $this->estructura_por_familia = [];
+        $this->new_message('Familia añadida a la lista correctamente.');
+        if ($this->requireHtmx()) {
+            $this->load_familias_tree();
+            $this->renderTbodyFragment($this->get_familias_flat(), ['events' => ['fs:modal-close' => []]]);
+        } else {
+            header('Location: ' . $this->listUrl());
+            exit;
+        }
+    }
+
+    /**
      * Exact (case-insensitive, trimmed) descripcion match over the base
      * catalog familia list.
      *
@@ -893,6 +1434,12 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
             return;
         }
 
+        if ($this->family_structure) {
+            $this->delete_familia_estructura();
+
+            return;
+        }
+
         $codfamilia = $_POST['codfamilia'] ?? '';
         $fam = $this->tarifa_familia->get($this->codtarifa, $codfamilia);
 
@@ -925,12 +1472,61 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
         }
     }
 
+    /**
+     * Canonical delete (flag on): removes the structure row of the list in
+     * context only. The base `familias` row is never deleted.
+     */
+    private function delete_familia_estructura(): void
+    {
+        $codfamilia = (string) ($_POST['codfamilia'] ?? '');
+        $fam = $codfamilia === '' ? false : $this->find_familia_row($codfamilia);
+
+        if (!$fam) {
+            $this->new_error_msg('Familia no encontrada en esta lista.');
+            $this->noContentWithFlash();
+
+            return;
+        }
+
+        if (!empty($this->hijas_de($codfamilia))) {
+            $this->new_error_msg('No se puede eliminar una familia con subfamilias. Elimina primero las subfamilias.');
+            $this->noContentWithFlash();
+
+            return;
+        }
+
+        if ($this->count_estructura_articulos($this->codlista_estructura, $codfamilia) > 0) {
+            $this->new_error_msg('No se puede eliminar una familia con artículos asociados en esta lista.');
+            $this->noContentWithFlash();
+
+            return;
+        }
+
+        if (!$this->familia_estructura_store()->delete($this->codlista_estructura, $codfamilia)) {
+            $this->new_error_msg(
+                $this->familia_estructura_store()->lastError() ?: 'Error al eliminar la familia.'
+            );
+            $this->noContentWithFlash();
+
+            return;
+        }
+
+        $this->estructura_por_familia = [];
+        $this->new_message('Familia eliminada de la lista correctamente.');
+        $this->load_familias_tree();
+        $this->renderTbodyFragment($this->get_familias_flat());
+    }
+
     // ------------------------------------------------------------------
     // Public API surface (kept intact for macro/view contract)
     // ------------------------------------------------------------------
 
     public function count_articulos($codfamilia)
     {
+        if ($this->family_structure) {
+            return $this->count_estructura_articulos($this->codlista_estructura, (string) $codfamilia);
+        }
+
         return $this->count_tarifa_articulos($this->codtarifa, $codfamilia);
     }
 
@@ -946,7 +1542,9 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     public function get_posibles_madres($exclude_codfamilia = null)
     {
-        $all = $this->tarifa_familia->all_from_tarifa($this->codtarifa);
+        $all = $this->family_structure
+            ? $this->estructura_rows()
+            : $this->tarifa_familia->all_from_tarifa($this->codtarifa);
         if (is_null($exclude_codfamilia)) {
             return $all;
         }
@@ -963,7 +1561,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     private function get_descendants($codfamilia, &$exclude)
     {
-        $hijas = $this->tarifa_familia->hijas($this->codtarifa, $codfamilia);
+        $hijas = $this->hijas_de((string) $codfamilia);
         foreach ($hijas as $hija) {
             $exclude[] = $hija->codfamilia;
             $this->get_descendants($hija->codfamilia, $exclude);
@@ -972,13 +1570,20 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     private function load_familias_disponibles()
     {
-        if (empty($this->codtarifa)) {
+        if ($this->family_structure) {
+            if ($this->codlista_estructura === '') {
+                return;
+            }
+        } elseif (empty($this->codtarifa)) {
             return;
         }
+
         require_once 'plugins/catalogo_core/model/core/familia.php';
         $familia_base = new \familia();
         $todas = $familia_base->all();
-        $en_tarifa = $this->tarifa_familia->all_from_tarifa($this->codtarifa);
+        $en_tarifa = $this->family_structure
+            ? $this->estructura_rows()
+            : $this->tarifa_familia->all_from_tarifa($this->codtarifa);
         $codigos_en_tarifa = [];
         foreach ($en_tarifa as $tf) {
             $codigos_en_tarifa[] = $tf->codfamilia;
@@ -993,7 +1598,7 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     public function get_tarifa_actual()
     {
-        if (empty($this->codtarifa)) {
+        if ($this->family_structure || empty($this->codtarifa) || null === $this->tarifa) {
             return null;
         }
         return $this->tarifa->get($this->codtarifa);
@@ -1001,12 +1606,20 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     public function get_etiquetas_familia_text($codfamilia)
     {
+        if ($this->family_structure) {
+            return '';
+        }
+
         $tags = $this->tarifa_etiqueta_familia->get_etiquetas_familia($this->codtarifa, $codfamilia);
         return implode(', ', $tags);
     }
 
     public function get_etiquetas_familia_full($codfamilia)
     {
+        if ($this->family_structure) {
+            return [];
+        }
+
         return $this->tarifa_etiqueta_familia->get_etiquetas_familia_full($this->codtarifa, $codfamilia);
     }
 
@@ -1016,6 +1629,16 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     private function export_excel()
     {
+        if ($this->family_structure) {
+            $this->template = false;
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'error' => 'La exportación Excel no está disponible con la estructura por lista activa.',
+            ]);
+            return;
+        }
+
         $this->template = false;
         @ini_set('display_errors', 0);
         error_reporting(0);
@@ -1192,6 +1815,18 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
 
     private function import_excel_chunk()
     {
+        if ($this->family_structure) {
+            $this->template = false;
+            @ini_set('display_errors', 0);
+            error_reporting(0);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'error' => 'La importación Excel no está disponible con la estructura por lista activa.',
+            ]);
+            return;
+        }
+
         $this->template = false;
         @ini_set('display_errors', 0);
         error_reporting(0);
