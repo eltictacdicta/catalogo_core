@@ -33,7 +33,14 @@ rewrite; the drop engine already exists and is unit-covered.
   DEV-17 (membership-filter ratification) landed in `caracteristicas-producto` WU-8.
   **Gate:** the soak MUST stay green for the whole window before C2.3 runs.
 - [ ] C2.2 **Rewrite the DEV-17 membership filters to the feature tables (relocated
-  ordering prerequisite).** Move the `tarif_catalogo_view` membership SQL filters and the
+  ordering prerequisite).** **Contract now exists (2026-10-28):**
+  `tests/TarifCatalogoMembershipFilterRatificationTest.php` freezes the four
+  helpers (`all_en_catalogo`, `count_en_catalogo`, `count_en_tarifa`,
+  `all_en_catalogo_from_tarifa`) on their current legacy source, is DB-free via a
+  recording double, and was proven to fail when one helper is mutated. The
+  rewrite must update that test deliberately in the same commit. The rest of this
+  task still needs the re-scope decision recorded in the premise audit: the
+  surface is those helpers, not a `tarif_catalogo_view` controller. Move the `tarif_catalogo_view` membership SQL filters and the
   `all_en_catalogo*` / `count_en_*` helpers off the legacy columns onto the feature
   tables, so the clause-2 drop cannot leave invalid SQL. The surface is frozen by
   `TarifCatalogoMembershipFilterRatificationTest`; update it with the rewrite.
