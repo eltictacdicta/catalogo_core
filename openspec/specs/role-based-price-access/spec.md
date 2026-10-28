@@ -1,6 +1,6 @@
-# Delta for role-based-price-access
+# Capability: role-based-price-access
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Role-group storage model (R-RG-001)
 

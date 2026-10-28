@@ -1,4 +1,4 @@
-# Delta for gestion-idiomas
+# Capability: gestion-idiomas
 
 New capability owned by `catalogo_core`. All requirements are ADDED; there is no
 prior canonical `gestion-idiomas` spec and no MODIFIED/REMOVED block for this
@@ -17,7 +17,7 @@ The registry is seeded `es` (default) + `en` by `catalogo_idioma::install()` /
 `catalogo_idioma::url()` already targets `index.php?page=ventas_articulos#idiomas`
 (`:65-68`), a section that does not exist today.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: GDI-01 — Language registry lifecycle and management surface
 

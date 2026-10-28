@@ -1,8 +1,8 @@
-# Delta for familias-tarifa-management
+# Capability: familias-tarifa-management
 
 New capability owned by catalogo_core. No MODIFIED/REMOVED requirements: `articulos-excel-import-export` is unaffected (the moved macro resolves via the global Twig loader).
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Tarif familias page served by catalogo_core
 

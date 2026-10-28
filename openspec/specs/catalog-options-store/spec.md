@@ -1,6 +1,6 @@
-# Delta for catalog-options-store
+# Capability: catalog-options-store
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Namespaced options store (R-CO-001)
 

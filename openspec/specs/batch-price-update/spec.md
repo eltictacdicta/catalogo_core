@@ -1,6 +1,6 @@
-# Delta for batch-price-update
+# Capability: batch-price-update
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Preview/apply flow (R-BU-001)
 
