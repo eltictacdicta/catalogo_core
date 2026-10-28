@@ -61,3 +61,53 @@ columns are re-addable as nullable and re-derivable from the feature tables.
 
 **Explicit non-goals**: clause 1 (delivered); no new tables; no read-semantics change;
 no core `openspec/` entry.
+
+## Premise audit (2026-10-28) — verified against the code, not the design
+
+This change was deferred while the catalogue moved underneath it. Before any
+implementation, each premise was checked. Three of the five tasks are blocked on
+an operator, and one points at files that no longer exist.
+
+**Verified present**
+
+- `CaracteristicaColumnDropMigration::runPostSoak(\fs_db2 $db, bool $dev17MembershipFiltersRewritten)`
+  exists (`Services/CaracteristicaColumnDropMigration.php:281`) and already takes
+  the DEV-17 rewrite as an explicit gate — exactly the hand-off C2.2 feeds.
+- Clause 1 is wired the way the proposal claims: `Init::upgrade()` calls
+  `migrateIfNeeded()` (`Init.php:166`), and it is **not** on the request path.
+- The legacy columns still exist in the schema, so the drop is still meaningful:
+  `en_catalogo` appears twice in `model/table/tarif_articulo_precios.xml`, twice in
+  `tarif_tarifa_articulo.xml` and once in `tarif_tarifa_familia.xml`.
+  `tarif_familia_ext` has no XML of its own.
+
+**Verified absent — C2.2's premise is stale**
+
+- `tarif_catalogo_view` **does not exist as a controller**. The name survives only
+  in a comment inside the drop service, in `View/Macro/TarifarioComponents.html.twig`
+  and in `tests/View/TarifFamiliasTreeViewTest.php`.
+- `TarifCatalogoMembershipFilterRatificationTest` **does not exist**, so the
+  "frozen surface" that C2.2 promises to update has no contract to update.
+
+The real membership surface today is the helpers, not a view:
+
+| Helper | File |
+|---|---|
+| `all_en_catalogo($codtarifa, $offset, $limit)` | `model/tarif_tarifa_articulo.php:360` |
+| `count_en_catalogo($codtarifa)` | `model/tarif_tarifa_articulo.php:457` |
+| `count_en_tarifa($codtarifa)` | `model/tarif_tarifa_articulo.php:440` |
+| `all_en_catalogo_from_tarifa($codtarifa)` | `model/tarif_tarifa_familia.php:429` |
+
+**Blockers by owner**
+
+| Task | Blocked on |
+|---|---|
+| C2.1 soak | **Operator**: a staging copy with the feature path selected, watching `visibilidad_sin_sincronizar` through a JSON import and normal traffic |
+| C2.2 rewrite | **Decision**: the target is the legacy helpers, not a retired view; and those models are frozen for `tarifario`. Rewriting them changes what `tarifario` reads |
+| C2.3 gated drop | **Operator**: a pre-drop dump, and C2.1 green before it runs |
+| C2.4 auto-wire | C2.3 proven reversible first |
+| C2.5 verify | The four above |
+
+**Recommendation, not a decision:** re-scope C2.2 to the four helpers, create the
+missing ratification test to freeze them *before* rewriting, and let C2.1/C2.3 be
+run by the operator. Nothing here should be implemented until the soak exists —
+the drop is destructive DDL and its own gate says so.
