@@ -48,6 +48,15 @@ class catalogo_familia_estructura extends \fs_model
     public $activa;
     public $orden;
 
+    /**
+     * Descripción de la familia base, cargada por JOIN con `familias` en las
+     * lecturas del árbol. NO es una columna de `catalogo_familia_estructura`
+     * (paridad con el modelo legacy homónimo).
+     *
+     * @var string
+     */
+    public $descripcion = '';
+
     public function __construct($data = false)
     {
         parent::__construct(self::TABLE);
