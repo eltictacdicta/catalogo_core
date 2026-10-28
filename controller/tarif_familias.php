@@ -550,6 +550,47 @@ class tarif_familias extends \FSFramework\Controller\HtmxCrudController
     }
 
     /**
+     * Query fragment that identifies the source in context: the canonical
+     * price list when the structure capability is on, the legacy tariff
+     * otherwise (familias-jerarquia task 3.2).
+     *
+     * Every form action and HTMX URL of the view carries this fragment, so a
+     * page loaded with `?codlista=` keeps writing to that list instead of
+     * silently falling back to the default one. The fragment starts with the
+     * parameter name (no leading `&`), so templates keep the separator literal
+     * and the flag-off markup stays exactly the legacy one.
+     */
+    public function source_query(): string
+    {
+        if ($this->family_structure) {
+            return 'codlista=' . rawurlencode((string) $this->codlista_estructura);
+        }
+
+        return 'codtarifa=' . rawurlencode((string) $this->codtarifa);
+    }
+
+    /**
+     * Price list in context (canonical path), or null when the flag is off or
+     * no active list is selectable.
+     *
+     * @return object|null
+     */
+    public function get_lista_actual()
+    {
+        if (!$this->family_structure) {
+            return null;
+        }
+
+        foreach ($this->listas_estructura as $lista) {
+            if ((string) $lista->codlista === $this->codlista_estructura) {
+                return $lista;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Server-authoritative reorder — accepts flat JSON array of codes,
      * validates permutation, recomputes chapters, saves only changed rows.
      */

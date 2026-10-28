@@ -15,7 +15,7 @@
 {{ crud.boot({
    sortable: {
       tbody: '#familias-tbody',
-      url: fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&action=reorder',
+      url: fsc.url() ~ "&" ~ fsc.source_query() ~ '&action=reorder',
       handle: '.drag-handle',
       guard: 'same-madre',
       saveBar: 'familias'
@@ -99,14 +99,27 @@
 
 <script type="text/javascript">
    var soloActivas = {% if fsc.b_solo_activas %}true{% else %}false{% endif %};
-   
+{% if fsc.family_structure %}
+   // Estructura por lista (familias-jerarquia 3.2): the list in context is the
+   // only reload axis; the legacy tariff selector does not exist in this mode.
+   function cambiarLista() {
+      var nuevaLista = document.getElementById('select_lista').value;
+      window.location.href = '{{ fsc.url() }}&codlista=' + encodeURIComponent(nuevaLista) + '&b_solo_activas=' + (soloActivas ? 'TRUE' : 'FALSE');
+   }
+{% else %}
+
    function cambiarTarifa() {
       var nuevaTarifa = document.getElementById('select_tarifa').value;
       window.location.href = '{{ fsc.url() }}&codtarifa=' + encodeURIComponent(nuevaTarifa) + '&b_solo_activas=' + (soloActivas ? 'TRUE' : 'FALSE');
    }
+{% endif %}
 </script>
 
-{# Toolbar #}
+{% if fsc.family_structure %}
+{# Per-list structure header: active list selector + list-scoped actions. #}
+{% include 'partials/familias/estructura_header.html.twig' with {fsc: fsc} %}
+{% else %}
+{# Toolbar (legacy tariff mode — untouched) #}
 {% set extra_buttons = [] %}
 {% if fsc.codtarifa %}
    {% set extra_buttons = [{
@@ -147,16 +160,25 @@
    'extra_buttons': extra_buttons,
    'right_buttons': [right_filter]
 }) }}
+{% endif %}
 
 {# Save order bar #}
 <div class="container-fluid">
    {{ crud.saveBar('familias', {
-      saveUrl: fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&action=reorder'
+      saveUrl: fsc.url() ~ "&" ~ fsc.source_query() ~ '&action=reorder'
    }) }}
 </div>
 
 {# Main content #}
-{% if not fsc.codtarifa %}
+{% if fsc.family_structure and not fsc.codlista_estructura %}
+<div class="container-fluid">
+   <div class="alert alert-warning" data-familia-estructura="1">
+      <i class="fa fa-exclamation-triangle"></i>
+      {{ 'catalogo-core-lista-empty'|trans }}
+      <a href="index.php?page=opciones_catalogo">Opciones del catálogo</a>
+   </div>
+</div>
+{% elseif not fsc.family_structure and not fsc.codtarifa %}
 <div class="container-fluid">
    <div class="alert alert-warning">
       <i class="fa fa-exclamation-triangle"></i>
@@ -165,10 +187,11 @@
 </div>
 {% else %}
 <div class="container-fluid">
-   <div class="panel panel-default">
+   <div class="panel panel-default"{% if fsc.family_structure %} data-familia-estructura="1"{% endif %}>
       <div class="panel-heading">
          <h4 class="panel-title">
-            <i class="fa fa-folder-open-o"></i> Familias de: <strong>{{ fsc.get_tarifa_actual().nombre }}</strong>
+            <i class="fa fa-folder-open-o"></i>{% if fsc.family_structure %} {{ 'catalogo-core-familias-tree-title'|trans }}: <strong>{{ fsc.get_lista_actual().nombre }}</strong>{% else %} Familias de: <strong>{{ fsc.get_tarifa_actual().nombre }}</strong>{% endif %}
+
             <small class="text-muted">&nbsp;- Arrastra para reordenar</small>
          </h4>
       </div>
@@ -177,19 +200,28 @@
             <thead>
                <tr>
                   <th style="width: 40px;"></th>
-                  <th style="width: 80px;">Capítulo</th>
+                  <th style="width: 80px;"{% if fsc.family_structure %} title="{{ 'catalogo-core-estructura-capitulo'|trans }}"{% endif %}>Capítulo</th>
+                  {% if fsc.family_structure %}<th style="width: 70px;" class="text-center familia-col-orden">{{ 'catalogo-core-estructura-orden'|trans }}</th>{% endif %}
                   <th>Nombre</th>
                   <th style="width: 80px;" class="text-center">Nivel</th>
                   <th style="width: 70px;" class="text-center" title="Artículos">Art.</th>
-                  <th style="width: 60px;" class="text-center" title="En catálogo">Cat.</th>
-                  <th style="width: 60px;" class="text-center" title="En tarifa (exportación)">Tar.</th>
-                  <th style="width: 60px;" class="text-center" title="Activa">Act.</th>
+                  <th style="width: 60px;" class="text-center" title="{% if fsc.family_structure %}{{ 'catalogo-core-estructura-en-catalogo'|trans }}{% else %}En catálogo{% endif %}">Cat.</th>
+                  <th style="width: 60px;" class="text-center" title="{% if fsc.family_structure %}{{ 'catalogo-core-estructura-en-tarifa'|trans }}{% else %}En tarifa (exportación){% endif %}">Tar.</th>
+                  <th style="width: 60px;" class="text-center" title="{% if fsc.family_structure %}{{ 'catalogo-core-estructura-activa'|trans }}{% else %}Activa{% endif %}">Act.</th>
                   <th style="width: 100px;" class="text-right">Acciones</th>
                </tr>
             </thead>
             <tbody id="familias-tbody">
                {% for fam in fsc.get_familias_flat() %}
                {% include 'partials/familias/familia_row.html.twig' with {row: fam, fsc: fsc} %}
+               {% else %}
+               {% if fsc.family_structure %}
+               <tr class="warning">
+                  <td colspan="10">
+                  {{ 'catalogo-core-estructura-empty'|trans }}
+                  <a href="#" onclick="document.dispatchEvent(new CustomEvent('familias-add-open', {bubbles: true})); return false;">Añadir familia</a>.
+                  </td>
+               </tr>
                {% else %}
                <tr class="warning">
                   <td colspan="9">
@@ -198,6 +230,7 @@
                   o <a href="index.php?page=ventas_familia">Crear familias primero</a> en el catálogo.
                   </td>
                </tr>
+               {% endif %}
                {% endfor %}
             </tbody>
          </table>
@@ -216,7 +249,7 @@
 
 {# Modal Añadir Familia — Alpine (CSP build): opened via the familias-add-open
    event from the toolbar button; closed by fs:modal-close (server-sent). #}
-{% if fsc.codtarifa %}
+{% if fsc.codtarifa or fsc.family_structure %}
 <div x-data="familiaAddModal" x-cloak>
    <div class="familia-alpine-backdrop" x-show="open" @click="close()"></div>
    <div class="familia-alpine-modal" id="modal_add_familia" x-show="open" tabindex="-1" role="dialog">
@@ -225,11 +258,12 @@
             <div class="modal-header">
                <button type="button" class="close" @click="close()">&times;</button>
                <h4 class="modal-title">
-                  <i class="fa fa-plus"></i> Añadir familia a la tarifa
+                  <i class="fa fa-plus"></i>{% if fsc.family_structure %} Añadir familia a la lista{% else %} Añadir familia a la tarifa{% endif %}
+
                </h4>
             </div>
-            <form class="form-horizontal" role="form" action="{{ fsc.url() }}&codtarifa={{ fsc.codtarifa }}" method="post"
-                  hx-post="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa }}"
+            <form class="form-horizontal" role="form" action="{{ fsc.url() }}&{{ fsc.source_query() }}" method="post"
+                  hx-post="{{ fsc.url() ~ '&' ~ fsc.source_query() }}"
                   hx-target="#familias-tbody" hx-swap="innerHTML"
                   data-fs-csrf-strip>
                {{ csrf_field() }}
@@ -254,7 +288,7 @@
                   <label class="col-sm-3 control-label">Familia madre</label>
                   <div class="col-sm-9">
                      <select class="form-control" name="madre" id="add_madre"
-                             hx-get="{{ fsc.url() ~ '&codtarifa=' ~ fsc.codtarifa ~ '&action=get_next_capitulo' }}"
+                             hx-get="{{ fsc.url() ~ '&' ~ fsc.source_query() ~ '&action=get_next_capitulo' }}"
                              hx-trigger="change"
                              hx-target="#add_capitulo_preview"
                              hx-swap="outerHTML">
@@ -296,10 +330,13 @@
 </div>
 {% endif %}
 
-{# Excel modals — untouched #}
-{% if fsc.codtarifa %}
+{# CSRF meta — needed by the HTMX/Alpine surfaces in both modes #}
+{% if fsc.codtarifa or fsc.family_structure %}
 {{ csrf_meta() }}
+{% endif %}
 
+{# Excel flows — legacy tariff mode only (the canonical path rejects Excel) #}
+{% if fsc.codtarifa %}
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/resumablejs@1.1.0/resumable.min.js"></script>
 
 <script type="text/javascript">
@@ -314,10 +351,12 @@ function descargarPlantillaExcel() {
 </script>
 
 <script type="module" src="plugins/catalogo_core/View/js/familias/index.js"></script>
+{% endif %}
 
 {# Alpine (CSP build) component registration — inline classic script runs
    during parse, BEFORE the deferred Alpine boot below, so the alpine:init
    listener is guaranteed to fire before Alpine walks the tree. #}
+{% if fsc.codtarifa or fsc.family_structure %}
 <script type="text/javascript">
 (function () {
     function registerFamiliaAlpineComponents() {
@@ -440,7 +479,10 @@ function descargarPlantillaExcel() {
 {# Alpine CSP build — AFTER the module: the module registers its alpine:init
    component listeners first, then Alpine starts and walks the tree. #}
 {{ alpine.boot() }}
+{% endif %}
 
+{# Excel modals — legacy tariff mode only #}
+{% if fsc.codtarifa %}
 {% include 'partials/familias/modal_exportar_excel.html.twig' %}
 {% include 'partials/familias/modal_importar_excel.html.twig' %}
 {% endif %}

@@ -1,11 +1,22 @@
 {#
  # Rows partial — renders multiple familia rows inside a tbody.
  # Used by renderTbodyFragment for structural changes (save, add, delete, reorder).
- # Expects: rows (array of familia objects), fsc (controller instance)
+ # Expects: rows (array of familia/estructura objects), fsc (controller instance)
+ #
+ # The empty state is source-aware: the structure mode counts one extra column
+ # (orden) and never claims the rows belong to "esta tarifa".
  #}
 <tbody id="familias-tbody">
    {% for fam in rows %}
    {% include 'partials/familias/familia_row.html.twig' with {row: fam, fsc: fsc} %}
+   {% else %}
+   {% if fsc.family_structure %}
+   <tr class="warning">
+      <td colspan="10">
+         {{ 'catalogo-core-estructura-empty'|trans }}
+         <a href="#" onclick="document.dispatchEvent(new CustomEvent('familias-add-open', {bubbles: true})); return false;">Añadir familia</a>.
+      </td>
+   </tr>
    {% else %}
    <tr class="warning">
       <td colspan="9">
@@ -17,5 +28,6 @@
          {% endif %}
       </td>
    </tr>
+   {% endif %}
    {% endfor %}
 </tbody>

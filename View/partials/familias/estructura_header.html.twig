@@ -1,0 +1,60 @@
+{#
+ # Per-list structure header (familias-jerarquia task 3.2, D5).
+ #
+ # Only rendered when the family-structure capability is on: the price list in
+ # context (`?codlista=`) replaces the legacy tariff selector, and every action
+ # of the page stays scoped to that list.
+ #
+ # Expects: fsc (tarif_familias instance with family_structure on)
+ #}
+<div class="container-fluid" style="margin-bottom: 10px;" data-familia-estructura="1">
+   <div class="row">
+      <div class="col-xs-12">
+         {% if fsc.listas_estructura|length > 0 %}
+         <div class="btn-group" id="familias-lista-selector">
+            <span class="text-muted">
+               <i class="fa fa-tags"></i>&nbsp;{{ 'catalogo-core-lista-selector'|trans }}:
+            </span>
+            <select id="select_lista" name="codlista" class="form-control input-sm" onchange="cambiarLista()">
+               {% for lista in fsc.listas_estructura %}
+               <option value="{{ lista.codlista }}" {% if lista.codlista == fsc.codlista_estructura %}selected{% endif %}>
+                  {{ lista.nombre }}{% if lista.por_defecto %} ★{% endif %}
+               </option>
+               {% endfor %}
+            </select>
+         </div>
+         {% endif %}
+
+         {% if fsc.codlista_estructura %}
+         <div class="btn-group">
+            <button type="button" class="btn btn-sm btn-success"
+                    onclick="document.dispatchEvent(new CustomEvent('familias-add-open', {bubbles: true}))">
+               <span class="glyphicon glyphicon-plus"></span>
+               <span class="hidden-xs">&nbsp;Añadir familia</span>
+            </button>
+            <a class="btn btn-sm btn-info" href="index.php?page=ventas_catalogo_view&codlista={{ fsc.codlista_estructura|url_encode }}"
+               title="Ver el catálogo de esta lista">
+               <i class="fa fa-sitemap"></i>
+               <span class="hidden-xs">&nbsp;Catálogo</span>
+            </a>
+         </div>
+         {% endif %}
+
+         <div class="pull-right">
+            {% if fsc.b_solo_activas %}
+            <a class="btn btn-sm btn-info" href="{{ fsc.url() }}&{{ fsc.source_query() }}&b_solo_activas=FALSE"
+               title="Mostrar todas las familias">
+               <i class="fa fa-check-circle"></i>
+               <span class="hidden-xs">&nbsp;Solo activas</span>
+            </a>
+            {% else %}
+            <a class="btn btn-sm btn-default" href="{{ fsc.url() }}&{{ fsc.source_query() }}&b_solo_activas=TRUE"
+               title="Mostrar solo familias activas">
+               <i class="fa fa-circle-o"></i>
+               <span class="hidden-xs">&nbsp;Todas</span>
+            </a>
+            {% endif %}
+         </div>
+      </div>
+   </div>
+</div>

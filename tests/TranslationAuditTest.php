@@ -55,11 +55,16 @@ final class TranslationAuditTest extends TestCase
         'catalogo-core-articulos-asignacion-tab',
         'catalogo-core-catalogo-view-title',
         'catalogo-core-catalogo-view-empty',
+        'catalogo-core-estructura-empty',
+        'catalogo-core-lista-empty',
     ];
 
-    /** Templates introduced by this capability (extended by the deferred tree UI tasks). */
+    /** Templates introduced by this capability (extended by the tree UI tasks). */
     private const NEW_TEMPLATES = [
         '/View/ventas_catalogo_view.html.twig',
+        '/View/tarif_familias.html.twig',
+        '/View/partials/familias/estructura_header.html.twig',
+        '/View/partials/familias/familia_rows.html.twig',
     ];
 
     #[Test]

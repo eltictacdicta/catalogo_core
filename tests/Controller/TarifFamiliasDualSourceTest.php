@@ -212,7 +212,12 @@ final class FakeListaPrecioCatalog
 
     public int $calls = 0;
 
-    public function __construct(array $codes = [], string $default = '')
+    /**
+     * @param list<string> $codes    active lists
+     * @param string       $default  code of the default list
+     * @param list<string> $inactive inactive lists (must never reach the selector)
+     */
+    public function __construct(array $codes = [], string $default = '', array $inactive = [])
     {
         $this->lists = [];
         foreach ($codes as $code) {
@@ -220,6 +225,15 @@ final class FakeListaPrecioCatalog
                 'codlista' => $code,
                 'nombre' => 'Lista ' . $code,
                 'activa' => true,
+                'por_defecto' => $code === $default,
+                'coddivisa' => 'EUR',
+            ];
+        }
+        foreach ($inactive as $code) {
+            $this->lists[] = (object) [
+                'codlista' => $code,
+                'nombre' => 'Lista ' . $code,
+                'activa' => false,
                 'por_defecto' => $code === $default,
                 'coddivisa' => 'EUR',
             ];
@@ -497,13 +511,70 @@ final class TarifFamiliasDualSourceTest extends TestCase
     public function flagOnOffersOnlyActiveListsAndDefaultsToTheDefaultOne(): void
     {
         $this->enableFlagOn();
-        $this->context->listModel = new FakeListaPrecioCatalog(['L1', 'L2'], 'L1');
+        $this->context->listModel = new FakeListaPrecioCatalog(['L1', 'L2'], 'L1', ['L9']);
 
         $this->bootStructure([]);
 
         $codes = array_map(static fn (object $list): string => (string) $list->codlista, $this->controller->listas_estructura);
         $this->assertSame(['L1', 'L2'], $codes, 'Only the active lists feed the selector');
         $this->assertSame('L1', $this->controller->codlista_estructura, 'The default list is selected');
+    }
+
+    #[Test]
+    public function flagOnNeverSelectsAnInactiveList(): void
+    {
+        $this->enableFlagOn();
+        $this->context->listModel = new FakeListaPrecioCatalog(['L1'], 'L1', ['L9']);
+
+        $this->bootStructure(['codlista' => 'L9']);
+
+        $this->assertSame('L1', $this->controller->codlista_estructura, 'An inactive list is not selectable');
+    }
+
+    // =====================================================================
+    // Task 3.2 — the template addresses the list in context (no codtarifa)
+    // =====================================================================
+
+    #[Test]
+    public function flagOffSourceQueryTargetsTheLegacyTariff(): void
+    {
+        $this->bootStructure([]);
+        $this->controller->codtarifa = 'T1';
+
+        $this->assertSame('codtarifa=T1', $this->invoke('source_query'), 'Flag off keeps the legacy query fragment');
+    }
+
+    #[Test]
+    public function flagOnSourceQueryTargetsTheListInContext(): void
+    {
+        $this->enableFlagOn();
+        $this->context->listModel = new FakeListaPrecioCatalog(['L1', 'L2'], 'L1');
+        $this->bootStructure(['codlista' => 'L2']);
+
+        // A legacy code in the request must never leak into the canonical URLs.
+        $this->controller->codtarifa = 'T1';
+
+        $this->assertSame('codlista=L2', $this->invoke('source_query'));
+    }
+
+    #[Test]
+    public function flagOnSourceQueryEscapesTheListCode(): void
+    {
+        $this->enableFlagOn();
+        $this->context->listModel = new FakeListaPrecioCatalog(['L 1'], 'L 1');
+        $this->bootStructure([]);
+
+        $this->assertSame('codlista=L%201', $this->invoke('source_query'));
+    }
+
+    #[Test]
+    public function flagOnWithNoActiveListStillReturnsAWellFormedFragment(): void
+    {
+        $this->enableFlagOn();
+        $this->context->listModel = new FakeListaPrecioCatalog([]);
+        $this->bootStructure([]);
+
+        $this->assertSame('codlista=', $this->invoke('source_query'), 'The parameter name survives with an empty value');
     }
 
     #[Test]
