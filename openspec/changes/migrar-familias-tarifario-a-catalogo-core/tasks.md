@@ -75,12 +75,17 @@ Chain strategy: pending
 > `catalogo_familia_estructura` keyed by `codlista`, plus `FamiliaTreeGuard`,
 > plus the `ArticlePermissionFilterEvent` dispatch. `tarif_*` stops receiving
 > writes in the flag-on path (D6 item 4: accepted coexistence divergence).
+>
+> **Landed (2026-10-28):** 3.1 + 3.3 (`Services/FamiliaEstructuraStore.php`, the
+> dual-source seams in the controller) and 3.2 + 3.5 (the per-list tree view in
+> `View/tarif_familias.html.twig` + `controller::source_query()`, and the
+> page-name/access preservation test). Phase 3 is complete.
 
 - [x] 3.1 Modify `controller/tarif_familias.php` (target retargeted from the retired `VentasFamilias`): list selector (active `catalogo_listas_precio` only, flag-gated), batch read `catalogo_familia_estructura WHERE codlista = ?` (no N+1, D5), structure-column save upsert via model, dispatch `ArticlePermissionFilterEvent` on structure writes (D6). Flag off keeps the legacy model byte-for-byte. **[TDD-RED]** Extend controller tests: flag-off hides selector/structure UI (inert), flag-off POST → structure not written. *(Landed: `Services/FamiliaEstructuraStore.php` + dual-source seams in the controller; `tests/Services/FamiliaEstructuraStoreTest.php`, `tests/Controller/TarifFamiliasDualSourceTest.php`.)*
-- [ ] 3.2 Modify `View/ventas_familias.html.twig`: nested `<ul>` tree (depth from `madre` chain, never stored — D2/D5 assumptions), per-node `nivel`/`orden`/`activa`, "Estructura por lista" columns for selected `codlista` (R-FJ-001 tree-render scenario). CSRF field on all POST forms.
+- [x] 3.2 Modify `View/tarif_familias.html.twig` (target retargeted from the retired `VentasFamilias`): per-list tree view with the active-list selector, structure columns per node and list-scoped action URLs (`?codlista=`), CSRF on every POST form, explicit empty states. *(Landed: `View/partials/familias/estructura_header.html.twig` for the selector; `controller::source_query()` + `get_lista_actual()` as the single source-of-truth seam the template consumes, so no template branches on codlista/codtarifa; legacy (flag off) render verified byte-equivalent against the previous templates — whitespace-only diff — with `tests/View/TarifFamiliasTreeViewTest.php` pinning both modes. Excel JS stays legacy-only because the canonical path rejects Excel; it is not loaded with the flag on.)*
 - [x] 3.3 Cycle-rejection in save path: `save_familia` → `FamiliaTreeGuard::assertAcyclic()` before write; on `RuntimeException` → `new_error_msg()`, no `familias` row modified (R-FJ-001 cycle scenario). **[TDD-RED]** Controller test: cycle POST rejected with error message + row unchanged. *(Landed: the guard runs on the canonical save/promote/demote path, plus a list-scoped `FamiliaEstructuraStore::assertAcyclicInList()` for cycles that only exist in `catalogo_familia_estructura.madre`.)*
 - [x] 3.4 Modify `Controller/VentasArticulo.php` + view: "Asignación a familias" block per selected list writing `catalogo_articulo_familia_estructura` (D5, R-FJ-003), flag-gated, event dispatch on save (D6). **[TDD-RED]** Extend article controller tests: assignment upsert per list, L2 scoped view excludes L1 assignment (R-FJ-003 scenario 2).
-- [ ] 3.5 Page-name preservation: assert `VentasFamilias::getPageData()` name still `ventas_familias`, menu `ventas` (R-FJ-006). **[TDD-RED]** Extend `tests/` fs_access regression test: existing access-row scenario + new `ventas_catalogo_view` registered under `ventas` menu.
+- [x] 3.5 Page-name preservation, retargeted to the live page: `tarif_familias` keeps the page name `tarif_familias`, title `Familias` and menu `catalogo` (R-FJ-006 access rows resolve by page name), and `ventas_catalogo_view` registers under the `ventas` menu as a distinct name (no `fs_access` copy migration needed). **[TDD]** `tests/FamiliasPageAccessPreservationTest.php`. *(`VentasFamilias` / `ventas_familias` no longer exists: retired in `3a5a42ef` and deleted on boot by `Init::retireVentasFamiliasPage()`, so the original wording of this task asserted the opposite of the code. Asserted against the settled target instead; see "DEFERRED" note above.)*
 
 ## Phase 4: Catalog View & Translations
 
@@ -95,7 +100,7 @@ Chain strategy: pending
 - [x] 5.2 Idempotency re-run in DDEV: `FamiliaEstructuraMigrationIdempotencyTest` passes 4/4 against the real database (double run, counts stable, `tarif_*` untouched, orphan logged).
 - [x] 5.3 `HookRegistrationTest` (tarifario) **4/4 OK**, and `tests/ViewHookPointsTest` (catalogo_core) green: the 4 host hook points survive.
 - [x] 5.4 Inert when off: `disabledCapabilityReportsItselfAndQueriesNothing` (0 queries), `test_flag_off_exposes_no_block_state_and_reads_nothing`, `test_flag_off_assignment_post_writes_nothing`, `test_template_gates_the_block_on_the_family_structure_flag` and `familiaEstructuraMigrationIsGatedByTheFamilyStructureFlag` all green.
-- [x] 5.5 Coverage map updated below. **Verify-report readiness: NOT ready to archive** — 3.2/3.5 remain deferred pending the view batch (3.1/3.3 landed 2026-10-28 on `controller/tarif_familias.php`; 3.2 and 3.5 are still pending).
+- [x] 5.5 Coverage map updated below. **Verify-report readiness: ready to archive** — 3.2 and 3.5 landed 2026-10-28 (per-list tree view + page/access preservation), so every Phase 3 task is closed.
 
 ## Coverage Map
 
