@@ -478,13 +478,11 @@
                                     {% endfor %}
                                 {% endif %}
                                 {% if fsc.allow_delete is defined and fsc.allow_delete %}
-                                <form hx-post="{{ fsc.url() }}" hx-target="#articulo-imagenes" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-                                    {{ csrf_field() }}
-                                    <input type="hidden" name="upload_imagen" value="1"/>
-                                    <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}"/>
-                                    <input type="file" name="imagen"/>
-                                    <button class="btn btn-xs btn-primary" type="submit">{{ 'upload'|trans }}</button>
-                                </form>
+                                {# Subida de imagen: el <form id="form_upload_imagen"> vive fuera del
+                                   formulario principal (HTML no admite formularios anidados); estos
+                                   controles se asocian a él con form="form_upload_imagen". #}
+                                <input type="file" name="imagen" form="form_upload_imagen"/>
+                                <button class="btn btn-xs btn-primary" type="submit" form="form_upload_imagen">{{ 'upload'|trans }}</button>
                                 {% endif %}
                             </div>
                         </div>
@@ -507,6 +505,13 @@
                     </button>
                 </div>
             </form>
+            {% if fsc.allow_delete is defined and fsc.allow_delete %}
+            <form id="form_upload_imagen" hx-post="{{ fsc.url() }}" hx-target="#articulo-imagenes" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+                {{ csrf_field() }}
+                <input type="hidden" name="upload_imagen" value="1"/>
+                <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}"/>
+            </form>
+            {% endif %}
             {% if fsc.multi_tariff %}
             <form id="form_precios_lista" action="{{ fsc.url() }}" method="post">
                 {{ csrf_field() }}

@@ -324,6 +324,13 @@ final class FamiliaEstructuraStore
     /**
      * Neutral permission dispatch, mirroring the article write path (D6).
      * Public static so the semantics are testable without a controller.
+     *
+     * Payload contract for listeners (the event name and getters are frozen,
+     * R-TAR-HOOK-004, so they are reused instead of renamed):
+     *  - `getReferencia()` carries the FAMILY code, not an article reference;
+     *  - `getCodtarifa()` carries the price-list code (`codlista`), not a tariff.
+     * A listener that resolves `getReferencia()` as an article must first check
+     * the subject type, otherwise it will mis-gate family writes.
      */
     public static function dispatchStructureFilter(
         string $codfamilia,
