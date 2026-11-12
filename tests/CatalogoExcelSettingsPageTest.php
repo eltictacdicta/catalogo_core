@@ -233,7 +233,7 @@ final class CatalogoExcelSettingsPageTest extends TestCase
         $this->assertNotFalse($source);
 
         $csrfPos = strpos($source, 'isCsrfValid()');
-        $writePos = strpos($source, 'setMultiTariff');
+        $writePos = strpos($source, 'saveAll');
 
         $this->assertNotFalse($csrfPos, 'POST branch must call isCsrfValid()');
         $this->assertNotFalse($writePos, 'Save pipeline must persist through CatalogoOptions writers');

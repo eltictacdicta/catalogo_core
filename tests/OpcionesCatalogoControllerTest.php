@@ -111,11 +111,38 @@ final class OpcionesCatalogoControllerTest extends TestCase
         $csrfPos = strpos($source, 'isCsrfValid()');
         $this->assertNotFalse($csrfPos, 'POST branch must call isCsrfValid()');
 
-        foreach (['setMultiTariff', 'setGroupsEnabled', 'setExcelRoles'] as $writer) {
-            $pos = strpos($source, $writer);
-            $this->assertNotFalse($pos, "Persistence must go through CatalogoOptions::$writer");
-            $this->assertLessThan($pos, $csrfPos, "CSRF must run before $writer");
-        }
+        $writePos = strpos($source, 'saveAll');
+        $this->assertNotFalse($writePos, 'Persistence must go through CatalogoOptions::saveAll');
+        $this->assertLessThan($writePos, $csrfPos, 'CSRF must run before persistence');
+    }
+
+    public function test_success_state_is_gated_by_the_persistence_result(): void
+    {
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+
+        $guardPos = strpos($source, 'if ($saved)');
+        $statePos = strpos($source, '$this->multi_tariff = $multiTariff');
+        $messagePos = strpos($source, 'Configuración guardada.');
+
+        $this->assertNotFalse($guardPos, 'The controller must branch on the saveAll() result');
+        $this->assertNotFalse($statePos, 'The view must show the saved multi-tariff state');
+        $this->assertNotFalse($messagePos, 'The success message must exist');
+
+        $this->assertGreaterThan(
+            $guardPos,
+            $statePos,
+            'View state must update only inside the success branch, never on a failed save'
+        );
+        $this->assertGreaterThan(
+            $statePos,
+            $messagePos,
+            'The success message must follow the successful state update'
+        );
+        $this->assertStringContainsString(
+            'new_error_msg(',
+            $source,
+            'A failed save must surface an error instead of reporting success'
+        );
     }
 
     public function test_persists_roles_through_shared_normalizer(): void

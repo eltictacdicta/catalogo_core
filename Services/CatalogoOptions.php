@@ -45,9 +45,13 @@ final class CatalogoOptions
     /** @var array<string, mixed>|null injectable raw key/value override for tests */
     private ?array $rawOverride;
 
-    public function __construct(?array $rawOverride = null)
+    /** @var callable|null persistence seam for tests; null uses fs_settings::save() */
+    private $persister;
+
+    public function __construct(?array $rawOverride = null, ?callable $persister = null)
     {
         $this->rawOverride = $rawOverride;
+        $this->persister = $persister;
     }
 
     /** Multi-tariff pricing flag. Safe default: false (R-CO-003). */
@@ -56,9 +60,9 @@ final class CatalogoOptions
         return $this->readBool(self::KEY_MULTI_TARIFF);
     }
 
-    public function setMultiTariff(bool $enabled): void
+    public function setMultiTariff(bool $enabled): bool
     {
-        $this->write(self::KEY_MULTI_TARIFF, $enabled ? 'true' : 'false');
+        return $this->write(self::KEY_MULTI_TARIFF, $enabled ? 'true' : 'false');
     }
 
     /** Role-groups master setting. Safe default: false ⇒ listener inert. */
@@ -67,9 +71,9 @@ final class CatalogoOptions
         return $this->readBool(self::KEY_GROUPS_ENABLED);
     }
 
-    public function setGroupsEnabled(bool $enabled): void
+    public function setGroupsEnabled(bool $enabled): bool
     {
-        $this->write(self::KEY_GROUPS_ENABLED, $enabled ? 'true' : 'false');
+        return $this->write(self::KEY_GROUPS_ENABLED, $enabled ? 'true' : 'false');
     }
 
     /**
@@ -82,9 +86,9 @@ final class CatalogoOptions
         return $this->readBool(self::KEY_FAMILY_STRUCTURE);
     }
 
-    public function setFamilyStructure(bool $enabled): void
+    public function setFamilyStructure(bool $enabled): bool
     {
-        $this->write(self::KEY_FAMILY_STRUCTURE, $enabled ? 'true' : 'false');
+        return $this->write(self::KEY_FAMILY_STRUCTURE, $enabled ? 'true' : 'false');
     }
 
     /**
@@ -104,9 +108,24 @@ final class CatalogoOptions
         return is_string($legacy) ? $legacy : null;
     }
 
-    public function setExcelRoles(string $commaList): void
+    public function setExcelRoles(string $commaList): bool
     {
-        $this->write(self::KEY_EXCEL_ROLES, $commaList);
+        return $this->write(self::KEY_EXCEL_ROLES, $commaList);
+    }
+
+    /**
+     * Persists the three general options of the options page in one save.
+     *
+     * All keys are set in memory first and the settings store is written once,
+     * so a failure cannot leave the page half-persisted.
+     */
+    public function saveAll(bool $multiTariff, bool $groupsEnabled, string $excelRoles): bool
+    {
+        return $this->commit(static function (\fs_settings $settings) use ($multiTariff, $groupsEnabled, $excelRoles): void {
+            $settings->set(self::KEY_MULTI_TARIFF, $multiTariff ? 'true' : 'false');
+            $settings->set(self::KEY_GROUPS_ENABLED, $groupsEnabled ? 'true' : 'false');
+            $settings->set(self::KEY_EXCEL_ROLES, $excelRoles);
+        });
     }
 
     // ---- internals ----
@@ -137,10 +156,62 @@ final class CatalogoOptions
         return (new \fs_settings())->get($key);
     }
 
-    private function write(string $key, string $value): void
+    /**
+     * Writes one key and persists the settings store.
+     *
+     * `fs_settings::set()` only mutates `$GLOBALS['config2']` in memory: the
+     * value survives until the request ends and is lost unless `save()`
+     * rewrites `tmp/<FS_TMP_NAME>config2.ini`. Returning the persistence
+     * result lets callers report a real failure instead of a false success.
+     */
+    private function write(string $key, string $value): bool
+    {
+        return $this->commit(static function (\fs_settings $settings) use ($key, $value): void {
+            $settings->set($key, $value);
+        });
+    }
+
+    /**
+     * Mutates the settings store and persists it, rolling back the in-memory
+     * config when the write fails: `set()` alone would otherwise leave readers
+     * in this request exposing values that never reached disk.
+     *
+     * @param callable(\fs_settings): void $mutate
+     */
+    private function commit(callable $mutate): bool
+    {
+        $hadConfig = array_key_exists('config2', $GLOBALS);
+        $before = $GLOBALS['config2'] ?? [];
+
+        $settings = $this->settings();
+        $mutate($settings);
+
+        if ($this->persist($settings)) {
+            return true;
+        }
+
+        if ($hadConfig) {
+            $GLOBALS['config2'] = $before;
+        } else {
+            unset($GLOBALS['config2']);
+        }
+
+        return false;
+    }
+
+    private function settings(): \fs_settings
     {
         require_once FS_FOLDER . '/base/fs_settings.php';
 
-        (new \fs_settings())->set($key, $value);
+        return new \fs_settings();
+    }
+
+    private function persist(\fs_settings $settings): bool
+    {
+        if ($this->persister !== null) {
+            return (bool) ($this->persister)($settings);
+        }
+
+        return $settings->save();
     }
 }
