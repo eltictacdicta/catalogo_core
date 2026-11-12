@@ -75,14 +75,6 @@ trait VentasArticulosListTrait
     public string $codidioma_defecto = '';
 
     /**
-     * Every registry row (active or not) for the `#idiomas` management table
-     * (GDI-01/D-06). The active subset above keeps serving the Excel actions.
-     *
-     * @var array<int, object>
-     */
-    public array $idiomas_todos = [];
-
-    /**
      * Per-row tarifa price/state map for the current page, loaded with one
      * batched query (ALC-02/AD-W3-4).
      *
@@ -282,15 +274,14 @@ trait VentasArticulosListTrait
     }
 
     /**
-     * Loads the idiomas: the active subset for the moved import/export actions
-     * and the full registry for the `#idiomas` management table (GDI-01/D-06).
+     * Loads the active idiomas for the import/export actions; the registry
+     * itself is managed on `ventas_idiomas`.
      */
     protected function load_list_idiomas(): void
     {
         $idioma = $this->idioma_model();
         $idioma->ensure_defaults();
         $this->idiomas = (array) $idioma->all_activos();
-        $this->idiomas_todos = (array) $idioma->all();
         $this->codidioma_defecto = (string) $idioma->get_effective_default_code();
     }
 

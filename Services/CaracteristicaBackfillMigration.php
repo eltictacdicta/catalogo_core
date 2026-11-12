@@ -228,7 +228,7 @@ final class CaracteristicaBackfillMigration
      */
     private static function backfill_opcional_familia(\fs_db2 $db, array $flag): void
     {
-        if (!self::tableExists($db, 'catalogo_opcional_familia')
+        if (!self::tableExists($db, 'catalogo_opcional_familias')
             || !self::surface_ready($db, 'tarif_opcional_ext', $flag['codigo'])) {
             return;
         }
@@ -248,7 +248,7 @@ final class CaracteristicaBackfillMigration
             self::quote(self::DEF_TARIFA) . ', ofam.codfamilia, ' . $flag['id']
                 . ', CASE WHEN oe.' . $flag['codigo'] . ' THEN ' . $flag['one']
                 . ' ELSE ' . $flag['zero'] . ' END, NULL, 0',
-            'catalogo_opcional_familia ofam INNER JOIN tarif_opcional_ext oe'
+            'catalogo_opcional_familias ofam INNER JOIN tarif_opcional_ext oe'
                 . ' ON oe.id_opcional = ofam.id_opcional',
             $where
         );
@@ -270,7 +270,7 @@ final class CaracteristicaBackfillMigration
             . ' AND ' . self::tarifa_exists(self::quote(self::DEF_TARIFA))
             . ' AND NOT EXISTS (SELECT 1 FROM catalogo_articulo_opcional ao'
             . ' WHERE ao.id_opcional = oe.id_opcional)'
-            . ' AND NOT EXISTS (SELECT 1 FROM catalogo_opcional_familia ofam'
+            . ' AND NOT EXISTS (SELECT 1 FROM catalogo_opcional_familias ofam'
             . ' WHERE ofam.id_opcional = oe.id_opcional)'
             . ' AND NOT EXISTS (SELECT 1 FROM catalogo_caracteristica_global c'
             . ' WHERE c.codtarifa = ' . self::quote(self::DEF_TARIFA)

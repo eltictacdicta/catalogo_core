@@ -64,7 +64,7 @@ class catalogo_idioma extends \fs_model
 
     public function url()
     {
-        return 'index.php?page=ventas_articulos#idiomas';
+        return 'index.php?page=opciones_catalogo#idiomas';
     }
 
     public function get($cod)

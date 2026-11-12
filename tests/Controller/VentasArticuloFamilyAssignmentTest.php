@@ -171,6 +171,19 @@ final class VentasArticuloFamilyAssignmentTest extends TestCase
         $this->assertCount(1, $this->store->rows);
     }
 
+    public function test_assignment_save_never_changes_en_catalogo(): void
+    {
+        $this->store->seed('L1', 'ART1', 'F1', true, false);
+        $this->enableFamilyStructure();
+
+        $this->postSave(['codlista' => 'L1', 'codfamilia' => 'F2', 'en_catalogo' => 'TRUE']);
+
+        $this->assertFalse(
+            $this->store->find('L1', 'ART1')['en_catalogo'],
+            'en_catalogo is assigned from tarif_catalogo_view, never from the article page'
+        );
+    }
+
     public function test_assignment_save_with_an_empty_family_removes_the_assignment(): void
     {
         $this->store->seed('L1', 'ART1', 'F1');

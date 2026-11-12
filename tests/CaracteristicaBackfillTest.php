@@ -297,8 +297,8 @@ final class BackfillFakeDb extends \fs_db2
             }
         }
 
-        if (str_contains($where, 'catalogo_opcional_familia ofam')) {
-            foreach ($this->tables['catalogo_opcional_familia'] ?? [] as $assigned) {
+        if (str_contains($where, 'catalogo_opcional_familias ofam')) {
+            foreach ($this->tables['catalogo_opcional_familias'] ?? [] as $assigned) {
                 if ((int) $assigned['id_opcional'] === (int) $row['id_opcional']) {
                     return false;
                 }
@@ -382,7 +382,7 @@ final class CaracteristicaBackfillTest extends TestCase
             'tarif_familia_ext' => ['codfamilia', 'capitulo', 'nivel'],
             'tarif_opcional_ext' => ['id_opcional', 'en_catalogo', 'en_tarifa'],
             'catalogo_articulo_opcional' => ['referencia', 'id_opcional'],
-            'catalogo_opcional_familia' => ['codfamilia', 'id_opcional'],
+            'catalogo_opcional_familias' => ['codfamilia', 'id_opcional'],
         ];
     }
 

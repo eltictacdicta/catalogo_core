@@ -30,7 +30,7 @@ require_once __DIR__ . '/Support/FakeCatalogoIdioma.php';
 
 /**
  * GDI-01 management surface (slice 2): the `catalogo_idiomas` lifecycle plus
- * the `#idiomas` section `catalogo_idioma::url()` already points at.
+ * the `#idiomas` section of `opciones_catalogo` that `catalogo_idioma::url()` points at.
  *
  * The registry is exercised DB-free through the slice-1 in-memory fake: each
  * mutation is issued by a freshly bound double so the emitted SQL mutates the
@@ -38,9 +38,8 @@ require_once __DIR__ . '/Support/FakeCatalogoIdioma.php';
  */
 final class CatalogoIdiomaManagementTest extends TestCase
 {
-    private const CONTROLLER = '/plugins/catalogo_core/Controller/VentasArticulos.php';
-    private const TRAIT = '/plugins/catalogo_core/extras/VentasArticulosListTrait.php';
-    private const VIEW = '/plugins/catalogo_core/View/ventas_articulos.html.twig';
+    private const CONTROLLER = '/plugins/catalogo_core/controller/opciones_catalogo.php';
+    private const VIEW = '/plugins/catalogo_core/view/opciones_catalogo.html.twig';
 
     protected function setUp(): void
     {
@@ -67,9 +66,9 @@ final class CatalogoIdiomaManagementTest extends TestCase
     public function test_url_anchor_resolves_to_a_real_section(): void
     {
         $this->assertSame(
-            'index.php?page=ventas_articulos#idiomas',
+            'index.php?page=opciones_catalogo#idiomas',
             (new FakeCatalogoIdioma())->url(),
-            'the language registry must keep pointing at the list page anchor'
+            'the language registry must point at the catalogue options anchor'
         );
 
         $view = $this->source(self::VIEW);
@@ -164,15 +163,14 @@ final class CatalogoIdiomaManagementTest extends TestCase
             );
         }
 
-        $trait = $this->source(self::TRAIT);
         $this->assertStringContainsString(
             'idiomas_todos',
-            $trait,
-            'the list trait must expose the full registry for the management table'
+            $controller,
+            'the page must expose the full registry for the management table'
         );
         $this->assertStringContainsString(
             '->all()',
-            $trait,
+            $controller,
             'the management table must read every language, not only the active ones'
         );
     }

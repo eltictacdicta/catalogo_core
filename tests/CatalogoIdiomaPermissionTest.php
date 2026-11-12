@@ -20,7 +20,6 @@ declare(strict_types=1);
 
 namespace Tests\CatalogoCore;
 
-use FSFramework\Plugins\catalogo_core\Controller\VentasArticulos;
 use FSFramework\Translation\FSTranslator;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -32,16 +31,15 @@ require_once __DIR__ . '/Support/FakeCatalogoIdioma.php';
 
 /**
  * GDI-04 — every language mutation is administrator-only, POST-only and
- * CSRF-validated; the `ventas_articulos` page itself stays accessible and
- * carries no `#[AdminOnly]` (D-06/D-12).
+ * CSRF-validated (D-06/D-12), whoever can open `opciones_catalogo`.
  *
- * DB-free: an anonymous VentasArticulos subclass skips the controller
- * constructor, injects the in-memory registry double through the trait seam
+ * DB-free: an anonymous opciones_catalogo subclass skips the controller
+ * constructor, injects the in-memory registry double through the `idioma_model()` seam
  * and stubs the CSRF gate, so the real `gestionarIdioma()` body executes.
  */
 final class CatalogoIdiomaPermissionTest extends TestCase
 {
-    private const CONTROLLER = '/plugins/catalogo_core/Controller/VentasArticulos.php';
+    private const CONTROLLER = '/plugins/catalogo_core/controller/opciones_catalogo.php';
 
     protected function setUp(): void
     {
@@ -49,12 +47,6 @@ final class CatalogoIdiomaPermissionTest extends TestCase
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/base/fs_core_log.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/extras/VentasArticulosListTrait.php';
-        if (!class_exists('articulo', false)) {
-            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
-            require_once FS_FOLDER . '/base/fs_model_autoloader.php';
-            \fs_model_autoloader::ensureGlobalAlias('articulo');
-        }
         if (is_file(FS_FOLDER . self::CONTROLLER)) {
             require_once FS_FOLDER . self::CONTROLLER;
         }
@@ -71,7 +63,7 @@ final class CatalogoIdiomaPermissionTest extends TestCase
     private function buildController(IdiomaRegistryFake $db, bool $csrfValid, bool $admin): object
     {
         $outer = $this;
-        $controller = new class($outer, $db, $csrfValid, $admin) extends VentasArticulos {
+        $controller = new class($outer, $db, $csrfValid, $admin) extends \opciones_catalogo {
             public object $outer;
 
             public function __construct(
@@ -81,13 +73,13 @@ final class CatalogoIdiomaPermissionTest extends TestCase
                 private bool $admin
             ) {
                 $this->outer = $outer;
-                $this->className = 'ventas_articulos';
-                $this->core_log = new \fs_core_log(VentasArticulos::class);
+                $this->class_name = 'opciones_catalogo';
+                $this->core_log = new \fs_core_log('opciones_catalogo');
                 $this->user = (object) ['admin' => $this->admin, 'nick' => 'tester'];
                 $this->idiomas_todos = [];
             }
 
-            protected function validateFormToken(): bool
+            public function isCsrfValid(): bool
             {
                 return $this->csrfValid;
             }
@@ -110,14 +102,14 @@ final class CatalogoIdiomaPermissionTest extends TestCase
 
             public function callGestionarIdioma(Request $request): void
             {
-                $method = new \ReflectionMethod(VentasArticulos::class, 'gestionarIdioma');
+                $method = new \ReflectionMethod(\opciones_catalogo::class, 'gestionarIdioma');
                 $method->setAccessible(true);
                 $method->invoke($this, $request);
             }
 
             public function callShouldDispatch(Request $request): bool
             {
-                $method = new \ReflectionMethod(VentasArticulos::class, 'shouldDispatchIdioma');
+                $method = new \ReflectionMethod(\opciones_catalogo::class, 'shouldDispatchIdioma');
                 $method->setAccessible(true);
 
                 return (bool) $method->invoke($this, $request);
@@ -132,7 +124,7 @@ final class CatalogoIdiomaPermissionTest extends TestCase
      */
     private function postRequest(object $controller, array $fields): Request
     {
-        $request = Request::create('/index.php?page=ventas_articulos', 'POST', $fields);
+        $request = Request::create('/index.php?page=opciones_catalogo', 'POST', $fields);
         $controller->setRequestObj($request);
 
         return $request;
@@ -278,7 +270,7 @@ final class CatalogoIdiomaPermissionTest extends TestCase
         );
     }
 
-    public function test_get_cannot_mutate_and_the_page_has_no_admin_only(): void
+    public function test_get_cannot_mutate_and_mutations_are_gated(): void
     {
         $db = $this->seedTwoLanguages();
         $controller = $this->buildController($db, true, true);
@@ -288,26 +280,21 @@ final class CatalogoIdiomaPermissionTest extends TestCase
             'a POST carrying idioma_action must dispatch'
         );
         $this->assertFalse(
-            $controller->callShouldDispatch(Request::create('/index.php?page=ventas_articulos')),
+            $controller->callShouldDispatch(Request::create('/index.php?page=opciones_catalogo')),
             'a POST without idioma_action must not dispatch'
         );
         $this->assertFalse(
             $controller->callShouldDispatch(Request::create(
-                '/index.php?page=ventas_articulos&idioma_action=delete&codidioma=en',
+                '/index.php?page=opciones_catalogo&idioma_action=delete&codidioma=en',
                 'GET'
             )),
             'a GET carrying idioma_action in the query string must never dispatch'
         );
 
         $src = $this->source(self::CONTROLLER);
-        $this->assertStringNotContainsString(
-            'AdminOnly',
-            $src,
-            'ventas_articulos must stay accessible: no page-level #[AdminOnly] attribute'
-        );
 
         $dispatch = $this->methodSource($src, 'private function gestionarIdioma');
-        $this->assertStringContainsString('validateFormToken()', $dispatch, 'the mutation must pass the CSRF gate');
+        $this->assertStringContainsString('isCsrfValid()', $dispatch, 'the mutation must pass the CSRF gate');
         $this->assertStringContainsString('user->admin', $dispatch, 'the mutation must pass the administrator gate');
         $this->assertStringContainsString(
             "request->request->get('idioma_action'",

@@ -388,16 +388,8 @@
                                         </div>
                                     </div>
                                 </div>
+                                {# La visibilidad en catálogo se asigna desde tarif_catalogo_view, no por artículo. #}
                                 <div class="row">
-                                    <div class="col-sm-4">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="en_catalogo" value="TRUE" form="form_asignacion_familia"
-                                                       {% if fsc.asignacion_familia is null or fsc.asignacion_familia.en_catalogo %}checked{% endif %}/>
-                                                Visible en el catálogo
-                                            </label>
-                                        </div>
-                                    </div>
                                     <div class="col-sm-4">
                                         <div class="checkbox">
                                             <label>

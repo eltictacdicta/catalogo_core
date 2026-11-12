@@ -671,8 +671,9 @@ class VentasArticulo extends PageController
     }
 
     /**
-     * Persists the posted `en_tarifa`/`en_catalogo` as articulo-scope feature
-     * values for the tarifa.
+     * Persists the posted `en_tarifa` as an articulo-scope feature value for
+     * the tarifa. `en_catalogo` is never written here: it is assigned from
+     * tarif_catalogo_view.
      *
      * Best-effort by design: the definitions are registered by the tarifario
      * plugin (`caracteristicas-producto` WU-6), so a catalogo_core-only install
@@ -690,20 +691,17 @@ class VentasArticulo extends PageController
             return;
         }
 
-        if (!$request->request->has('en_tarifa') && !$request->request->has('en_catalogo')) {
+        if (!$request->request->has('en_tarifa')) {
             return;
         }
 
-        $store = $this->caracteristica_store();
-        foreach (CaracteristicaResolver::VISIBILITY_CODIGOS as $codigo) {
-            $store->assign_bool(
-                CaracteristicaResolver::SCOPE_ARTICULO,
-                $codtarifa,
-                ['referencia' => $referencia],
-                $codigo,
-                $request->request->has($codigo)
-            );
-        }
+        $this->caracteristica_store()->assign_bool(
+            CaracteristicaResolver::SCOPE_ARTICULO,
+            $codtarifa,
+            ['referencia' => $referencia],
+            'en_tarifa',
+            true
+        );
     }
 
     /**
@@ -1313,7 +1311,7 @@ class VentasArticulo extends PageController
         $asignacion->codlista = $codlista;
         $asignacion->referencia = $referencia;
         $asignacion->codfamilia = $codfamilia;
-        $asignacion->en_catalogo = $request->request->getBoolean('en_catalogo');
+        // en_catalogo is owned by tarif_catalogo_view: new rows keep the model default, existing ones their value.
         $asignacion->en_tarifa = $request->request->getBoolean('en_tarifa');
         $asignacion->orden = $request->request->getInt('orden');
 
