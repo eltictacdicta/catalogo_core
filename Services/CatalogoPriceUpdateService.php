@@ -23,6 +23,10 @@ namespace FSFramework\Plugins\catalogo_core\Services;
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Event/PriceUpdatePersistedEvent.php';
+
+use FSFramework\Event\FSEventDispatcher;
+use FSFramework\Plugins\catalogo_core\Event\PriceUpdatePersistedEvent;
 
 /**
  * Batch price update engine, scope x target (R-BU-001, R-BU-002, R-BU-003,
@@ -123,16 +127,42 @@ final class CatalogoPriceUpdateService
         $updated = 0;
         $failed = [];
 
+        // Previous prices are read from the book (never from the rows the client
+        // reposted), once for the whole batch, and only when someone listens.
+        $listening = $book !== null && FSEventDispatcher::getInstance()->hasListeners(PriceUpdatePersistedEvent::NAME);
+        $before = $listening ? $book->currentPrices(array_map(static fn (array $r): string => (string) $r['key'], $rows)) : [];
+        $persisted = [];
+
         foreach ($rows as $row) {
             $rowKey = (string) $row['key'];
-            if ($book !== null && $book->persist($rowKey, (float) $row['precio_nuevo'])) {
+            $newPrice = (float) $row['precio_nuevo'];
+            if ($book !== null && $book->persist($rowKey, $newPrice)) {
                 $updated++;
+                $persisted[] = [
+                    'key' => $rowKey,
+                    'precio_anterior' => (float) ($before[$rowKey] ?? 0.0),
+                    'precio_nuevo' => $newPrice,
+                ];
             } else {
                 $failed[] = $rowKey;
             }
         }
 
+        if ($listening && $persisted !== []) {
+            $this->notifyPersisted(new PriceUpdatePersistedEvent($scope->code(), $target->code(), $key, $persisted));
+        }
+
         return ['updated' => $updated, 'failed' => $failed];
+    }
+
+    /** Informative only: a failing listener never changes the outcome of the apply. */
+    private function notifyPersisted(PriceUpdatePersistedEvent $event): void
+    {
+        try {
+            FSEventDispatcher::getInstance()->dispatch($event, PriceUpdatePersistedEvent::NAME);
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] price_update_persisted listener failed: ' . $e->getMessage());
+        }
     }
 
     /** round(p * (1 + pct/100), 2) — half-up (R-BU-003). */

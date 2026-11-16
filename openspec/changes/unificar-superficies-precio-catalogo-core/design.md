@@ -502,6 +502,34 @@ de menú".
 
 ---
 
+### D13 — Evento neutro `catalogo_core.price_update_persisted` (R-BU-009)
+
+**Decisión del usuario (D-OPC-HIST, opción 2):** el historial de opcionales de una
+tarifa lo registra el consumidor; el core no lo escribe. La página legacy guardaba
+los opcionales con `tarif_opcional_precio::save()`, que añade una fila a
+`tarif_opcional_precio_historial`. El libro canónico de opcionales guarda con
+`catalogo_opcional_precio::save()`, que no registra historial. El único caso donde
+esa auditoría existía y se perdería es `target=tarifa × scope=opcionales`.
+
+- `Event/PriceUpdatePersistedEvent.php` (nuevo, `Symfony\Contracts\...\Event`,
+  sin cancelación): `scope`, `targetCode`, `targetKey`, `rows` (`key`,
+  `precio_anterior`, `precio_nuevo`). Nombre `catalogo_core.price_update_persisted`.
+- `CatalogoPriceUpdateService::apply()`: si hay listeners
+  (`FSEventDispatcher::getInstance()->hasListeners(NAME)`), lee `currentPrices()`
+  de **todas** las claves a persistir **antes** del bucle (una consulta, no una
+  por fila), persiste, y despacha un solo evento con las filas que `persist()`
+  aceptó. El despacho va en `try/catch` con `error_log()`.
+- Los artículos no necesitan el evento: el libro de tarifa ya registra historial
+  con `get()` + `save()`. El listener del consumidor solo actúa sobre
+  `opcionales` + `tarifa`, así que no hay doble registro.
+- Neutralidad: el archivo del evento entra en `SEAM_FILES`; no nombra al consumidor
+  ni sus tablas.
+
+**Alternativa descartada:** hacer que el libro canónico de opcionales guarde con
+`tarif_opcional_precio` (que ya registra historial). Mezcla un concepto de tarifa
+en el storage canónico y registraría historial también para listas, que nunca lo
+tuvieron.
+
 ## 4. Flujo de datos
 
 ```text
@@ -756,6 +784,8 @@ Cada fase corre las dos suites completas antes de cerrar el slice.
 | Acceso | Usuario no administrador | `#[AdminOnly]` + `isAccessAllowed()` (D9) |
 | Filtros del consumidor | Claves arbitrarias reposteadas | Solo se repostean las claves declaradas por `PriceUpdateFilterRegistry::keys()`; Twig escapa los valores |
 | SQL | Inyección en los nuevos libros/scopes | Modelos existentes (`var2str`/`intval`) o parámetros; ningún SQL nuevo concatenado con entrada de usuario |
+| Evento `price_update_persisted` | Un listener roto altera o aborta el apply | `try/catch` + `error_log()`; el evento no es cancelable y el resultado no depende de él |
+| Evento `price_update_persisted` | Precio anterior manipulado por el cliente | Se lee del libro en el apply, no de las filas reposteadas |
 | Hook | XSS en el fragmento | `render_hook` es `is_safe: ['html']` sobre plantillas del propio plugin, no sobre datos de usuario; los valores se escapan en la plantilla |
 
 ---

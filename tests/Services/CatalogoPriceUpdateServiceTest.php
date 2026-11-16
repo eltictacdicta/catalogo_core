@@ -20,6 +20,8 @@ declare(strict_types=1);
 
 namespace Tests\CatalogoCore;
 
+use FSFramework\Event\FSEventDispatcher;
+use FSFramework\Plugins\catalogo_core\Event\PriceUpdatePersistedEvent;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService;
 use FSFramework\Plugins\catalogo_core\Services\PriceBookInterface;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateFilterInterface;
@@ -52,11 +54,13 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceUpdateService.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
         PriceUpdateFilterRegistry::reset();
+        FSEventDispatcher::reset();
     }
 
     protected function tearDown(): void
     {
         PriceUpdateFilterRegistry::reset();
+        FSEventDispatcher::reset();
         parent::tearDown();
     }
 
@@ -213,6 +217,163 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
 
         $this->assertSame(1, $result['updated']);
         $this->assertSame(['B'], $result['failed']);
+    }
+
+    // ---- R-BU-009: neutral persisted-prices event ----
+
+    private function listenToPersisted(): object
+    {
+        $spy = new class {
+            /** @var list<PriceUpdatePersistedEvent> */
+            public array $events = [];
+        };
+        FSEventDispatcher::getInstance()->addListener(
+            PriceUpdatePersistedEvent::NAME,
+            static function (PriceUpdatePersistedEvent $event) use ($spy): void {
+                $spy->events[] = $event;
+            }
+        );
+
+        return $spy;
+    }
+
+    public function testApplyDispatchesOnePersistedEventWithOldAndNewPrices(): void
+    {
+        $spy = $this->listenToPersisted();
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0]);
+        $scope = $this->fakeScope([['A', 'a'], ['B', 'b']]);
+        $target = $this->fakeTarget(book: $book);
+        $service = new CatalogoPriceUpdateService();
+        $filters = ['clave' => 'K'];
+
+        $rows = $service->preview($scope, $target, $filters, 10.0);
+        $service->apply($scope, $target, $filters, $rows);
+
+        $this->assertCount(1, $spy->events, 'a single event per apply');
+        $event = $spy->events[0];
+        $this->assertSame('catalogo_core.price_update_persisted', PriceUpdatePersistedEvent::NAME);
+        $this->assertSame('articulos', $event->scope());
+        $this->assertSame('fake', $event->targetCode());
+        $this->assertSame('K', $event->targetKey());
+        $this->assertSame(
+            [
+                ['key' => 'A', 'precio_anterior' => 10.0, 'precio_nuevo' => 11.0],
+                ['key' => 'B', 'precio_anterior' => 20.0, 'precio_nuevo' => 22.0],
+            ],
+            $event->rows()
+        );
+    }
+
+    public function testFailedRowsAreNotInTheEvent(): void
+    {
+        $spy = $this->listenToPersisted();
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0], failKeys: ['B']);
+        $scope = $this->fakeScope([['A', 'a'], ['B', 'b']]);
+        $target = $this->fakeTarget(book: $book);
+        $service = new CatalogoPriceUpdateService();
+        $filters = ['clave' => 'K'];
+
+        $rows = $service->preview($scope, $target, $filters, 10.0);
+        $result = $service->apply($scope, $target, $filters, $rows);
+
+        $this->assertSame(['B'], $result['failed']);
+        $this->assertSame(['A'], array_column($spy->events[0]->rows(), 'key'));
+    }
+
+    public function testNoListenersMeansNoExtraBookRead(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $scope = $this->fakeScope([['A', 'a']]);
+        $target = $this->fakeTarget(book: $book);
+        $service = new CatalogoPriceUpdateService();
+
+        $service->apply($scope, $target, ['clave' => 'K'], [['key' => 'A', 'precio_nuevo' => 11.0]]);
+
+        $this->assertSame(0, $book->reads, 'apply reads nothing when nobody listens');
+        $this->assertSame([['A', 11.0]], $book->persisted);
+    }
+
+    public function testListenersCostExactlyOneBookReadForTheWholeBatch(): void
+    {
+        $this->listenToPersisted();
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0, 'C' => 30.0]);
+        $service = new CatalogoPriceUpdateService();
+
+        $service->apply(
+            $this->fakeScope([]),
+            $this->fakeTarget(book: $book),
+            ['clave' => 'K'],
+            [['key' => 'A', 'precio_nuevo' => 1.0], ['key' => 'B', 'precio_nuevo' => 2.0], ['key' => 'C', 'precio_nuevo' => 3.0]]
+        );
+
+        $this->assertSame(1, $book->reads);
+    }
+
+    public function testThrowingListenerDoesNotChangeTheResult(): void
+    {
+        FSEventDispatcher::getInstance()->addListener(
+            PriceUpdatePersistedEvent::NAME,
+            static function (): void {
+                throw new \RuntimeException('listener exploded');
+            }
+        );
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0], failKeys: ['B']);
+        $service = new CatalogoPriceUpdateService();
+        $rows = [['key' => 'A', 'precio_nuevo' => 11.0], ['key' => 'B', 'precio_nuevo' => 22.0]];
+
+        $log = tempnam(sys_get_temp_dir(), 'pue');
+        $previous = ini_set('error_log', $log);
+        try {
+            $result = $service->apply($this->fakeScope([]), $this->fakeTarget(book: $book), ['clave' => 'K'], $rows);
+        } finally {
+            ini_set('error_log', (string) $previous);
+        }
+
+        $this->assertSame(['updated' => 1, 'failed' => ['B']], $result);
+        $logged = (string) file_get_contents($log);
+        unlink($log);
+        $this->assertStringContainsString('[catalogo_core] price_update_persisted listener failed', $logged);
+        $this->assertStringContainsString('listener exploded', $logged);
+    }
+
+    public function testOldPriceComesFromTheBookNotFromTheRows(): void
+    {
+        $spy = $this->listenToPersisted();
+        $book = $this->fakeBook(['A' => 10.0]);
+        $service = new CatalogoPriceUpdateService();
+        $forged = [['key' => 'A', 'precio_actual' => 999.0, 'precio_anterior' => 999.0, 'precio_nuevo' => 11.0]];
+
+        $service->apply($this->fakeScope([]), $this->fakeTarget(book: $book), ['clave' => 'K'], $forged);
+
+        $this->assertSame(10.0, $spy->events[0]->rows()[0]['precio_anterior']);
+    }
+
+    public function testEventIsNotDispatchedWhenNothingWasPersisted(): void
+    {
+        $spy = $this->listenToPersisted();
+        $service = new CatalogoPriceUpdateService();
+        $rows = [['key' => 'A', 'precio_nuevo' => 11.0]];
+
+        $service->apply($this->fakeScope([]), $this->fakeTarget(book: $this->fakeBook(['A' => 10.0], failKeys: ['A'])), ['clave' => 'K'], $rows);
+        $service->apply($this->fakeScope([]), $this->fakeTarget(book: null), ['clave' => 'K'], $rows);
+        $service->apply($this->fakeScope([]), $this->fakeTarget(book: $this->fakeBook(['A' => 1.0])), [], $rows);
+
+        $this->assertSame([], $spy->events);
+    }
+
+    public function testRowWithoutAnOldPriceInTheBookIsStillReportedAsPersisted(): void
+    {
+        $spy = $this->listenToPersisted();
+        $book = $this->fakeBook([]);
+        $service = new CatalogoPriceUpdateService();
+
+        $service->apply($this->fakeScope([]), $this->fakeTarget(book: $book), ['clave' => 'K'], [['key' => 'A', 'precio_nuevo' => 5.0]]);
+
+        $this->assertSame(
+            [['key' => 'A', 'precio_anterior' => 0.0, 'precio_nuevo' => 5.0]],
+            $spy->events[0]->rows(),
+            'a persisted row with no previous price reports 0.0 as the previous price'
+        );
     }
 
     // ---- R-BU-002 / D5: consumer filters narrow the scope selection ----
@@ -432,6 +593,8 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
             /** @var list<array{string, float}> */
             public array $persisted = [];
 
+            public int $reads = 0;
+
             public function __construct(
                 private readonly array $fPrices,
                 private readonly array $fFail,
@@ -440,6 +603,7 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
 
             public function currentPrices(array $keys): array
             {
+                $this->reads++;
                 $out = [];
                 foreach ($keys as $key) {
                     if (array_key_exists($key, $this->fPrices)) {

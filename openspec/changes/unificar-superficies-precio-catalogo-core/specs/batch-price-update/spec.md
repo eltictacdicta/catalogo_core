@@ -240,3 +240,53 @@ NOT aplicar nada.
 - WHEN se navega a la URL legacy
 - THEN la página destino recibe `target=tarifa` con ese `codtarifa`
 - AND en ningún caso recibe `codlista` derivada del `codtarifa`
+
+### Requirement: Evento neutro de precios persistidos (R-BU-009)
+
+Tras aplicar una actualización, el motor MUST despachar **una sola vez** el evento
+neutro `catalogo_core.price_update_persisted` con las filas que el libro persistió
+con éxito: `scope`, código del `target`, clave del target y, por fila, la clave, el
+precio anterior y el precio nuevo. El precio anterior MUST leerse del libro en el
+momento del apply (nunca del cliente). El evento MUST NOT poder cancelar ni
+alterar la operación; es solo informativo. Una excepción de un listener MUST NOT
+cambiar el resultado `updated`/`failed` ni interrumpir el apply: se registra con
+`error_log()` etiquetado. Sin listeners el motor MUST NOT hacer ninguna lectura
+adicional ni despachar nada. Una fila que falla al persistir MUST NOT aparecer en
+el evento, y si ninguna fila se persistió no se despacha nada. El evento y su
+nombre MUST NOT contener nombres de plugins consumidores ni de storages del
+consumidor.
+
+El historial de precios de los opcionales de una tarifa es política del
+consumidor: `catalogo_core` solo emite el hecho; no escribe historial desde este
+flujo.
+
+#### Scenario: Se emite una vez con las filas persistidas
+
+- GIVEN un listener registrado y un apply de tres filas, una de las cuales falla al persistir
+- WHEN se aplica
+- THEN el listener recibe un único evento con las dos filas persistidas y sus precios anterior y nuevo
+- AND `updated` es 2 y `failed` contiene la fila fallida
+- Test: `plugins/catalogo_core/tests/Services/CatalogoPriceUpdateServiceTest.php`
+
+#### Scenario: Sin listeners no hay coste
+
+- GIVEN ningún listener registrado
+- WHEN se aplica
+- THEN el libro no recibe ninguna lectura adicional de precios
+- AND el resultado es idéntico al de antes del evento
+- Test: `plugins/catalogo_core/tests/Services/CatalogoPriceUpdateServiceTest.php`
+
+#### Scenario: Un listener que lanza no rompe el apply
+
+- GIVEN un listener que lanza una excepción
+- WHEN se aplica
+- THEN el resultado `updated`/`failed` es el mismo que sin listener
+- AND se registra un `error_log()` etiquetado
+- Test: `plugins/catalogo_core/tests/Services/CatalogoPriceUpdateServiceTest.php`
+
+#### Scenario: El precio anterior no viene del cliente
+
+- GIVEN filas con un `precio_actual` manipulado en el repost
+- WHEN se aplica
+- THEN el evento lleva el precio anterior leído del libro, no el repostado
+- Test: `plugins/catalogo_core/tests/Services/CatalogoPriceUpdateServiceTest.php`
