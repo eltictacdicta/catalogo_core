@@ -15,11 +15,15 @@ Mode: Strict TDD. Runner: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_
 | WU-2.1 | PR-3 | done (commits a0bf4f3 catalogo_core, 9efef13 tarifario) |
 | WU-2.2 | PR-3 | done |
 | WU-3.1 | PR-4 | done (commit 078862c) |
-| WU-3.2 | PR-5 | done (uncommitted, repo tarifario) |
-| WU-3.4 | PR-5b | done (uncommitted, repo catalogo_core) |
-| WU-3.5 | PR-5b | done (uncommitted, repo tarifario) |
+| WU-3.2 | PR-5 | done (commit e2bbcfe, tarifario) |
+| WU-3.4 | PR-5b | done (commit 16629e4) |
+| WU-3.5 | PR-5b | done (commit e2bbcfe, tarifario) |
+| WU-3.3 | PR-5 | done (commits e072d8b catalogo_core, e2bbcfe tarifario) |
+| WU-4.1..4.5 | PR-6 | done (commits e072d8b catalogo_core, e2bbcfe tarifario) |
+| WU-5.1 | PR-7 | done (release 1.20.0 / tarifario 3.5.0) |
+| WU-5.2 | — | deferred (GATE-5b) |
 
-GATE-3 closed (consumer change `aportar-target-tarifa-a-actualizar-precios`, owned by tarifario). Pending: WU-3.3 (PR-5), then F4.
+GATE-3 closed (consumer change `aportar-target-tarifa-a-actualizar-precios`, owned by tarifario). Nothing pending: F0–F5a applied, WU-5.2 deferred.
 
 ## TDD evidence (PR-1b)
 
@@ -295,3 +299,13 @@ fails 4 shim tests; `retire()` not deleting fails 2 retirement tests.
 29. **Retirement seam.** `Init::upgrade()` calls `retireLegacyPricePage()`; the service
     swallows and logs failures (`[tarifario] legacy price page retirement failed`).
     The row can reappear hidden when the legacy URL is visited (design D12/C1).
+
+## Closing (2026-11-16) — WU-5.1, guardrails, releases
+
+| Evidence | Value |
+|---|---|
+| WU-5.1 RED | `PriceSurfaceOwnershipTest::testDeadArticleViewIsAbsent` failed while `plugins/tarifario/View/tarif_articulo.html.twig` existed |
+| WU-5.1 GREEN | view deleted, `REPOINTED_LINKS` entry removed; reference grep → 0 |
+| Plugin suites | `catalogo_core` 1706 tests / 6771 assertions (2 warnings, 1 skipped); `tarifario` 345 / 1423 (2 skipped) |
+| G-1..G-7 | pass: allowlist frozen at 52; no consumer name in the five new `Services/` seams; no `tarifa` token in them; change artifacts only under this change dir; core tree and `VERSION` 0.35.11 untouched; no composer/vendor diff |
+| Releases | single `catalogo_core` 1.20.0 (1.16.0–1.19.0 never cut: all slices landed on `main` together), then `tarifario` 3.5.0 |

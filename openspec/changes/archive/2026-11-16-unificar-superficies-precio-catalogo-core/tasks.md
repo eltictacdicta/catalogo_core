@@ -645,40 +645,40 @@ mismo slice, sin deploy intermedio entre los dos commits de repo.
 
 ## Fase F5 — Vistas retiradas y dedup opcional
 
-- [ ] **WU-5.1 (F5a) — Borrado de la vista muerta `tarif_articulo.html.twig`.**
+- [x] **WU-5.1 (F5a) — Borrado de la vista muerta `tarif_articulo.html.twig`.**
   Archivos: `plugins/tarifario/View/tarif_articulo.html.twig` (borrado),
   `plugins/catalogo_core/tests/ArticuloListaCanonicaOwnershipTest.php` (entrada de
   la línea 49), `plugins/catalogo_core/tests/PriceSurfaceOwnershipTest.php`
   (ampliado).
   Requisitos: R-PSO-006, R-PSO-001.
-  - [ ] **RED:** `PriceSurfaceOwnershipTest::testDeadArticleViewIsAbsent` y la
+  - [x] **RED:** `PriceSurfaceOwnershipTest::testDeadArticleViewIsAbsent` y la
         fixture sin la entrada; falla mientras la vista exista. Sonda de mutación
         equivalente si se prefiere aislar el RED: restaurar el archivo y ver el test
         fallar.
-  - [ ] **GREEN:** borrar la vista y quitar la entrada de `REPOINTED_LINKS`. La vista
+  - [x] **GREEN:** borrar la vista y quitar la entrada de `REPOINTED_LINKS`. La vista
         no tiene controlador ni página que la renderice (verificado: solo la nombra
         `ArticuloListaCanonicaOwnershipTest:49`).
-  - [ ] **Verify:** RUN-CC + RUN-TAR; y
+  - [x] **Verify:** RUN-CC + RUN-TAR; y
         `grep -rn "tarif_articulo.html.twig" plugins --include="*.php" --include="*.twig" --exclude-dir=vendor --exclude-dir=openspec`
         → 0 resultados.
-  - [ ] **Rollback:** revertir restaura la vista; no hay datos.
+  - [x] **Rollback:** revertir restaura la vista; no hay datos.
   - Notas: requerido por R-PSO-006; no depende de F5b.
 
-- [ ] **WU-5.2 (F5b, diferible) — Dedup de presentación.**
+- [x] **WU-5.2 (F5b) — Dedup de presentación: DIFERIDA (GATE-5b, 2026-11-16).** Sin requisito funcional en los deltas; si se retoma, va en un change propio. Los pasos de abajo no se ejecutaron.
   Archivos: a determinar en el gate; superficie mínima
   `plugins/catalogo_core/view/ventas_listas_precio.html.twig`,
   `plugins/catalogo_core/controller/ventas_listas_precio.php` y el macro compartido
   que se extraiga.
   Requisitos: **ninguno en los deltas.** Motivación R-PSO-001 (presentación propiedad
   del owner) y design §15.3; no se inventa un requisito nuevo.
-  - [ ] **GATE-5b:** decisión explícita de ejecutar o diferir. Si no hay requisito
+  - [x] **GATE-5b:** decisión explícita de ejecutar o diferir. Si no hay requisito
         funcional, el default es **diferir** a un change propio.
-  - [ ] **RED (si se ejecuta):** test estructural de macro compartido y de que
+  - (no aplica, diferida) **RED (si se ejecuta):** test estructural de macro compartido y de que
         `ventas_listas_precio` sigue siendo vista de storage; a definir en el gate.
-  - [ ] **GREEN:** extraer el macro y reutilizarlo sin cambiar la semántica de
+  - (no aplica, diferida) **GREEN:** extraer el macro y reutilizarlo sin cambiar la semántica de
         `PriceListAvailability` ni de `ventas_listas_precio`.
-  - [ ] **Verify:** RUN-CC + smoke visual con el tema AdminLTE.
-  - [ ] **Rollback:** revertir el commit restaura las dos vistas independientes.
+  - (no aplica, diferida) **Verify:** RUN-CC + smoke visual con el tema AdminLTE.
+  - (no aplica, diferida) **Rollback:** revertir el commit restaura las dos vistas independientes.
   - Notas: **no se mezcla con otro slice** y no bloquea releases. Si la estimación
         supera 400 líneas sin requisito que la respalde, se difiere.
 
@@ -687,7 +687,7 @@ mismo slice, sin deploy intermedio entre los dos commits de repo.
 Cada guardrail es una tarea verificable, no una intención. Se ejecutan al cierre de
 **cada** slice.
 
-- [ ] **G-1 — La allowlist no crece.** Archivo:
+- [x] **G-1 — La allowlist no crece.** Archivo:
       `plugins/catalogo_core/tests/CatalogoCoreHookMarkersTest.php`. La lista
       `TARIFARIO_ALLOWLIST` tiene **52 entradas** al inicio del change; ninguna
       entrada nueva puede corresponder a
@@ -697,34 +697,34 @@ Cada guardrail es una tarea verificable, no una intención. Se ejecutan al cierr
       `tests/PriceSurfaceOwnershipTest.php` (fija el recuento) y
       `git diff -- plugins/catalogo_core/tests/CatalogoCoreHookMarkersTest.php` no
       debe mostrar entradas nuevas en el array.
-- [ ] **G-2 — Ningún archivo nuevo de `catalogo_core` nombra al consumidor.**
+- [x] **G-2 — Ningún archivo nuevo de `catalogo_core` nombra al consumidor.**
       Archivos: todos los nuevos de `Services/`, `controller/`, `view/` e
       `Init.php`. **Verify:**
       `grep -rn "tarifario" plugins/catalogo_core/Services plugins/catalogo_core/controller plugins/catalogo_core/view plugins/catalogo_core/Init.php --exclude-dir=vendor --exclude-dir=openspec`
       → cada hit debe corresponder a un archivo preexistente de la allowlist; cero
       hits de archivos nuevos.
-- [ ] **G-3 — Hooks congelados intactos.** Archivos:
+- [x] **G-3 — Hooks congelados intactos.** Archivos:
       `plugins/catalogo_core/View/ventas_articulo.html.twig`,
       `plugins/catalogo_core/View/ventas_opcional.html.twig`. Los cuatro nombres
       `ventas_articulo_tabs_after`, `ventas_articulo_tab_pane_after`,
       `ventas_opcional_tabs_after` y `ventas_opcional_tab_pane_after` conservan
       nombre, posición, contexto y la forma `{{- -}}`. **Verify:** RUN-CC
       `tests/Integration/CatalogoCoreHookMarkersTest.php`.
-- [ ] **G-4 — Vocabulario neutral de `RendererHook` y de los seams.** El hook nuevo
+- [x] **G-4 — Vocabulario neutral de `RendererHook` y de los seams.** El hook nuevo
       se llama exactamente `catalogo_actualizar_precios_filters_after` (sin el token
       `tarifa`); los docblocks de los seams usan "target", "consumer", "price book"
       y "scope", nunca el nombre del plugin consumidor. **Verify:**
       `grep -n "tarifa" plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php plugins/catalogo_core/Services/PriceUpdateScopes.php plugins/catalogo_core/Services/CanonicalPriceBooks.php plugins/catalogo_core/Services/ListaPriceUpdateTarget.php plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php`
       → 0 hits; RUN-CC `tests/CatalogoCoreHookMarkersTest.php`.
-- [ ] **G-5 — Propiedad cross-plugin del spec.** Ningún archivo de este change se
+- [x] **G-5 — Propiedad cross-plugin del spec.** Ningún archivo de este change se
       escribe bajo `plugins/tarifario/openspec/`; el delta del consumidor vive en su
       propio change (`GATE-3`). **Verify:** `git status --short` del repo y listado
       de rutas del change: todo bajo
       `plugins/catalogo_core/openspec/changes/unificar-superficies-precio-catalogo-core/`.
-- [ ] **G-6 — Cero cambios de core.** **Verify:**
+- [x] **G-6 — Cero cambios de core.** **Verify:**
       `git status --short -- base src controller model openspec VERSION` → sin
       cambios. `VERSION` del core no se toca (0.35.11 se queda).
-- [ ] **G-7 — Sin dependencias nuevas.** **Verify:**
+- [x] **G-7 — Sin dependencias nuevas.** **Verify:**
       `git diff -- plugins/catalogo_core/composer.json plugins/catalogo_core/composer.lock plugins/tarifario/composer.json plugins/tarifario/composer.lock`
       → vacío. No hay commit de `vendor/`.
 
@@ -742,16 +742,21 @@ en design §13.
 | `tarifario` | 3.5.0 | F3b + F4 lado consumidor (target, filtro, retiro, shim, golden replay) | 5.º (después de 1.19.0) |
 | `catalogo_core` | 1.20.0 | F5a (vista muerta + dedup si se ejecuta) | 6.º |
 
-- [ ] **REL-1 — `catalogo_core` 1.16.0.** Archivo:
+> **Desviación de releases (2026-11-16):** F0–F5a se integraron en `main` sin cortes
+> intermedios, así que no se publicaron 1.16.0–1.19.0. Se corta una única
+> `catalogo_core` **1.20.0** con todo el change (WU-5.2 diferida) y después `tarifario`
+> **3.5.0**. Los mínimos documentados (≥ 1.16.0 / 1.18.0 / 1.19.0) se cumplen con 1.20.0.
+
+- [x] **REL-1 — (sin tag propio; colapsada en 1.20.0) `catalogo_core` 1.16.0.** Archivo:
       `plugins/catalogo_core/fsframework.ini` (`version = 1.16.0`, de 1.15.2). Tag:
       `(cd plugins/catalogo_core && git tag -a v1.16.0 -m "Release v1.16.0" && git push origin v1.16.0)`.
-- [ ] **REL-2 — `catalogo_core` 1.17.0.** Archivo:
+- [x] **REL-2 — (sin tag propio; colapsada en 1.20.0) `catalogo_core` 1.17.0.** Archivo:
       `plugins/catalogo_core/fsframework.ini` (`version = 1.17.0`). Tag:
       `(cd plugins/catalogo_core && git tag -a v1.17.0 -m "Release v1.17.0" && git push origin v1.17.0)`.
-- [ ] **REL-3 — `catalogo_core` 1.18.0.** Archivo:
+- [x] **REL-3 — (sin tag propio; colapsada en 1.20.0) `catalogo_core` 1.18.0.** Archivo:
       `plugins/catalogo_core/fsframework.ini` (`version = 1.18.0`). Tag:
       `(cd plugins/catalogo_core && git tag -a v1.18.0 -m "Release v1.18.0" && git push origin v1.18.0)`.
-- [ ] **REL-4 — `catalogo_core` 1.19.0.** Archivo:
+- [x] **REL-4 — (sin tag propio; colapsada en 1.20.0) `catalogo_core` 1.19.0.** Archivo:
       `plugins/catalogo_core/fsframework.ini` (`version = 1.19.0`). Tag:
       `(cd plugins/catalogo_core && git tag -a v1.19.0 -m "Release v1.19.0" && git push origin v1.19.0)`.
       **Orden obligatorio:** los dos commits de PR-6 (core y consumidor) ya están en
@@ -759,15 +764,15 @@ en design §13.
       la vista legacy sigue presente en `plugins/tarifario/`, la suite standalone de
       `catalogo_core` queda roja por las fixtures de WU-4.3. Taggear 1.19.0 después
       del commit del consumidor y antes del tag de `tarifario`.
-- [ ] **REL-5 — `tarifario` 3.5.0.** Archivo: `plugins/tarifario/fsframework.ini`
+- [x] **REL-5 — `tarifario` 3.5.0.** Archivo: `plugins/tarifario/fsframework.ini`
       (`version = 3.5.0`, de 3.4.2). Tag:
       `(cd plugins/tarifario && git tag -a v3.5.0 -m "Release v3.5.0" && git push origin v3.5.0)`.
       Condición: REL-4 ya publicado.
-- [ ] **REL-6 — `catalogo_core` 1.20.0.** Archivo:
+- [x] **REL-6 — `catalogo_core` 1.20.0.** Archivo:
       `plugins/catalogo_core/fsframework.ini` (`version = 1.20.0`). Tag:
       `(cd plugins/catalogo_core && git tag -a v1.20.0 -m "Release v1.20.0" && git push origin v1.20.0)`.
       Si WU-5.2 se difiere, 1.20.0 solo contiene F5a y se documenta así.
-- [ ] **REL-7 — Core sin release.** Verificar que `VERSION` de la raíz sigue en
+- [x] **REL-7 — Core sin release.** Verificar que `VERSION` de la raíz sigue en
       0.35.11 y que no se crea tag en el repo del core. `require = "catalogo_core"`
       no admite versión; la compatibilidad se garantiza con las guardas
       `class_exists` descritas en WU-3.2.

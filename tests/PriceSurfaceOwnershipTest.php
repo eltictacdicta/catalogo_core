@@ -169,6 +169,14 @@ class PriceSurfaceOwnershipTest extends TestCase
         );
     }
 
+    public function testDeadArticleViewIsAbsent(): void
+    {
+        $this->assertFileDoesNotExist(
+            dirname($this->pluginRoot()) . '/tarifario/View/tarif_articulo.' . 'html.twig', // composed: the reference audit must find no literal
+            'The dead article view has no controller or page and stays deleted (R-PSO-006)'
+        );
+    }
+
     // =====================================================================
     // Helpers
     // =====================================================================

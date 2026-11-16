@@ -45,7 +45,6 @@ final class ArticuloListaCanonicaOwnershipTest extends TestCase
         'plugins/catalogo_core/View/Macro/TarifarioComponents.html.twig' => ['page=ventas_articulos', 'b_codtarifa'],
         'plugins/catalogo_core/View/tarif_tarifas.html.twig' => ['page=ventas_articulos', ''],
         'plugins/tarifario/View/tarif_historial_precios.html.twig' => ['page=ventas_articulos', ''],
-        'plugins/tarifario/View/tarif_articulo.html.twig' => ['page=ventas_articulos', ''],
     ];
 
     private function source(string $relative): string
