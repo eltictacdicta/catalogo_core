@@ -23,11 +23,13 @@ require_once FS_FOLDER . '/base/fs_settings.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceListAvailability.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceUpdateService.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
 
 use FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateFilterRegistry;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopes;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface;
@@ -95,6 +97,18 @@ class catalogo_actualizar_precios extends fs_controller
         'incluir_subfamilias' => false,
         'codgrupo' => '',
     ];
+
+    /**
+     * Posted values of the request keys declared by the registered consumer
+     * filters (PriceUpdateFilterRegistry::keys()). Only declared keys are ever
+     * here: the apply form reposts them and the hook template echoes them.
+     *
+     * @var array<string, string>
+     */
+    public array $filter_extra = [];
+
+    /** Scope the consumer filters were resolved for. */
+    private string $filter_scope = '';
 
     /** @var list<\FSFramework\model\familia> */
     public array $familias = [];
@@ -174,7 +188,7 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
-        $filters = $this->readFilters($target);
+        $filters = $this->readFilters($target, $scope);
 
         switch ((string) ($_POST['action'] ?? '')) {
             case 'preview':
@@ -223,15 +237,22 @@ class catalogo_actualizar_precios extends fs_controller
 
     /**
      * AND-combined filter set from the POST (R-BU-002). The target key is read
-     * from the field the TARGET declares.
+     * from the field the TARGET declares; consumer filter keys come from the
+     * PriceUpdateFilterRegistry and nothing else the client posts is accepted.
      *
      * @return array<string, mixed>
      */
-    private function readFilters(PriceUpdateTargetInterface $target): array
+    private function readFilters(PriceUpdateTargetInterface $target, PriceUpdateScopeInterface $scope): array
     {
         $keyField = $target->keyField();
 
-        return [
+        // Consumer filters: ONLY the keys the registry declares for this scope.
+        $extra = [];
+        foreach (PriceUpdateFilterRegistry::keys($scope->code()) as $key) {
+            $extra[$key] = trim((string) ($_POST[$key] ?? ''));
+        }
+
+        return $extra + [
             $keyField => trim((string) ($_POST[$keyField] ?? '')),
             'codfamilia' => trim((string) ($_POST['codfamilia'] ?? '')),
             // Checkbox posts 'TRUE'; fs_model::str2bool() is model-only and
@@ -339,6 +360,7 @@ class catalogo_actualizar_precios extends fs_controller
         if ($scope !== null) {
             $this->selected_scope = $scope->code();
             $this->scope_key_label = $scope->keyLabel();
+            $this->prepareExtraFilters($scope->code());
         }
 
         $pct = $this->requestValue('pct');
@@ -349,6 +371,30 @@ class catalogo_actualizar_precios extends fs_controller
             'incluir_subfamilias' => $this->requestValue('incluir_subfamilias') === 'TRUE',
             'codgrupo' => $this->requestValue('codgrupo'),
         ];
+    }
+
+    /**
+     * Resolves the consumer filters of the scope: remembers the scope and
+     * collects the posted (or preselected) values of the DECLARED keys only.
+     */
+    protected function prepareExtraFilters(string $scopeCode): void
+    {
+        $this->filter_scope = $scopeCode;
+        $this->filter_extra = [];
+        foreach (PriceUpdateFilterRegistry::keys($scopeCode) as $key) {
+            $this->filter_extra[$key] = $this->requestValue($key);
+        }
+    }
+
+    /**
+     * Opaque data the consumer filters publish for their hook template (the
+     * options of their controls). Empty when nothing is registered.
+     *
+     * @return array<string, mixed>
+     */
+    public function price_update_filter_context(): array
+    {
+        return PriceUpdateFilterRegistry::viewContext($this->filter_scope);
     }
 
     private function loadFormData(): void

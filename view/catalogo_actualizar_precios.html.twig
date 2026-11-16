@@ -9,7 +9,10 @@
  * formulario GET; el campo de clave del destino (lista, tarifa...) lo declara el
  * propio destino. Los filtros opcionales se combinan con AND. El formulario de
  * apply repostea el destino, el ámbito, la clave, el porcentaje y todos los
- * filtros: el servidor recalcula las mismas filas del preview.
+ * filtros (también las claves que declaran los filtros registrados, nunca claves
+ * arbitrarias): el servidor recalcula las mismas filas del preview.
+ * El hook catalogo_actualizar_precios_filters_after permite a un consumidor
+ * añadir controles de filtro; sin registro aporta cero bytes.
  */
 #}
 {% include 'header.html.twig' %}
@@ -109,6 +112,7 @@
                <label for="pct">Porcentaje (%)</label>
                <input type="text" name="pct" id="pct" class="form-control" value="{{ fsc.form.pct }}" required />
             </div>
+            {{- render_hook('catalogo_actualizar_precios_filters_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}
             <button class="btn btn-primary" type="submit">
                <span class="glyphicon glyphicon-search"></span> &nbsp; Vista previa
             </button>
@@ -154,6 +158,9 @@
             <input type="hidden" name="codfamilia" value="{{ fsc.form.codfamilia }}" />
             <input type="hidden" name="incluir_subfamilias" value="{{ fsc.form.incluir_subfamilias ? 'TRUE' : 'FALSE' }}" />
             <input type="hidden" name="codgrupo" value="{{ fsc.form.codgrupo }}" />
+            {% for extra_key, extra_value in fsc.filter_extra %}
+            <input type="hidden" name="{{ extra_key }}" value="{{ extra_value }}" />
+            {% endfor %}
             <div class="checkbox">
                <label>
                   <input type="checkbox" name="confirm" value="TRUE" /> Confirmo aplicar estos cambios

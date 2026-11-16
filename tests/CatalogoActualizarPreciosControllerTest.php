@@ -21,6 +21,8 @@ declare(strict_types=1);
 namespace Tests\CatalogoCore;
 
 use FSFramework\Plugins\catalogo_core\Services\PriceBookInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateFilterInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateFilterRegistry;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry;
@@ -52,7 +54,9 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
         PriceUpdateTargetRegistry::reset();
+        PriceUpdateFilterRegistry::reset();
     }
 
     // ---- Page shape (R-BU-004: admin-gated) ----
@@ -458,6 +462,7 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             ['autoescape' => 'html', 'strict_variables' => true]
         );
         $twig->addFunction(new \Twig\TwigFunction('csrf_field', static fn (): string => '<input type="hidden" name="_token" value="t">', ['is_safe' => ['html']]));
+        $twig->addFunction(new \Twig\TwigFunction('render_hook', static fn (): string => '', ['is_safe' => ['html']]));
 
         $fsc = new class {
             public bool $tariffs_active = false;
@@ -470,6 +475,7 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             public string $target_key_label = 'lista de precio';
             public array $target_key_options = [['value' => 'L1', 'label' => 'Lista uno']];
             public string $scope_key_label = 'Referencia';
+            public array $filter_extra = ['grupo_x' => '7"><b>'];
             public array $form = ['key' => 'L1', 'pct' => '7,5', 'codfamilia' => '"><script>x</script>', 'incluir_subfamilias' => true, 'codgrupo' => '5'];
             public array $familias = [];
             public array $grupos = [];
@@ -481,9 +487,10 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             }
         };
 
-        $html = $twig->render('page', ['fsc' => $fsc]);
+        $html = $twig->render('page', ['fsc' => $fsc, 'user' => null, 'empresa' => null, 'i18n' => null]);
 
         $this->assertStringContainsString('<option value="otro" selected>Otro</option>', $html);
+        $this->assertStringContainsString('<input type="hidden" name="grupo_x" value="7&quot;&gt;&lt;b&gt;" />', $html, 'Declared consumer keys are reposted, escaped');
         $this->assertStringContainsString('Vista previa: 1 elementos', $html);
         $this->assertStringContainsString('<input type="hidden" name="codlista" value="L1" />', $html);
         $this->assertStringContainsString('<input type="hidden" name="pct" value="7,5" />', $html);
@@ -504,16 +511,141 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             ['autoescape' => 'html', 'strict_variables' => true]
         );
         $twig->addFunction(new \Twig\TwigFunction('csrf_field', static fn (): string => '', ['is_safe' => ['html']]));
+        $twig->addFunction(new \Twig\TwigFunction('render_hook', static fn (): string => '', ['is_safe' => ['html']]));
         $fsc = new class {
             public bool $tariffs_active = true;
             public bool $multi_tariff = false;
             public array $targets = [];
         };
 
-        $html = $twig->render('page', ['fsc' => $fsc]);
+        $html = $twig->render('page', ['fsc' => $fsc, 'user' => null, 'empresa' => null, 'i18n' => null]);
 
         $this->assertStringContainsString('No hay destinos de actualización disponibles.', $html);
         $this->assertStringNotContainsString('<form', $html, 'No form is offered without a target');
+    }
+
+    // ---- WU-3.1: consumer filters (R-BU-002, R-CRH-001, D5) ----
+
+    /** Only keys the registry declares are reposted; the client cannot add others. */
+    public function testFilterKeysAreRepostedAsHiddenInputs(): void
+    {
+        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+        $start = strpos($content, 'name="action" value="apply"');
+        $applyForm = substr($content, (int) $start, (int) strpos($content, '</form>', (int) $start) - (int) $start);
+
+        $this->assertStringContainsString('fsc.filter_extra', $applyForm, 'The apply form reposts the declared consumer filter keys');
+        $this->assertMatchesRegularExpression(
+            '/for\s+\w+\s*,\s*\w+\s+in\s+fsc\.filter_extra/',
+            $applyForm
+        );
+    }
+
+    public function testReadFiltersCarriesOnlyTheDeclaredConsumerKeys(): void
+    {
+        PriceUpdateFilterRegistry::register($this->consumerFilter(['grupo_x'], ['opciones' => [1, 2]]));
+        $scope = $this->fakeScope([['A', 'Uno']]);
+        $this->registerTarget('fake', $this->fakeBook(['A' => 10.0]));
+        $controller = $this->makeController(['articulos' => $scope]);
+        $_POST = [
+            'action' => 'preview', 'target' => 'fake', 'scope' => 'articulos', 'clave' => 'K', 'pct' => '5',
+            'codfamilia' => 'F', 'grupo_x' => '7', 'intruso' => 'x',
+        ];
+
+        $controller->callHandlePost();
+
+        $this->assertSame('7', $scope->lastFilters['grupo_x'], 'A declared key reaches the scope and the filters');
+        $this->assertArrayNotHasKey('intruso', $scope->lastFilters, 'An arbitrary client key is ignored');
+    }
+
+    public function testPreviewAndApplyNarrowThroughTheRegisteredFilter(): void
+    {
+        PriceUpdateFilterRegistry::register($this->consumerFilter(['grupo_x'], [], static fn (array $f, array $r): bool => $r['key'] !== 'B'));
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno'], ['B', 'Dos']])]);
+        $_POST = [
+            'action' => 'apply', 'confirm' => 'TRUE', 'target' => 'fake', 'scope' => 'articulos',
+            'clave' => 'K', 'pct' => '10', 'codfamilia' => 'F', 'grupo_x' => '7',
+        ];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([['A', 11.0]], $book->persisted, 'The reposted consumer filter narrows the apply too');
+    }
+
+    public function testPriceUpdateFilterContextExposesTheRegistryContextAndPostedValues(): void
+    {
+        PriceUpdateFilterRegistry::register($this->consumerFilter(['grupo_x'], ['opciones' => ['G1']]));
+        $controller = $this->makeController(['articulos' => $this->fakeScope([])]);
+        $_POST = ['grupo_x' => '7', 'intruso' => 'x'];
+
+        $controller->callPrepareExtraFilters('articulos');
+
+        $this->assertSame(['opciones' => ['G1']], $controller->price_update_filter_context());
+        $this->assertSame(['grupo_x' => '7'], $controller->filter_extra, 'Posted values of declared keys only');
+    }
+
+    public function testPriceUpdateFilterContextIsEmptyWithoutFilters(): void
+    {
+        $controller = $this->makeController(['articulos' => $this->fakeScope([])]);
+
+        $this->assertSame([], $controller->price_update_filter_context());
+        $this->assertSame([], $controller->filter_extra);
+    }
+
+    /** R-CRH-001: a registered hook lands inside the filter form, unescaped. */
+    public function testRegisteredHookFragmentAppearsInsideTheFilterForm(): void
+    {
+        \FSFramework\View\ViewHookRegistry::register('catalogo_actualizar_precios_filters_after', 'test/hook.html.twig');
+        $twig = new \Twig\Environment(
+            new \Twig\Loader\ArrayLoader([
+                'header.html.twig' => '',
+                'footer.html.twig' => '',
+                'test/hook.html.twig' => '<select name="grupo_x" data-n="{{ fsc.price_update_filter_context().n }}"></select>',
+                'page' => (string) file_get_contents(FS_FOLDER . self::VIEW_FILE),
+            ]),
+            ['autoescape' => 'html', 'strict_variables' => true]
+        );
+        $twig->addFunction(new \Twig\TwigFunction('csrf_field', static fn (): string => '', ['is_safe' => ['html']]));
+        $twig->addFunction(new \Twig\TwigFunction(
+            'render_hook',
+            static fn (string $name, array $context = []): string => \FSFramework\View\ViewHookRegistry::render($twig, $name, $context),
+            ['is_safe' => ['html']]
+        ));
+        $fsc = new class {
+            public bool $tariffs_active = false;
+            public bool $multi_tariff = true;
+            public array $targets = ['lista' => 'Lista'];
+            public array $scopes = ['articulos' => 'Artículos'];
+            public string $selected_target = 'lista';
+            public string $selected_scope = 'articulos';
+            public string $target_key_field = 'codlista';
+            public string $target_key_label = 'lista';
+            public array $target_key_options = [];
+            public string $scope_key_label = 'Referencia';
+            public array $filter_extra = [];
+            public array $form = ['key' => '', 'pct' => '0', 'codfamilia' => '', 'incluir_subfamilias' => false, 'codgrupo' => ''];
+            public array $familias = [];
+            public array $grupos = [];
+            public array $preview_rows = [];
+
+            public function url(): string
+            {
+                return 'index.php?page=catalogo_actualizar_precios';
+            }
+
+            public function price_update_filter_context(): array
+            {
+                return ['n' => 3];
+            }
+        };
+
+        $html = $twig->render('page', ['fsc' => $fsc, 'user' => null, 'empresa' => null, 'i18n' => null]);
+
+        $hook = strpos($html, '<select name="grupo_x" data-n="3"></select>');
+        $this->assertNotFalse($hook, 'The registered fragment is rendered, unescaped');
+        $this->assertGreaterThan((int) strpos($html, 'name="pct"'), $hook, 'After the last filter control');
+        $this->assertLessThan((int) strpos($html, 'Vista previa'), $hook, 'Before the submit button');
     }
 
     // ---- doubles ----
@@ -521,6 +653,7 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
     protected function tearDown(): void
     {
         PriceUpdateTargetRegistry::reset();
+        PriceUpdateFilterRegistry::reset();
         $_POST = [];
         parent::tearDown();
     }
@@ -561,6 +694,11 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             public function callHandlePost(): void
             {
                 $this->handlePost();
+            }
+
+            public function callPrepareExtraFilters(string $scopeCode): void
+            {
+                $this->prepareExtraFilters($scopeCode);
             }
         };
     }
@@ -683,6 +821,46 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
                 $this->persisted[] = [$key, $price];
 
                 return true;
+            }
+        };
+    }
+
+    /**
+     * @param list<string> $keys
+     * @param array<string, mixed> $context
+     */
+    private function consumerFilter(array $keys, array $context = [], ?\Closure $keep = null): PriceUpdateFilterInterface
+    {
+        return new class($keys, $context, $keep) implements PriceUpdateFilterInterface {
+            public function __construct(
+                private readonly array $fKeys,
+                private readonly array $fContext,
+                private readonly ?\Closure $fKeep,
+            ) {
+            }
+
+            public function supports(string $scope): bool
+            {
+                return $scope === 'articulos';
+            }
+
+            public function keys(string $scope): array
+            {
+                return $this->fKeys;
+            }
+
+            public function viewContext(string $scope): array
+            {
+                return $this->fContext;
+            }
+
+            public function narrow(string $scope, array $filters, array $rows): array
+            {
+                if ($this->fKeep === null) {
+                    return $rows;
+                }
+
+                return array_values(array_filter($rows, fn (array $r): bool => ($this->fKeep)($filters, $r)));
             }
         };
     }

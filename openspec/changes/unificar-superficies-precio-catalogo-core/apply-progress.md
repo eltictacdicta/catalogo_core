@@ -12,10 +12,11 @@ Mode: Strict TDD. Runner: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_
 | WU-1.3 | PR-1b | done |
 | WU-1.4 | PR-1b | done |
 | WU-1.5 | PR-2 | done (commit e162a10) |
-| WU-2.1 | PR-3 | done (uncommitted) |
-| WU-2.2 | PR-3 | done (uncommitted) |
+| WU-2.1 | PR-3 | done (commits a0bf4f3 catalogo_core, 9efef13 tarifario) |
+| WU-2.2 | PR-3 | done |
+| WU-3.1 | PR-4 | done (uncommitted) |
 
-Pending: WU-3.1 (PR-4) onwards.
+Pending: GATE-3 (consumer change, owned by tarifario), then WU-3.2 (PR-5) onwards.
 
 ## TDD evidence (PR-1b)
 
@@ -135,3 +136,39 @@ batch updates of opcionales would stop being audited. The harness counts the
 legacy history writes (`LegacyPriceUpdateFakeDb::$historyWrites`). Options: keep
 it as is (history only for articles, as the design says), or add a neutral
 post-persist hook so the consumer records the history.
+
+## PR-4 (WU-3.1) evidence
+
+| Evidence | Value |
+|---|---|
+| RED | `PriceUpdateFilterRegistryTest` (10) / engine (3 new) / controller (5 new) errored on the missing registry file; `CatalogoCoreHookMarkersTest` 3 failures (marker absent) |
+| GREEN | registry 10/10; engine 16/16; hook markers 11/11 (50 assertions); controller 36/36 (104 assertions) |
+| Plugin suite | `catalogo_core` 1694 tests / 6740 assertions, 2 warnings, 1 skipped (same as before) |
+| Consumer suite | `tarifario` 284 tests / 1228 assertions, 2 skipped (unchanged) |
+| Static analysis | `composer phpstan:plugins` no errors |
+| Guardrails | `SEAM_FILES` extended with `/Services/PriceUpdateFilterRegistry.php`; allowlist still 52; the four frozen hooks untouched and absent of the new hook |
+| Rollback boundary | Revert the PR-4 commit: without a registered filter the hook renders `''`, no hidden extras, no narrowing |
+
+### Deviations (PR-4)
+
+13. **Engine file touched.** WU-3.1's file list omits `CatalogoPriceUpdateService.php`,
+    but design §4 puts `PriceUpdateFilterRegistry::narrow()` in the engine flow, so
+    `preview()` now narrows `scope->match()` through the registry (3 new engine tests).
+14. **Registry guarantees beyond D5.** `narrow()` intersects the filter result with
+    the scope rows (a filter can only remove, never add or reorder), a throwing
+    filter empties the selection (fail closed), `keys()` drops reserved engine
+    fields and non snake_case names, and registering the same instance twice is
+    idempotent. These make "never widen the default row set" (R-BU-002) a property
+    of the registry instead of a promise of each consumer.
+15. **Posted values for the hook.** Besides `price_update_filter_context()`
+    (registry `viewContext`), the controller exposes `filter_extra` (posted values
+    of the DECLARED keys only) so a consumer template can echo its current choice
+    and the apply form can repost it.
+16. **Hook position.** The marker sits after `pct` inside the filter form, before the
+    preview button, in the exact R-CRH-001 form (asserted by source and by render).
+
+### Pending gate
+
+GATE-3 (consumer change in `plugins/tarifario/openspec/changes/...` documenting
+`tarifario/catalogo-integration`) is NOT written by this change and is still
+open. It must exist before WU-3.2/WU-4.2 modify `tarifario` production code.

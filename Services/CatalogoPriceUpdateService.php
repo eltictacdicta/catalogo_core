@@ -22,6 +22,7 @@ namespace FSFramework\Plugins\catalogo_core\Services;
 
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
 
 /**
  * Batch price update engine, scope x target (R-BU-001, R-BU-002, R-BU-003,
@@ -36,6 +37,8 @@ require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php'
  * target->bookFor()`. The engine receives resolved collaborators and never
  * branches on a scope or target code.
  *
+ *  - additional filters registered through PriceUpdateFilterRegistry may only
+ *    narrow the scope's rows (never widen them);
  *  - preview(): current and prospective price per selected row, persisting
  *    NOTHING. A row without a price in the book is omitted.
  *  - apply(): persists exactly the previewed rows through the book, one by
@@ -70,7 +73,7 @@ final class CatalogoPriceUpdateService
             return [];
         }
 
-        $matched = $scope->match($filters);
+        $matched = PriceUpdateFilterRegistry::narrow($scope->code(), $filters, $scope->match($filters));
         if ($matched === []) {
             return [];
         }

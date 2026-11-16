@@ -12,7 +12,7 @@
 > (R-BU-001..004, R-BU-006..008; **R-BU-005 sin cambios**),
 > `specs/catalogo-render-hooks/spec.md` (R-CRH-001..002).
 >
-> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2), WU-2.1 y WU-2.2 (PR-3) completadas; el resto pendiente.
+> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2), WU-2.1 y WU-2.2 (PR-3) y WU-3.1 (PR-4) completadas; el resto pendiente (GATE-3 abierto).
 > Evidencia y desviaciones: `apply-progress.md`.
 >
 > **Versiones de partida:** `catalogo_core` 1.15.2, `tarifario` 3.4.2.
@@ -401,28 +401,28 @@ en filas, orden, totales y escrituras, y golden capturado antes de F4.
         `git status` no muestra archivos nuevos de este change en el árbol
         `plugins/tarifario/openspec/`.
 
-- [ ] **WU-3.1 — Registro de filtros y marcador de hook.**
+- [x] **WU-3.1 — Registro de filtros y marcador de hook.**
   Archivos: `plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php` (nuevo),
   `plugins/catalogo_core/view/catalogo_actualizar_precios.html.twig`,
   `plugins/catalogo_core/controller/catalogo_actualizar_precios.php`,
   `plugins/catalogo_core/tests/Services/PriceUpdateFilterRegistryTest.php` (nuevo),
   `plugins/catalogo_core/tests/CatalogoCoreHookMarkersTest.php` (ampliado).
   Requisitos: R-CRH-001, R-BU-002.
-  - [ ] **RED:** `testRegistryKeysViewContextAndNarrow`,
+  - [x] **RED:** `testRegistryKeysViewContextAndNarrow`,
         `testRegistryResetAndRegistrationOrder`,
         `testNewHookMarkerIsNeutralZeroByteForm` (expresión exacta con control de
         espacios y sin el token `tarifa`), `testFilterKeysAreRepostedAsHiddenInputs`
         (solo se repostean las claves declaradas; claves arbitrarias del cliente se
         ignoran), `testUnregisteredHookRendersEmptyAndRegisteredRendersHtml`
         (extensión del arnés existente de marcadores).
-  - [ ] **GREEN:** registrar el hook con la forma exacta
+  - [x] **GREEN:** registrar el hook con la forma exacta
         `{{- render_hook('catalogo_actualizar_precios_filters_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}`
         dentro del formulario de filtros, después de `pct` y antes del botón;
         `price_update_filter_context()` en el controlador; `hidden` solo para
         `PriceUpdateFilterRegistry::keys($scope)`.
-  - [ ] **Verify:** RUN-CC `tests/CatalogoCoreHookMarkersTest.php` y
+  - [x] **Verify:** RUN-CC `tests/CatalogoCoreHookMarkersTest.php` y
         `tests/Services/PriceUpdateFilterRegistryTest.php`.
-  - [ ] **Rollback:** sin registro, el hook rinde `''` y la página sigue igual.
+  - [x] **Rollback:** sin registro, el hook rinde `''` y la página sigue igual.
   - Notas: los cuatro hooks congelados no se tocan; el hook nuevo se declara **solo**
         en la vista de precios, nunca en `ventas_articulo.html.twig` ni
         `ventas_opcional.html.twig` (R-CRH-002). `$this->template` y el cuerpo de la

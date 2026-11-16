@@ -56,6 +56,7 @@ class PriceSurfaceOwnershipTest extends TestCase
         '/Services/PriceUpdateScopes.php',
         '/Services/CanonicalPriceBooks.php',
         '/Services/ListaPriceUpdateTarget.php',
+        '/Services/PriceUpdateFilterRegistry.php',
     ];
 
     /** Frozen by R-TAR-HOOK-003 / R-PSO-004 — MUST NOT change. */

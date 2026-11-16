@@ -48,6 +48,14 @@ class CatalogoCoreHookMarkersTest extends TestCase
 
     private const LIST_VIEW = '/View/ventas_articulos.html.twig';
 
+    /** Declared only by the price update view (R-CRH-001); frozen name, no consumer token. */
+    private const PRICE_UPDATE_HOOK = 'catalogo_actualizar_precios_filters_after';
+
+    private const PRICE_UPDATE_VIEW = '/view/catalogo_actualizar_precios.html.twig';
+
+    /** Exact marker of R-CRH-001. */
+    private const PRICE_UPDATE_MARKER = "{{- render_hook('catalogo_actualizar_precios_filters_after', {'fsc': fsc, 'user': user, 'empresa': empresa, 'i18n': i18n}) -}}";
+
     /**
      * S3 allowlist — files allowed to mention "tarifario" (case-insensitive) in
      * the production tree. Every entry needs a one-line rationale. Scan excludes
@@ -278,6 +286,66 @@ class CatalogoCoreHookMarkersTest extends TestCase
                 );
             }
         }
+    }
+
+    // =====================================================================
+    // R-CRH-001 / R-CRH-002 — the price update view hook
+    // =====================================================================
+
+    public function testNewHookMarkerIsNeutralZeroByteForm(): void
+    {
+        $lines = $this->extractMarkerLines($this->viewPath(self::PRICE_UPDATE_VIEW));
+
+        $this->assertSame([self::PRICE_UPDATE_MARKER], $lines, 'Exactly one marker, in the exact whitespace-controlled form');
+        $this->assertSame(
+            ['catalogo_actualizar_precios_filters_after'],
+            $this->extractHookNames($this->viewPath(self::PRICE_UPDATE_VIEW))
+        );
+        $this->assertStringNotContainsString('tarifa', self::PRICE_UPDATE_HOOK, 'The name is neutral');
+    }
+
+    public function testNewHookSitsInsideTheFilterFormAfterPctAndBeforeThePreviewButton(): void
+    {
+        $content = (string) file_get_contents($this->viewPath(self::PRICE_UPDATE_VIEW));
+
+        $form = strpos($content, 'name="action" value="preview"');
+        $pct = strpos($content, 'name="pct"', (int) $form);
+        $hook = strpos($content, self::PRICE_UPDATE_MARKER);
+        $button = strpos($content, 'type="submit">', (int) $pct);
+        $close = strpos($content, '</form>', (int) $form);
+
+        $this->assertNotFalse($form);
+        $this->assertNotFalse($hook);
+        $this->assertGreaterThan($pct, $hook, 'After the last existing filter control (pct)');
+        $this->assertLessThan($button, $hook, 'Before the submit button');
+        $this->assertLessThan($close, $hook, 'Inside the filter form, before its closing tag');
+    }
+
+    public function testHostViewsDoNotCarryThePriceUpdateHook(): void
+    {
+        foreach (self::VIEWS as $page => $relative) {
+            $this->assertNotContains(
+                self::PRICE_UPDATE_HOOK,
+                $this->extractHookNames($this->viewPath($relative)),
+                $page . ' must not carry the new hook (R-CRH-002)'
+            );
+        }
+    }
+
+    public function testUnregisteredHookRendersEmptyAndRegisteredRendersHtml(): void
+    {
+        $twig = $this->createTwigWithRenderHook(['test/filters.html.twig' => '<b class="x">FRAGMENT</b>']);
+        $template = "\n" . str_repeat(' ', 16) . self::PRICE_UPDATE_MARKER . "\n" . str_repeat(' ', 12);
+
+        $this->assertSame('', $twig->createTemplate($template)->render([]), 'Unregistered: exactly zero bytes');
+
+        ViewHookRegistry::register(self::PRICE_UPDATE_HOOK, 'test/filters.html.twig');
+
+        $this->assertSame(
+            '<b class="x">FRAGMENT</b>',
+            $twig->createTemplate($template)->render([]),
+            'Registered: the fragment HTML is rendered unescaped'
+        );
     }
 
     // =====================================================================

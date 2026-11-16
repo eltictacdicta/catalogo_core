@@ -22,6 +22,8 @@ namespace Tests\CatalogoCore;
 
 use FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService;
 use FSFramework\Plugins\catalogo_core\Services\PriceBookInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateFilterInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateFilterRegistry;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface;
 use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -48,6 +50,14 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceUpdateService.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
+        PriceUpdateFilterRegistry::reset();
+    }
+
+    protected function tearDown(): void
+    {
+        PriceUpdateFilterRegistry::reset();
+        parent::tearDown();
     }
 
     // ---- R-BU-003: rounding formula (unchanged) ----
@@ -205,7 +215,109 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
         $this->assertSame(['B'], $result['failed']);
     }
 
+    // ---- R-BU-002 / D5: consumer filters narrow the scope selection ----
+
+    public function testPreviewNarrowsTheScopeRowsThroughTheFilterRegistry(): void
+    {
+        $seen = new \stdClass();
+        PriceUpdateFilterRegistry::register($this->dropKeyFilter('B', $seen));
+        $scope = $this->fakeScope([['A', 'a'], ['B', 'b'], ['C', 'c']]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 1.0, 'B' => 2.0, 'C' => 3.0]));
+
+        $rows = (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K', 'extra' => 'x'], 0.0);
+
+        $this->assertSame(['A', 'C'], array_column($rows, 'key'));
+        $this->assertSame('articulos', $seen->scope, 'The filter is asked about the scope being updated');
+        $this->assertSame('x', $seen->filters['extra'], 'The filter receives the request filters');
+    }
+
+    public function testNarrowedRowsAreTheOnlyOnesApplied(): void
+    {
+        PriceUpdateFilterRegistry::register($this->dropKeyFilter('B', new \stdClass()));
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0, 'C' => 30.0]);
+        $scope = $this->fakeScope([['A', 'a'], ['B', 'b'], ['C', 'c']]);
+        $target = $this->fakeTarget(book: $book);
+        $service = new CatalogoPriceUpdateService();
+
+        $rows = $service->preview($scope, $target, ['clave' => 'K'], 10.0);
+        $service->apply($scope, $target, ['clave' => 'K'], $rows);
+
+        $this->assertSame([['A', 11.0], ['C', 33.0]], $book->persisted, 'A narrowed-out row is never written');
+    }
+
+    public function testAFailClosedFilterYieldsNoRowsAndNoWrites(): void
+    {
+        PriceUpdateFilterRegistry::register(new class implements PriceUpdateFilterInterface {
+            public function supports(string $scope): bool
+            {
+                return true;
+            }
+
+            public function keys(string $scope): array
+            {
+                return [];
+            }
+
+            public function viewContext(string $scope): array
+            {
+                return [];
+            }
+
+            public function narrow(string $scope, array $filters, array $rows): array
+            {
+                throw new \RuntimeException('boom');
+            }
+        });
+        $book = $this->fakeBook(['A' => 10.0]);
+        $previous = ini_set('error_log', '/dev/null');
+        try {
+            $rows = (new CatalogoPriceUpdateService())->preview(
+                $this->fakeScope([['A', 'a']]),
+                $this->fakeTarget(book: $book),
+                ['clave' => 'K'],
+                10.0
+            );
+        } finally {
+            ini_set('error_log', (string) $previous);
+        }
+
+        $this->assertSame([], $rows);
+        $this->assertSame([], $book->persisted);
+    }
+
     // ---- doubles ----
+
+    private function dropKeyFilter(string $dropped, \stdClass $seen): PriceUpdateFilterInterface
+    {
+        return new class($dropped, $seen) implements PriceUpdateFilterInterface {
+            public function __construct(private readonly string $fDropped, private readonly \stdClass $fSeen)
+            {
+            }
+
+            public function supports(string $scope): bool
+            {
+                return true;
+            }
+
+            public function keys(string $scope): array
+            {
+                return [];
+            }
+
+            public function viewContext(string $scope): array
+            {
+                return [];
+            }
+
+            public function narrow(string $scope, array $filters, array $rows): array
+            {
+                $this->fSeen->scope = $scope;
+                $this->fSeen->filters = $filters;
+
+                return array_values(array_filter($rows, fn (array $r): bool => $r['key'] !== $this->fDropped));
+            }
+        };
+    }
 
     /**
      * @param list<array{string, string}> $rows
