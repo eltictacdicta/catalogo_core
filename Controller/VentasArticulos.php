@@ -618,6 +618,16 @@ class VentasArticulos extends PageController
     }
 
     /**
+     * TRUE for htmx fragment requests. The list swaps only `#articulos-list`,
+     * so the view repeats the feedback inside it: the page-level message area
+     * is outside the swapped fragment and would otherwise stay silent.
+     */
+    public function is_htmx_request(): bool
+    {
+        return $this->request->headers->has('HX-Request');
+    }
+
+    /**
      * CSRF-guarded POST delete of a list row (spec ALC-08, AD-W3-8). The dead
      * `articulo.url()&delete=` GET link is gone: the mutation rides a POST
      * field, not a query parameter.
