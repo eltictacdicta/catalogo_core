@@ -12,7 +12,8 @@
 > (R-BU-001..004, R-BU-006..008; **R-BU-005 sin cambios**),
 > `specs/catalogo-render-hooks/spec.md` (R-CRH-001..002).
 >
-> **Estado:** en ejecución. WU-0.1 (PR-1a) completada; el resto pendiente.
+> **Estado:** en ejecución. WU-0.1 (PR-1a) y WU-1.1..1.4 (PR-1b) completadas; el resto pendiente.
+> Evidencia y desviaciones: `apply-progress.md`.
 >
 > **Versiones de partida:** `catalogo_core` 1.15.2, `tarifario` 3.4.2.
 > **Baselines verificados:** `catalogo_core` 1593 tests / 6503 assertions
@@ -203,91 +204,91 @@ correcciones de D11. Cuatro de ellas son funcionales y cada una tiene su RED pro
 | 4 | Orden no determinista al agregar familias: el orden actual es familia-mayor | WU-1.2 | `ArticulosPriceUpdateScopeTest::testRowsAreOrderedByReferenciaAcrossFamilies` |
 | 5 | Sustantivos de mensaje: "Ningún artículo coincide…" en `controller/catalogo_actualizar_precios.php:154` y `:181`, y "Vista previa: N artículos" en la vista | WU-1.5 | `CatalogoActualizarPreciosControllerTest::testEmptyMatchMessageIsScopeNeutral` |
 
-- [ ] **WU-1.1 — Registro de targets y contratos.**
+- [x] **WU-1.1 — Registro de targets y contratos.**
   Archivos: `plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php` (nuevo:
   `PriceBookInterface`, `PriceUpdateTargetInterface` y el registro en un solo
   archivo, como `Services/ArticuloListActionRegistry.php`),
   `plugins/catalogo_core/tests/Services/PriceUpdateTargetRegistryTest.php` (nuevo).
   Requisitos: R-BU-002, R-PSO-002.
-  - [ ] **RED:** `testRegisterResolveReset`, `testUnknownCodeResolvesToNull`,
+  - [x] **RED:** `testRegisterResolveReset`, `testUnknownCodeResolvesToNull`,
         `testDuplicateRegistrationKeepsFirst`, `testAvailablePreservesRegistrationOrder`,
         `testDefaultCodePrefersLista`, `testRegisterDefaultsIsIdempotent`.
-  - [ ] **GREEN:** `register()`, `reset()`, `registerDefaults()`, `resolve()`,
+  - [x] **GREEN:** `register()`, `reset()`, `registerDefaults()`, `resolve()`,
         `available()`, `defaultCode()`; sin `dispatch()` ni `supports()` (design D3).
-  - [ ] **Verify:** RUN-CC `tests/Services/PriceUpdateTargetRegistryTest.php`.
-  - [ ] **Rollback:** archivo nuevo aislado; revertir no afecta comportamiento.
+  - [x] **Verify:** RUN-CC `tests/Services/PriceUpdateTargetRegistryTest.php`.
+  - [x] **Rollback:** archivo nuevo aislado; revertir no afecta comportamiento.
   - Notas: vocabulario neutral obligatorio ("target", "price book", "scope"); este
         archivo entra en `SEAM_FILES` de WU-0.1 en el mismo commit.
 
-- [ ] **WU-1.2 — Scope `articulos` y libro canónico de artículos.**
+- [x] **WU-1.2 — Scope `articulos` y libro canónico de artículos.**
   Archivos: `plugins/catalogo_core/Services/PriceUpdateScopes.php` (nuevo),
   `plugins/catalogo_core/Services/CanonicalPriceBooks.php` (nuevo),
   `plugins/catalogo_core/tests/Services/ArticulosPriceUpdateScopeTest.php` (nuevo),
   `plugins/catalogo_core/tests/Services/CanonicalArticlePriceBookTest.php` (nuevo).
   Requisitos: R-BU-001, R-BU-002, R-BU-003, R-BU-007, R-PSO-001.
-  - [ ] **RED (D11.1 y D11.4):**
+  - [x] **RED (D11.1 y D11.4):**
         `testFamilyLargerThanItemLimitIsFullyPaginated` (120 filas; hoy se cortan en
         `FS_ITEM_LIMIT`) y `testRowsAreOrderedByReferenciaAcrossFamilies` (dos
         familias con referencias intercaladas). Además
         `testEmptyFiltersReturnEmptyList`, `testRecursiveSubfamilies`,
         `testNonRecursiveFamilyLimit`, `testGroupFilterIsAnded`.
-  - [ ] **RED (libro):** `testCanonicalRowWins`,
+  - [x] **RED (libro):** `testCanonicalRowWins`,
         `testDefaultListFallsBackToPvp`, `testNonDefaultListMissingKeyIsOmitted`,
         `testAbsentKeyIsNotZero`, `testPersistWritesPerRow`.
-  - [ ] **GREEN:** paginar con
+  - [x] **GREEN:** paginar con
         `all_from_familia($code, $offset, FS_ITEM_LIMIT)` hasta que el lote sea menor
         que el límite; ordenar el conjunto por `referencia`; implementar
         `ArticulosPriceScope::canonicalBook()` (nunca devuelve `null` para artículos
         con target) y la lectura batch canónica con la misma regla que
         `CatalogoPriceResolver` (fila canónica, fallback `pvp` solo en la lista por
         defecto, clave ausente = sin precio).
-  - [ ] **Verify:** RUN-CC `tests/Services/ArticulosPriceUpdateScopeTest.php` y
+  - [x] **Verify:** RUN-CC `tests/Services/ArticulosPriceUpdateScopeTest.php` y
         `tests/Services/CanonicalArticlePriceBookTest.php`.
-  - [ ] **Rollback:** revertir ambos servicios y sus tests; no hay datos escritos.
+  - [x] **Rollback:** revertir ambos servicios y sus tests; no hay datos escritos.
   - Notas: **no** se modifica `Services/CatalogoPriceResolver.php` (design C9). El
         scope no conoce `codlista`/`codtarifa` ni recibe el target.
 
-- [ ] **WU-1.3 — Target base `lista`.**
+- [x] **WU-1.3 — Target base `lista`.**
   Archivos: `plugins/catalogo_core/Services/ListaPriceUpdateTarget.php` (nuevo),
   `plugins/catalogo_core/tests/Services/PriceListAvailabilityTest.php` (modificado).
   Requisitos: R-BU-002, R-BU-003, R-BU-007.
-  - [ ] **RED:** `testListTargetDeclaresCodlistaKeyAndActiveOptions`,
+  - [x] **RED:** `testListTargetDeclaresCodlistaKeyAndActiveOptions`,
         `testListTargetAvailabilityUsesListUiEnabled` (migrado desde el controlador),
         `testListTargetBookForArticulosReturnsCanonicalBook`,
         `testListTargetBookForOpcionalesReturnsNull`.
-  - [ ] **GREEN:** clave `codlista`, opciones = listas activas, disponibilidad =
+  - [x] **GREEN:** clave `codlista`, opciones = listas activas, disponibilidad =
         `PriceListAvailability::listUiEnabled()`, `bookFor('articulos')` = libro
         canónico, `bookFor('opcionales')` = `null` (la composición canónico-primero
         del motor nunca lo consulta para opcionales).
-  - [ ] **Verify:** RUN-CC `tests/Services/PriceListAvailabilityTest.php`.
-  - [ ] **Rollback:** archivo nuevo; revertir restaura la compuerta en el controlador.
+  - [x] **Verify:** RUN-CC `tests/Services/PriceListAvailabilityTest.php`.
+  - [x] **Rollback:** archivo nuevo; revertir restaura la compuerta en el controlador.
   - Notas: cambio de contrato de test deliberado (design C8):
         `testEveryPriceListSurfaceUsesTheSameRule` pasa a auditar
         `Services/ListaPriceUpdateTarget.php`. `Services/PriceListAvailability.php`
         no se modifica.
 
-- [ ] **WU-1.4 — Motor `scope × target`.**
+- [x] **WU-1.4 — Motor `scope × target`.**
   Archivos: `plugins/catalogo_core/Services/CatalogoPriceUpdateService.php`
   (modificado), `plugins/catalogo_core/Init.php` (modificado:
   `PriceUpdateTargetRegistry::registerDefaults()` con guarda estática),
   `plugins/catalogo_core/tests/Services/CatalogoPriceUpdateServiceTest.php`
   (migrado).
   Requisitos: R-BU-001, R-BU-002, R-BU-003, R-BU-005 (regresión), R-BU-007.
-  - [ ] **RED:** migrar el test existente a `preview(scope, target, filters, pct)` /
+  - [x] **RED:** migrar el test existente a `preview(scope, target, filters, pct)` /
         `apply(scope, target, filters, rows)` **conservando las expectativas
         idénticas** de fórmula, filtros, claves y resumen. Agregar
         `testCompositionPrefersCanonicalBook` (un libro de target que falle si se
         consulta para `opcionales`), `testApplyPersistsExactlyPreviewRows`,
         `testFailedKeysAreReported`, `testComputePriceIsUnchanged`
         (10.005 al 10 % → 11.01; 10.00 al −25 % → 7.50).
-  - [ ] **GREEN:** motor que recibe colaboradores resueltos y no ramifica por código;
+  - [x] **GREEN:** motor que recibe colaboradores resueltos y no ramifica por código;
         `computePrice()` sin cambios; `Init.php` registra el target base de forma
         idempotente. Conservar `matchArticles()`, `preview($filters, $pct)` y
         `apply($rows, $codlista)` como delegados finos para que el slice quede verde
         (design §12).
-  - [ ] **Verify:** RUN-CC `tests/Services/CatalogoPriceUpdateServiceTest.php` y
+  - [x] **Verify:** RUN-CC `tests/Services/CatalogoPriceUpdateServiceTest.php` y
         RUN-TAR completo (piso 278 tests).
-  - [ ] **Rollback:** revertir motor + `Init`; los delegados hacían el
+  - [x] **Rollback:** revertir motor + `Init`; los delegados hacían el
         comportamiento previo, así que el rollback no deja UI huérfana.
   - Notas: los delegados se retiran en WU-1.5. R-BU-005 no cambia: el test de
         `summarizeApply()` sigue idéntico.
