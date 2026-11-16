@@ -20,16 +20,24 @@ declare(strict_types=1);
 
 namespace Tests\CatalogoCore;
 
-use FSFramework\Plugins\catalogo_core\Services\CatalogoPriceResolver;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService;
+use FSFramework\Plugins\catalogo_core\Services\PriceBookInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Batch price update service (multitarifa task 4.1, R-BU-002 / R-BU-003):
- * AND-combined filter resolution (codlista required + optional family with
- * recursive subfamilies + optional article group) and the half-up rounding
- * formula round(p * (1 + pct/100), 2).
+ * Batch price update engine, scope × target (SDD
+ * unificar-superficies-precio-catalogo-core, WU-1.4 — R-BU-001, R-BU-002,
+ * R-BU-003, R-BU-007).
+ *
+ * Migrated from the list-only engine test: the formula, the
+ * "no price on the book → no row" rule and the per-row persistence contract
+ * keep their expectations. Row selection is covered by the scope tests; book
+ * reading and writing by the book tests. This test pins the composition:
+ * canonical-first, no branching on target codes, preview never writes and
+ * apply persists exactly the previewed rows.
  */
 #[CoversClass(CatalogoPriceUpdateService::class)]
 final class CatalogoPriceUpdateServiceTest extends TestCase
@@ -37,431 +45,304 @@ final class CatalogoPriceUpdateServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        require_once FS_FOLDER . '/base/fs_functions.php';
-        require_once FS_FOLDER . '/base/fs_model.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_precio.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo_articulo.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceResolver.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceUpdateService.php';
     }
 
-    // ---- R-BU-002: family filter recursion ----
-
-    /** Recursive: family F with children F1(A1), F2(A2) and A3 directly in F. */
-    public function test_recursive_subfamily_inclusion_matches_all_descendants(): void
-    {
-        $service = $this->makeService(
-            families: [
-                'F' => [],
-                'F1' => ['A1'],
-                'F2' => ['A2'],
-            ],
-            tree: ['F' => ['F1', 'F2']],
-            articles: ['A1' => 'F1', 'A2' => 'F2', 'A3' => 'F'],
-        );
-
-        $refs = $service->matchArticles([
-            'codlista' => 'L1',
-            'codfamilia' => 'F',
-            'incluir_subfamilias' => true,
-        ]);
-
-        $this->assertEqualsCanonicalizing(['A1', 'A2', 'A3'], $refs);
-    }
-
-    /** Non-recursive: only direct members of the family are affected. */
-    public function test_non_recursive_limits_to_direct_family_members(): void
-    {
-        $service = $this->makeService(
-            families: [
-                'F' => ['A3'],
-                'F1' => ['A1'],
-                'F2' => ['A2'],
-            ],
-            tree: ['F' => ['F1', 'F2']],
-            articles: ['A1' => 'F1', 'A2' => 'F2', 'A3' => 'F'],
-        );
-
-        $refs = $service->matchArticles([
-            'codlista' => 'L1',
-            'codfamilia' => 'F',
-            'incluir_subfamilias' => false,
-        ]);
-
-        $this->assertSame(['A3'], $refs);
-    }
-
-    /** Family + article-group filters combine with AND (intersection). */
-    public function test_family_and_group_filters_intersect(): void
-    {
-        $service = $this->makeService(
-            families: [
-                'F' => ['A1', 'A2', 'A3'],
-            ],
-            tree: [],
-            articles: ['A1' => 'F', 'A2' => 'F', 'A3' => 'F'],
-            groupMembers: [5 => ['A2', 'A3', 'AX']],
-        );
-
-        $refs = $service->matchArticles([
-            'codlista' => 'L1',
-            'codfamilia' => 'F',
-            'codgrupo' => 5,
-        ]);
-
-        $this->assertEqualsCanonicalizing(['A2', 'A3'], $refs);
-    }
-
-    /** Group filter alone scopes to the group's articles. */
-    public function test_group_filter_alone_scopes_to_group_members(): void
-    {
-        $service = $this->makeService(
-            families: [],
-            tree: [],
-            articles: [],
-            groupMembers: [7 => ['B1', 'B2']],
-        );
-
-        $refs = $service->matchArticles([
-            'codlista' => 'L1',
-            'codgrupo' => 7,
-        ]);
-
-        $this->assertEqualsCanonicalizing(['B1', 'B2'], $refs);
-    }
-
-    /** Empty codlista fails closed: no matches, no writes possible. */
-    public function test_missing_codlista_matches_nothing(): void
-    {
-        $service = $this->makeService(
-            families: ['F' => ['A1']],
-            tree: [],
-            articles: ['A1' => 'F'],
-        );
-
-        $this->assertSame([], $service->matchArticles([
-            'codfamilia' => 'F',
-        ]));
-    }
-
-    // ---- R-BU-003: rounding formula ----
+    // ---- R-BU-003: rounding formula (unchanged) ----
 
     /** 10.005 +10% → exactly 11.01 (round half-up to 2 decimals). */
-    public function test_increase_rounds_half_up_to_two_decimals(): void
+    public function testComputePriceIsUnchanged(): void
     {
-        $service = $this->makeService(
-            families: ['F' => ['A']],
-            tree: [],
-            articles: ['A' => 'F'],
-            priceRows: ['L1,A' => 10.005],
-        );
+        $service = new CatalogoPriceUpdateService();
 
-        $rows = $service->preview(['codlista' => 'L1', 'codfamilia' => 'F'], 10.0);
-
-        $this->assertCount(1, $rows);
-        $this->assertSame(11.01, $rows[0]['precio_nuevo']);
+        $this->assertSame(11.01, $service->computePrice(10.005, 10.0));
+        $this->assertSame(7.5, $service->computePrice(10.0, -25.0));
+        $this->assertSame(10.0, $service->computePrice(10.0, 0.0));
     }
 
-    /** 10.00 −25% → 7.50. */
-    public function test_negative_percentage_decreases(): void
+    public function testPreviewAppliesTheFormulaToTheBookPrice(): void
     {
-        $service = $this->makeService(
-            families: ['F' => ['A']],
-            tree: [],
-            articles: ['A' => 'F'],
-            priceRows: ['L1,A' => 10.0],
+        $scope = $this->fakeScope([['A', 'Uno']]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 10.005]));
+
+        $rows = (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 10.0);
+
+        $this->assertSame(
+            [['key' => 'A', 'label' => 'Uno', 'precio_actual' => 10.005, 'precio_nuevo' => 11.01]],
+            $rows
         );
-
-        $rows = $service->preview(['codlista' => 'L1', 'codfamilia' => 'F'], -25.0);
-
-        $this->assertSame(7.50, $rows[0]['precio_nuevo']);
     }
 
-    /** Preview uses the effective price: per-list row wins (resolver semantics). */
-    public function test_preview_uses_effective_per_list_price(): void
+    public function testNegativePercentageDecreases(): void
     {
-        $service = $this->makeService(
-            families: ['F' => ['A']],
-            tree: [],
-            articles: ['A' => 'F'],
-            priceRows: ['L1,A' => 20.0],
-            defaultList: 'DEF',
-            pvps: ['A' => 10.0],
-        );
+        $scope = $this->fakeScope([['A', 'Uno']]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 10.0]));
 
-        $rows = $service->preview(['codlista' => 'L1', 'codfamilia' => 'F'], 0.0);
+        $rows = (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], -25.0);
+
+        $this->assertSame(7.5, $rows[0]['precio_nuevo']);
+    }
+
+    // ---- R-BU-001: preview ----
+
+    public function testPreviewKeepsTheScopeOrderAndOmitsRowsWithoutPrice(): void
+    {
+        $scope = $this->fakeScope([['B', 'b'], ['A', 'a'], ['C', 'c']]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 1.0, 'C' => 3.0]));
+
+        $rows = (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 0.0);
+
+        $this->assertSame(['A', 'C'], array_column($rows, 'key'), 'B has no price in the book and must not appear');
+    }
+
+    public function testPreviewWithZeroMatchesReturnsEmpty(): void
+    {
+        $scope = $this->fakeScope([]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 1.0]));
+
+        $this->assertSame([], (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 5.0));
+    }
+
+    public function testPreviewNeverPersists(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $scope = $this->fakeScope([['A', 'a']]);
+        $target = $this->fakeTarget(book: $book);
+
+        (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 10.0);
+
+        $this->assertSame([], $book->persisted);
+    }
+
+    // ---- D1: canonical-first composition ----
+
+    public function testCompositionPrefersCanonicalBook(): void
+    {
+        $canonical = $this->fakeBook(['A' => 100.0]);
+        $scope = $this->fakeScope([['A', 'a']], canonical: $canonical);
+        $target = $this->fakeTarget(book: null, failIfBookRequested: true);
+
+        $rows = (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 10.0);
+
+        $this->assertSame(110.0, $rows[0]['precio_nuevo']);
+        $this->assertSame(0, $target->bookRequests, 'The target book must not be consulted when the scope has a canonical book');
+    }
+
+    public function testTheTargetBookIsUsedWhenTheScopeHasNoCanonicalBook(): void
+    {
+        $scope = $this->fakeScope([['A', 'a']]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 20.0]));
+
+        $rows = (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 0.0);
 
         $this->assertSame(20.0, $rows[0]['precio_actual']);
+        $this->assertSame([['articulos', 'K']], $target->bookRequestLog);
     }
 
-    /** Preview on the default list falls back to articulos.pvp when no row exists. */
-    public function test_preview_falls_back_to_pvp_on_default_list(): void
+    // ---- fail closed ----
+
+    public function testMissingTargetKeyMatchesNothing(): void
     {
-        $service = $this->makeService(
-            families: ['F' => ['A']],
-            tree: [],
-            articles: ['A' => 'F'],
-            priceRows: [],
-            defaultList: 'DEF',
-            pvps: ['A' => 12.3],
-        );
+        $scope = $this->fakeScope([['A', 'a']]);
+        $target = $this->fakeTarget(book: $this->fakeBook(['A' => 1.0]));
 
-        $rows = $service->preview(['codlista' => 'DEF', 'codfamilia' => 'F'], 0.0);
-
-        $this->assertSame(12.3, $rows[0]['precio_actual']);
+        $this->assertSame([], (new CatalogoPriceUpdateService())->preview($scope, $target, [], 5.0));
     }
 
-    /** Zero matches → empty preview (controller shows the warning; no write). */
-    public function test_preview_with_zero_matches_returns_empty(): void
+    public function testTargetWithoutABookForTheScopeMatchesNothing(): void
     {
-        $service = $this->makeService(
-            families: ['F' => []],
-            tree: [],
-            articles: [],
-        );
+        $scope = $this->fakeScope([['A', 'a']]);
+        $target = $this->fakeTarget(book: null);
 
-        $rows = $service->preview(['codlista' => 'L1', 'codfamilia' => 'F'], 5.0);
-
-        $this->assertSame([], $rows);
+        $this->assertSame([], (new CatalogoPriceUpdateService())->preview($scope, $target, ['clave' => 'K'], 5.0));
     }
 
-    // ---- R-BU-002: list-scoped persistence ----
-
-    /** Apply writes exactly the previewed rows for the target list; pvp untouched. */
-    public function test_apply_persists_only_target_list_rows_and_never_pvp(): void
+    public function testApplyWithoutKeyOrBookWritesNothing(): void
     {
-        $service = $this->makeService(
-            families: ['F' => ['A']],
-            tree: [],
-            articles: ['A' => 'F'],
-            priceRows: ['L1,A' => 10.0, 'L2,A' => 8.0],
-            defaultList: 'DEF',
-            pvps: ['A' => 10.0],
-            applyCapture: $capture,
-        );
+        $book = $this->fakeBook(['A' => 1.0]);
+        $service = new CatalogoPriceUpdateService();
+        $rows = [['key' => 'A', 'precio_nuevo' => 2.0]];
 
-        $rows = $service->preview(['codlista' => 'L2', 'codfamilia' => 'F'], 10.0);
-        $result = $service->apply($rows, 'L2');
+        $noKey = $service->apply($this->fakeScope([]), $this->fakeTarget(book: $book), [], $rows);
+        $noBook = $service->apply($this->fakeScope([]), $this->fakeTarget(book: null), ['clave' => 'K'], $rows);
 
-        $this->assertSame(1, $result['updated']);
-        $this->assertSame([], $result['failed']);
-        $this->assertSame([['A', 'L2', 8.8]], $capture->set_precio_calls);
-        $this->assertSame([], $capture->set_pvp_calls, 'articulos.pvp must never be rewritten');
+        $this->assertSame(['updated' => 0, 'failed' => []], $noKey);
+        $this->assertSame(['updated' => 0, 'failed' => ['A']], $noBook);
+        $this->assertSame([], $book->persisted);
     }
 
-    /** A row that fails to persist is reported, not counted as updated. */
-    public function test_apply_reports_failed_rows(): void
-    {
-        $service = $this->makeService(
-            families: ['F' => ['A', 'B']],
-            tree: [],
-            articles: ['A' => 'F', 'B' => 'F'],
-            priceRows: ['L1,A' => 10.0, 'L1,B' => 20.0],
-            failRefs: ['B'],
-            applyCapture: $capture,
-        );
+    // ---- apply ----
 
-        $rows = $service->preview(['codlista' => 'L1', 'codfamilia' => 'F'], 0.0);
-        $result = $service->apply($rows, 'L1');
+    public function testApplyPersistsExactlyPreviewRows(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0]);
+        $scope = $this->fakeScope([['A', 'a'], ['B', 'b']]);
+        $target = $this->fakeTarget(book: $book);
+        $service = new CatalogoPriceUpdateService();
+        $filters = ['clave' => 'K'];
+
+        $rows = $service->preview($scope, $target, $filters, 10.0);
+        $result = $service->apply($scope, $target, $filters, $rows);
+
+        $this->assertSame(['updated' => 2, 'failed' => []], $result);
+        $this->assertSame([['A', 11.0], ['B', 22.0]], $book->persisted);
+    }
+
+    public function testFailedKeysAreReported(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0], failKeys: ['B']);
+        $scope = $this->fakeScope([['A', 'a'], ['B', 'b']]);
+        $target = $this->fakeTarget(book: $book);
+        $service = new CatalogoPriceUpdateService();
+        $filters = ['clave' => 'K'];
+
+        $rows = $service->preview($scope, $target, $filters, 0.0);
+        $result = $service->apply($scope, $target, $filters, $rows);
 
         $this->assertSame(1, $result['updated']);
         $this->assertSame(['B'], $result['failed']);
     }
 
-    // ---- service factory ----
+    // ---- doubles ----
 
-    private function makeService(
-        array $families = [],
-        array $tree = [],
-        array $articles = [],
-        array $groupMembers = [],
-        array $priceRows = [],
-        string $defaultList = 'DEF',
-        array $pvps = [],
-        array $failRefs = [],
-        ?\stdClass &$applyCapture = null,
-    ): CatalogoPriceUpdateService {
-        $capture = new \stdClass();
-        $capture->set_precio_calls = [];
-        $capture->set_pvp_calls = [];
-        $applyCapture = $capture;
-
-        $resolver = new CatalogoPriceResolver();
-        $resolver->setPrecioModel($this->fakePrecioModel($priceRows, $failRefs, $capture));
-        $resolver->setListaModel($this->fakeListaModel($defaultList));
-        $resolver->setArticuloModel($this->fakeArticuloPvpModel($pvps, $capture));
-
-        $service = new CatalogoPriceUpdateService();
-        $service->setResolver($resolver);
-        $service->setFamiliaModel($this->fakeFamiliaModel($families, $tree));
-        $service->setArticuloModel($this->fakeArticuloModel($articles));
-        $service->setGrupoArticuloModel($this->fakeGrupoArticuloModel($groupMembers));
-        $service->setPrecioModel($this->fakePrecioModel($priceRows, $failRefs, $capture));
-
-        return $service;
-    }
-
-    // ---- test doubles ----
-
-    private function fakePrecioModel(array $rows, array $failRefs, \stdClass $capture): object
+    /**
+     * @param list<array{string, string}> $rows
+     */
+    private function fakeScope(array $rows, ?PriceBookInterface $canonical = null): PriceUpdateScopeInterface
     {
-        return new class($rows, $failRefs, $capture) extends \FSFramework\model\catalogo_articulo_precio {
+        return new class($rows, $canonical) implements PriceUpdateScopeInterface {
             public function __construct(
                 private readonly array $fRows,
-                private readonly array $fFailRefs,
-                private readonly \stdClass $fCapture,
+                private readonly ?PriceBookInterface $fCanonical,
             ) {
-                parent::__construct();
             }
 
-            public function get($referencia, $codlista)
+            public function code(): string
             {
-                $key = $codlista . ',' . $referencia;
-                if (!array_key_exists($key, $this->fRows)) {
-                    return false;
-                }
-
-                $row = new \FSFramework\model\catalogo_articulo_precio();
-                $row->referencia = (string) $referencia;
-                $row->codlista = (string) $codlista;
-                $row->precio = $this->fRows[$key];
-
-                return $row;
+                return 'articulos';
             }
 
-            public function set_precio($referencia, $codlista, $precio)
+            public function label(): string
             {
-                $this->fCapture->set_precio_calls[] = [$referencia, $codlista, $precio];
+                return 'Artículos';
+            }
 
-                return !in_array((string) $referencia, $this->fFailRefs, true);
+            public function keyLabel(): string
+            {
+                return 'Referencia';
+            }
+
+            public function match(array $filters): array
+            {
+                return array_map(static fn (array $r): array => ['key' => $r[0], 'label' => $r[1]], $this->fRows);
+            }
+
+            public function canonicalBook(string $key): ?PriceBookInterface
+            {
+                return $this->fCanonical;
             }
         };
     }
 
-    private function fakeListaModel(string $defaultCode): object
+    private function fakeTarget(?PriceBookInterface $book, bool $failIfBookRequested = false): object
     {
-        return new class($defaultCode) extends \FSFramework\model\catalogo_lista_precio {
-            public function __construct(private readonly string $fDefault)
-            {
-                parent::__construct();
-            }
+        return new class($book, $failIfBookRequested) implements PriceUpdateTargetInterface {
+            public int $bookRequests = 0;
 
-            public function get_default()
-            {
-                $lista = new \FSFramework\model\catalogo_lista_precio();
-                $lista->codlista = $this->fDefault;
+            /** @var list<array{string, string}> */
+            public array $bookRequestLog = [];
 
-                return $lista;
-            }
-        };
-    }
-
-    private function fakeArticuloPvpModel(array $pvps, \stdClass $capture): object
-    {
-        return new class($pvps, $capture) extends \FSFramework\model\articulo {
             public function __construct(
-                private readonly array $fPvps,
-                private readonly \stdClass $fCapture,
+                private readonly ?PriceBookInterface $fBook,
+                private readonly bool $fFail,
             ) {
-                parent::__construct();
             }
 
-            public function get($ref)
+            public function code(): string
             {
-                if (!array_key_exists((string) $ref, $this->fPvps)) {
-                    return false;
-                }
-
-                $art = new \FSFramework\model\articulo();
-                $art->referencia = (string) $ref;
-                $art->pvp = $this->fPvps[(string) $ref];
-
-                return $art;
+                return 'fake';
             }
 
-            public function set_pvp($p)
+            public function label(): string
             {
-                $this->fCapture->set_pvp_calls[] = $p;
+                return 'Fake';
+            }
 
+            public function isAvailable(): bool
+            {
                 return true;
             }
+
+            public function keyField(): string
+            {
+                return 'clave';
+            }
+
+            public function keyLabel(): string
+            {
+                return 'clave';
+            }
+
+            public function keyOptions(): array
+            {
+                return [];
+            }
+
+            public function keyFromFilters(array $filters): ?string
+            {
+                $value = trim((string) ($filters['clave'] ?? ''));
+
+                return $value === '' ? null : $value;
+            }
+
+            public function bookFor(string $scope, string $key): ?PriceBookInterface
+            {
+                $this->bookRequests++;
+                $this->bookRequestLog[] = [$scope, $key];
+                if ($this->fFail) {
+                    throw new \LogicException('The target book must not be consulted');
+                }
+
+                return $this->fBook;
+            }
         };
     }
 
-    private function fakeFamiliaModel(array $families, array $tree): object
+    /**
+     * @param array<string, float> $prices
+     * @param list<string> $failKeys
+     */
+    private function fakeBook(array $prices, array $failKeys = []): object
     {
-        return new class($families, $tree) extends \FSFramework\model\familia {
+        return new class($prices, $failKeys) implements PriceBookInterface {
+            /** @var list<array{string, float}> */
+            public array $persisted = [];
+
             public function __construct(
-                private readonly array $fFamilies,
-                private readonly array $fTree,
+                private readonly array $fPrices,
+                private readonly array $fFail,
             ) {
-                // familia's own constructor already calls parent::__construct('familias')
-                parent::__construct();
             }
 
-            public function hijas($codmadre = false)
-            {
-                $children = $this->fTree[$codmadre] ?? [];
-                $out = [];
-                foreach ($children as $cod) {
-                    $fam = new \FSFramework\model\familia();
-                    $fam->codfamilia = $cod;
-                    $out[] = $fam;
-                }
-
-                return $out;
-            }
-        };
-    }
-
-    private function fakeArticuloModel(array $byFamily): object
-    {
-        return new class($byFamily) extends \FSFramework\model\articulo {
-            public function __construct(private readonly array $fByFamily)
-            {
-                parent::__construct();
-            }
-
-            public function all_from_familia($cod, $offset = 0, $limit = 0)
+            public function currentPrices(array $keys): array
             {
                 $out = [];
-                foreach ($this->fByFamily as $ref => $fam) {
-                    if ($fam !== $cod) {
-                        continue;
+                foreach ($keys as $key) {
+                    if (array_key_exists($key, $this->fPrices)) {
+                        $out[$key] = $this->fPrices[$key];
                     }
-                    $art = new \FSFramework\model\articulo();
-                    $art->referencia = $ref;
-                    $art->codfamilia = $fam;
-                    $out[] = $art;
                 }
 
                 return $out;
             }
-        };
-    }
 
-    private function fakeGrupoArticuloModel(array $byGroup): object
-    {
-        return new class($byGroup) extends \FSFramework\model\catalogo_grupo_articulo {
-            public function __construct(private readonly array $fByGroup)
+            public function persist(string $key, float $price): bool
             {
-                parent::__construct();
-            }
+                $this->persisted[] = [$key, $price];
 
-            public function all_from_grupo($id_grupo)
-            {
-                $out = [];
-                foreach ($this->fByGroup[(int) $id_grupo] ?? [] as $ref) {
-                    $row = new \FSFramework\model\catalogo_grupo_articulo();
-                    $row->id_grupo = (int) $id_grupo;
-                    $row->referencia = $ref;
-                    $out[] = $row;
-                }
-
-                return $out;
+                return !in_array($key, $this->fFail, true);
             }
         };
     }

@@ -20,108 +20,74 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core\Services;
 
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
+
 /**
- * Batch price update engine for the multi-tariff lists (multitarifa task 4.1,
- * R-BU-002 / R-BU-003):
+ * Batch price update engine, scope x target (R-BU-001, R-BU-002, R-BU-003,
+ * R-BU-007):
  *
- *  - matchArticles(): AND-combined filter resolution over
- *    codlista (required) + codfamilia (+ incluir_subfamilias resolved
- *    recursively through the existing familia hierarchy) + codgrupo
- *    (catalogo_grupo_articulos membership).
- *  - preview(): computes current (effective) and prospective price per
- *    matched article, persisting NOTHING.
- *  - apply(): persists exactly the previewed rows for the target list via
- *    catalogo_articulo_precio::set_precio() — NEVER rewrites articulos.pvp.
+ *  - the SCOPE selects the rows (and their canonical order);
+ *  - the TARGET names the key of the operation and, when the scope has no
+ *    canonical storage, provides the price book;
+ *  - the price BOOK reads the current price and persists the new one.
  *
- * Formula: round(p * (1 + pct/100), 2) half-up, where p is the effective
- * price (per-list row when present, otherwise the default-list fallback).
+ * The book is composed canonical-first: `scope->canonicalBook() ??
+ * target->bookFor()`. The engine receives resolved collaborators and never
+ * branches on a scope or target code.
+ *
+ *  - preview(): current and prospective price per selected row, persisting
+ *    NOTHING. A row without a price in the book is omitted.
+ *  - apply(): persists exactly the previewed rows through the book, one by
+ *    one, so failures are reported per row (R-BU-005). It never rewrites
+ *    articulos.pvp.
+ *
+ * Formula: round(p * (1 + pct/100), 2) half-up, where p is the current price
+ * the book reports.
  */
 final class CatalogoPriceUpdateService
 {
-    /** @var CatalogoPriceResolver|null */
-    private $resolver = null;
-
-    /** @var \FSFramework\model\familia|null */
-    private $familiaModel = null;
-
-    /** @var \FSFramework\model\articulo|null */
-    private $articuloModel = null;
-
-    /** @var \FSFramework\model\catalogo_grupo_articulo|null */
-    private $grupoArticuloModel = null;
-
-    /** @var \FSFramework\model\catalogo_articulo_precio|null */
-    private $precioModel = null;
-
     /**
-     * Resolve the AND-combined filter set to a unique list of references.
-     * A missing codlista fails closed (no matches).
-     *
-     * filters keys: codlista (required), codfamilia (optional),
-     * incluir_subfamilias (optional bool), codgrupo (optional int id).
+     * Compute the preview rows. No write. Fails closed (empty result) when the
+     * target key is missing or no book exists for the scope.
      *
      * @param array<string, mixed> $filters
-     * @return list<string>
+     * @return list<array{key: string, label: string, precio_actual: float, precio_nuevo: float}>
      */
-    public function matchArticles(array $filters): array
-    {
-        $codlista = trim((string) ($filters['codlista'] ?? ''));
-        if ($codlista === '') {
+    public function preview(
+        PriceUpdateScopeInterface $scope,
+        PriceUpdateTargetInterface $target,
+        array $filters,
+        float $pct
+    ): array {
+        $key = $target->keyFromFilters($filters);
+        if ($key === null) {
             return [];
         }
 
-        $sets = [];
-
-        $codfamilia = trim((string) ($filters['codfamilia'] ?? ''));
-        if ($codfamilia !== '') {
-            $recursive = (bool) ($filters['incluir_subfamilias'] ?? false);
-            $codes = $this->familyTreeCodes($codfamilia, $recursive);
-            $sets[] = $this->articlesFromFamilies($codes);
-        }
-
-        $codgrupo = $filters['codgrupo'] ?? null;
-        if ($codgrupo !== null && (string) $codgrupo !== '') {
-            $groupRefs = [];
-            foreach ($this->grupoArticuloModel()->all_from_grupo((int) $codgrupo) as $member) {
-                $groupRefs[] = (string) $member->referencia;
-            }
-            $sets[] = $groupRefs;
-        }
-
-        if (empty($sets)) {
+        $book = $this->bookFor($scope, $target, $key);
+        if ($book === null) {
             return [];
         }
 
-        // AND-combine all optional filters (intersection), preserving order.
-        $intersection = $sets[0];
-        foreach (array_slice($sets, 1) as $set) {
-            $intersection = array_values(array_intersect($intersection, $set));
+        $matched = $scope->match($filters);
+        if ($matched === []) {
+            return [];
         }
 
-        return array_values(array_unique($intersection));
-    }
+        $prices = $book->currentPrices(array_column($matched, 'key'));
 
-    /**
-     * Compute the preview rows for the filter set and percentage. No write.
-     * Returns rows: referencia, precio_actual, precio_nuevo.
-     *
-     * @param array<string, mixed> $filters
-     * @return list<array{referencia: string, precio_actual: float, precio_nuevo: float}>
-     */
-    public function preview(array $filters, float $pct): array
-    {
-        $codlista = trim((string) ($filters['codlista'] ?? ''));
         $rows = [];
-
-        foreach ($this->matchArticles($filters) as $referencia) {
-            $current = $this->resolver()->effective($referencia, $codlista);
-            if ($current === null) {
-                // No effective price on the target list: nothing to update.
+        foreach ($matched as $row) {
+            if (!array_key_exists($row['key'], $prices)) {
+                // No price in this book: nothing to update.
                 continue;
             }
 
+            $current = $prices[$row['key']];
             $rows[] = [
-                'referencia' => $referencia,
+                'key' => $row['key'],
+                'label' => $row['label'],
                 'precio_actual' => $current,
                 'precio_nuevo' => $this->computePrice($current, $pct),
             ];
@@ -131,29 +97,35 @@ final class CatalogoPriceUpdateService
     }
 
     /**
-     * Persist exactly the previewed rows for the target list. Returns
-     * ['updated' => int, 'failed' => list<string>].
+     * Persist exactly the given rows through the book of the target key.
+     * The key and the book are recomputed from the filters; nothing but the
+     * row key and the new price is taken from the rows.
      *
-     * @param list<array{referencia: string, precio_nuevo: float}> $rows
+     * @param array<string, mixed> $filters
+     * @param list<array{key: string, precio_nuevo: float}> $rows
      * @return array{updated: int, failed: list<string>}
      */
-    public function apply(array $rows, string $codlista): array
-    {
-        $codlista = trim($codlista);
-        $updated = 0;
-        $failed = [];
-
-        if ($codlista === '') {
+    public function apply(
+        PriceUpdateScopeInterface $scope,
+        PriceUpdateTargetInterface $target,
+        array $filters,
+        array $rows
+    ): array {
+        $key = $target->keyFromFilters($filters);
+        if ($key === null) {
             return ['updated' => 0, 'failed' => []];
         }
 
+        $book = $this->bookFor($scope, $target, $key);
+        $updated = 0;
+        $failed = [];
+
         foreach ($rows as $row) {
-            $referencia = (string) $row['referencia'];
-            $ok = $this->precioModel()->set_precio($referencia, $codlista, (float) $row['precio_nuevo']);
-            if ($ok) {
+            $rowKey = (string) $row['key'];
+            if ($book !== null && $book->persist($rowKey, (float) $row['precio_nuevo'])) {
                 $updated++;
             } else {
-                $failed[] = $referencia;
+                $failed[] = $rowKey;
             }
         }
 
@@ -166,135 +138,12 @@ final class CatalogoPriceUpdateService
         return round($p * (1 + $pct / 100), 2, PHP_ROUND_HALF_UP);
     }
 
-    // ---- filter helpers ----
-
-    /**
-     * Family codes for the filter: the family itself plus (when recursive)
-     * every descendant, resolved via the existing familia::hijas() hierarchy
-     * (no model change, per design D6).
-     *
-     * @return list<string>
-     */
-    private function familyTreeCodes(string $codfamilia, bool $recursive): array
-    {
-        $codes = [$codfamilia];
-        if ($recursive) {
-            $this->collectChildren($codfamilia, $codes);
-        }
-
-        return $codes;
-    }
-
-    /**
-     * @param list<string> $codes
-     */
-    private function collectChildren(string $codmadre, array &$codes): void
-    {
-        foreach ($this->familiaModel()->hijas($codmadre) as $hija) {
-            $code = (string) $hija->codfamilia;
-            if (!in_array($code, $codes, true)) {
-                $codes[] = $code;
-                $this->collectChildren($code, $codes);
-            }
-        }
-    }
-
-    /**
-     * @param list<string> $codes
-     * @return list<string>
-     */
-    private function articlesFromFamilies(array $codes): array
-    {
-        $refs = [];
-        foreach ($codes as $code) {
-            foreach ($this->articuloModel()->all_from_familia($code) as $articulo) {
-                $refs[] = (string) $articulo->referencia;
-            }
-        }
-
-        return array_values(array_unique($refs));
-    }
-
-    // ---- lazy wiring ----
-
-    private function resolver(): CatalogoPriceResolver
-    {
-        if ($this->resolver === null) {
-            $this->resolver = new CatalogoPriceResolver();
-        }
-
-        return $this->resolver;
-    }
-
-    private function familiaModel(): \FSFramework\model\familia
-    {
-        if ($this->familiaModel === null) {
-            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-            $this->familiaModel = new \FSFramework\model\familia();
-        }
-
-        return $this->familiaModel;
-    }
-
-    private function articuloModel(): \FSFramework\model\articulo
-    {
-        if ($this->articuloModel === null) {
-            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/articulo.php';
-            $this->articuloModel = new \FSFramework\model\articulo();
-        }
-
-        return $this->articuloModel;
-    }
-
-    private function grupoArticuloModel(): \FSFramework\model\catalogo_grupo_articulo
-    {
-        if ($this->grupoArticuloModel === null) {
-            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo_articulo.php';
-            $this->grupoArticuloModel = new \FSFramework\model\catalogo_grupo_articulo();
-        }
-
-        return $this->grupoArticuloModel;
-    }
-
-    private function precioModel(): \FSFramework\model\catalogo_articulo_precio
-    {
-        if ($this->precioModel === null) {
-            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_precio.php';
-            $this->precioModel = new \FSFramework\model\catalogo_articulo_precio();
-        }
-
-        return $this->precioModel;
-    }
-
-    // ---- @internal test setters (NOT production surface) ----
-
-    /** @internal testing-only */
-    public function setResolver(CatalogoPriceResolver $resolver): void
-    {
-        $this->resolver = $resolver;
-    }
-
-    /** @internal testing-only */
-    public function setFamiliaModel(\FSFramework\model\familia $model): void
-    {
-        $this->familiaModel = $model;
-    }
-
-    /** @internal testing-only */
-    public function setArticuloModel(\FSFramework\model\articulo $model): void
-    {
-        $this->articuloModel = $model;
-    }
-
-    /** @internal testing-only */
-    public function setGrupoArticuloModel(\FSFramework\model\catalogo_grupo_articulo $model): void
-    {
-        $this->grupoArticuloModel = $model;
-    }
-
-    /** @internal testing-only */
-    public function setPrecioModel(\FSFramework\model\catalogo_articulo_precio $model): void
-    {
-        $this->precioModel = $model;
+    /** Canonical-first composition (D1). */
+    private function bookFor(
+        PriceUpdateScopeInterface $scope,
+        PriceUpdateTargetInterface $target,
+        string $key
+    ): ?PriceBookInterface {
+        return $scope->canonicalBook($key) ?? $target->bookFor($scope->code(), $key);
     }
 }

@@ -146,8 +146,13 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
+        $collaborators = $this->resolveCollaborators();
+        if ($collaborators === null) {
+            return;
+        }
+
         $pct = (float) str_replace(',', '.', (string) ($_POST['pct'] ?? '0'));
-        $rows = $this->service()->preview($filters, $pct);
+        $rows = $this->service()->preview($collaborators['scope'], $collaborators['target'], $filters, $pct);
 
         if (empty($rows)) {
             $this->preview_rows = [];
@@ -155,7 +160,7 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
-        $this->preview_rows = $rows;
+        $this->preview_rows = $this->toViewRows($rows);
         $this->new_message('Vista previa: ' . count($rows) . ' artículos afectados. Revisa y confirma para aplicar.');
     }
 
@@ -173,8 +178,15 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
+        $collaborators = $this->resolveCollaborators();
+        if ($collaborators === null) {
+            return;
+        }
+
         $pct = (float) str_replace(',', '.', (string) ($_POST['pct'] ?? '0'));
-        $rows = $this->service()->preview($filters, $pct);
+        $scope = $collaborators['scope'];
+        $target = $collaborators['target'];
+        $rows = $this->service()->preview($scope, $target, $filters, $pct);
 
         if (empty($rows)) {
             $this->preview_rows = [];
@@ -182,12 +194,9 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
-        $result = $this->service()->apply($rows, (string) $filters['codlista']);
+        $result = $this->service()->apply($scope, $target, $filters, $rows);
 
-        $affected = [];
-        foreach ($rows as $row) {
-            $affected[] = $row['referencia'];
-        }
+        $affected = array_column($rows, 'key');
 
         if (empty($result['failed'])) {
             $this->new_message(self::summarizeApply($result['updated'], $result['failed'])
@@ -196,6 +205,48 @@ class catalogo_actualizar_precios extends fs_controller
             $this->new_error_msg(self::summarizeApply($result['updated'], $result['failed'])
                 . ' Artículos afectados: ' . implode(', ', $affected));
         }
+    }
+
+    /**
+     * Transitional (WU-1.4 -> WU-1.5): until the page exposes the target and
+     * scope selectors, it operates on the base scope against the base target.
+     * Fails closed when the base target is not registered.
+     *
+     * @return array{scope: \FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface, target: \FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface}|null
+     */
+    private function resolveCollaborators(): ?array
+    {
+        $scope = \FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopes::forCode(
+            \FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopes::defaultCode()
+        );
+        $target = \FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry::resolve('lista');
+
+        if ($scope === null || $target === null) {
+            $this->new_error_msg('Destino de actualización no disponible.');
+            return null;
+        }
+
+        return ['scope' => $scope, 'target' => $target];
+    }
+
+    /**
+     * Engine rows (key/label) in the shape the current view renders.
+     *
+     * @param list<array{key: string, label: string, precio_actual: float, precio_nuevo: float}> $rows
+     * @return list<array{referencia: string, precio_actual: float, precio_nuevo: float}>
+     */
+    private function toViewRows(array $rows): array
+    {
+        $view = [];
+        foreach ($rows as $row) {
+            $view[] = [
+                'referencia' => $row['key'],
+                'precio_actual' => $row['precio_actual'],
+                'precio_nuevo' => $row['precio_nuevo'],
+            ];
+        }
+
+        return $view;
     }
 
     private function loadFormData(): void

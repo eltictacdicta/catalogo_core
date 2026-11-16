@@ -16,6 +16,7 @@ use FSFramework\Plugins\catalogo_core\Services\CaracteristicaRegistry;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
 use FSFramework\Plugins\catalogo_core\Services\FamiliaEstructuraMigration;
 use FSFramework\Plugins\catalogo_core\Services\IdiomaCodeMigration;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 use FSFramework\View\ViewHookRegistry;
 use Twig\Loader\FilesystemLoader;
@@ -45,6 +46,12 @@ final class Init
      * repeated boots never duplicate the listeners.
      */
     private static bool $viewExtensionsRegistered = false;
+
+    /**
+     * Guards the base price update target registration so repeated boots
+     * never re-run it (the registry also ignores duplicates).
+     */
+    private static bool $priceTargetsRegistered = false;
 
     /** @var list<string> Modelos PSR-4 con install() que deben sembrarse al activar. */
     private const DEFAULT_SEED_MODELS = [
@@ -104,6 +111,14 @@ final class Init
             error_log('[catalogo_core] caracteristicas backfill failed: ' . $e->getMessage());
         }
         self::migrateFamiliaEstructura();
+        try {
+            if (!self::$priceTargetsRegistered) {
+                PriceUpdateTargetRegistry::registerDefaults();
+                self::$priceTargetsRegistered = true;
+            }
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] price update targets registration failed: ' . $e->getMessage());
+        }
         try {
             self::registerViewExtensions();
         } catch (\Throwable $e) {

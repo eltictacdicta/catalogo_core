@@ -52,6 +52,10 @@ class PriceSurfaceOwnershipTest extends TestCase
      */
     private const SEAM_FILES = [
         '/Services/CatalogoPriceUpdateService.php',
+        '/Services/PriceUpdateTargetRegistry.php',
+        '/Services/PriceUpdateScopes.php',
+        '/Services/CanonicalPriceBooks.php',
+        '/Services/ListaPriceUpdateTarget.php',
     ];
 
     /** Frozen by R-TAR-HOOK-003 / R-PSO-004 — MUST NOT change. */
