@@ -154,8 +154,9 @@ class tarif_tarifa extends \fs_model
         }
 
         $this->coddivisa = strtoupper(trim((string) $this->coddivisa));
-        if (preg_match('/^[A-Z0-9]{3}$/', $this->coddivisa) !== 1) {
-            $this->new_error_msg("Moneda no válida. Debe ser un código ISO de 3 caracteres.");
+        // ISO 4217 uses three letters (EUR, USD, MXN): digits are not a currency.
+        if (preg_match('/^[A-Z]{3}$/', $this->coddivisa) !== 1) {
+            $this->new_error_msg("Moneda no válida. Debe ser un código ISO de 3 letras.");
             return FALSE;
         }
 
