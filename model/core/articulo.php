@@ -1075,7 +1075,16 @@ class articulo extends \fs_model
         }
 
         // articulosprov has no FK to the article, so its rows are dropped here.
-        $this->db->exec("DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";");
+        // The article row is already gone by now: a rejected cleanup is
+        // reported, never turned into a delete() failure. Returning FALSE
+        // would lie (the row is deleted) and a retry could only fail on a
+        // missing row, so the operator gets the orphan warning instead.
+        $provSql = "DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+        if (!$this->db->exec($provSql)) {
+            $this->new_error_msg(
+                'No se pudieron borrar las referencias de proveedor del artículo ' . $this->referencia . '.'
+            );
+        }
 
         // FLC-09: only a successful owning DELETE may drop the flow
         // assignments, so a failed delete leaves the flow definitions intact.

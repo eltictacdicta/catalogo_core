@@ -93,6 +93,9 @@ final class CascadeWiringFakeDb
 
     public bool $failExec = false;
 
+    /** @var list<string> statements whose SQL contains any of these fragments fail */
+    public array $failOn = [];
+
     public function __construct(private CascadeWiringJournal $journal)
     {
     }
@@ -102,7 +105,17 @@ final class CascadeWiringFakeDb
         $this->executed[] = trim((string) $sql);
         $this->journal->add('exec');
 
-        return !$this->failExec;
+        if ($this->failExec) {
+            return false;
+        }
+
+        foreach ($this->failOn as $fragment) {
+            if (stripos((string) $sql, $fragment) !== false) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function var2str($val): string
@@ -451,6 +464,64 @@ final class CatalogoFlujoCascadeWiringTest extends TestCase
             $journal->events,
             'the article flow cleanup must run only after the owning row DELETE succeeds'
         );
+    }
+
+    public function test_failed_articulosprov_cleanup_is_reported_without_a_false_failure(): void
+    {
+        $journal = new CascadeWiringJournal();
+        $db = new CascadeWiringFakeDb($journal);
+        $db->failOn = ['articulosprov'];
+        $spy = new FlujoCascadeRecorder($journal);
+        $this->installCoreLog();
+
+        $model = new class($db, $spy) extends \FSFramework\model\articulo {
+            private FlujoCascadeRecorder $spyRef;
+
+            public function __construct($db, $spy)
+            {
+                $this->spyRef = $spy;
+                $this->db = $db;
+                $this->table_name = 'articulos';
+                $this->referencia = 'ART1';
+                $this->exists = true;
+            }
+
+            public function set_imagen($img, $png = true)
+            {
+            }
+
+            protected function flujo_articulo_model()
+            {
+                return $this->spyRef;
+            }
+        };
+
+        $this->assertTrue(
+            $model->delete(),
+            'the owning article row is already gone: a rejected cleanup must not be reported as a delete failure'
+        );
+        $this->assertSame(
+            ['ART1'],
+            $spy->referenciaCalls,
+            'the flow assignments still reference a deleted article, so the cascade must still run'
+        );
+        $this->assertStringContainsString(
+            'referencias de proveedor',
+            implode("\n", $model->get_errors()),
+            'orphan supplier rows must be surfaced, never swallowed'
+        );
+    }
+
+    /**
+     * `fs_model::$core_log` is private static and only initialized by the real
+     * constructor, which these doubles skip. Install one so `new_error_msg()`
+     * is observable through `get_errors()`.
+     */
+    private function installCoreLog(): void
+    {
+        $property = (new \ReflectionClass(\fs_model::class))->getProperty('core_log');
+        $property->setAccessible(true);
+        $property->setValue(null, new \fs_core_log());
     }
 
     public function test_failed_articulo_delete_skips_the_flow_cascade(): void
