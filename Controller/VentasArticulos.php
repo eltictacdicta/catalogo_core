@@ -82,7 +82,8 @@ class VentasArticulos extends PageController
         $this->allow_delete = $this->user->admin || $this->user->allow_delete_on($this->getPageData()['name']);
         $this->price_decimals = defined('FS_NF0_ART') ? (int) FS_NF0_ART : 2;
         $this->initImportExportPermissions();
-        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions())->multiTariffEnabled();
+        // Per-list prices are offered only while no tariff is active (PriceListAvailability).
+        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\PriceListAvailability())->listUiEnabled();
     }
 
     public function getPageData(): array

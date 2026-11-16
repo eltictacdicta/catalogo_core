@@ -45,6 +45,9 @@ class catalogo_actualizar_precios extends fs_controller
     /** Multi-tariff master flag: hides the whole page when off (R-CO-003). */
     public bool $multi_tariff = false;
 
+    /** Active tariffs take over price editing: the list UI goes inert. */
+    public bool $tariffs_active = false;
+
     /** @var list<\FSFramework\model\catalogo_lista_precio> active lists only */
     public array $listas = [];
 
@@ -65,10 +68,19 @@ class catalogo_actualizar_precios extends fs_controller
     protected function private_core()
     {
         $options = new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions();
-        $this->multi_tariff = $options->multiTariffEnabled();
+        // multiTariffEnabled() gated by the active tariffs (PriceListAvailability).
+        $availability = new \FSFramework\Plugins\catalogo_core\Services\PriceListAvailability($options);
+        $this->tariffs_active = $availability->tariffsActive();
+        $this->multi_tariff = $availability->listUiEnabled();
         $this->loadFormData();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            return;
+        }
+
+        if ($this->tariffs_active) {
+            // Inert page: the lists mirror the tariffs, never edit them here.
+            $this->new_error_msg('Hay tarifas activas: los precios se gestionan por tarifa.');
             return;
         }
 

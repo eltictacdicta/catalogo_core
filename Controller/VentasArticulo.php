@@ -998,7 +998,8 @@ class VentasArticulo extends PageController
      */
     private function loadPreciosPorLista(): void
     {
-        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions())->multiTariffEnabled();
+        // Per-list prices are offered only while no tariff is active (PriceListAvailability).
+        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\PriceListAvailability())->listUiEnabled();
         $this->listas_activas = [];
         $this->precios_por_lista = [];
 

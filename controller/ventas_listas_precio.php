@@ -64,6 +64,9 @@ class ventas_listas_precio extends fs_controller
     /** Multi-tariff master flag: hides the CRUD UI when off (R-CO-003). */
     public bool $multi_tariff = false;
 
+    /** Active tariffs take over price editing: the list UI goes inert. */
+    public bool $tariffs_active = false;
+
     public function __construct()
     {
         parent::__construct(__CLASS__, 'Listas de precio', 'ventas', TRUE, TRUE);
@@ -71,13 +74,21 @@ class ventas_listas_precio extends fs_controller
 
     protected function private_core()
     {
-        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions())->multiTariffEnabled();
+        $availability = new \FSFramework\Plugins\catalogo_core\Services\PriceListAvailability();
+        $this->tariffs_active = $availability->tariffsActive();
+        $this->multi_tariff = $availability->listUiEnabled();
         $this->divisas = $this->loadDivisas();
         $this->coddivisas = $this->configuredDivisaCodes();
         $this->coddivisa_defecto = $this->resolveDefaultDivisa();
         $this->listas = $this->loadListas();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            return;
+        }
+
+        if ($this->tariffs_active) {
+            // Inert page: the lists mirror the tariffs, never edit them here.
+            $this->new_error_msg('Hay tarifas activas: los precios se gestionan por tarifa.');
             return;
         }
 

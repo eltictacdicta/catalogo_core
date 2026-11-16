@@ -13,7 +13,11 @@
 {% include 'header.html.twig' %}
 
 <div class="container">
-   {% if not fsc.multi_tariff %}
+   {% if fsc.tariffs_active %}
+   <div class="alert alert-info">
+      Hay tarifas activas: los precios se editan por tarifa y esta página no se usa.
+   </div>
+   {% elseif not fsc.multi_tariff %}
    <div class="alert alert-warning">
       La multi-tarifa está desactivada. Actívala en <strong>Opciones de catálogo</strong> para actualizar precios por lista.
    </div>
