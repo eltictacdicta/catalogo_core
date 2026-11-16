@@ -11,8 +11,9 @@ Mode: Strict TDD. Runner: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_
 | WU-1.2 | PR-1b | done |
 | WU-1.3 | PR-1b | done |
 | WU-1.4 | PR-1b | done |
+| WU-1.5 | PR-2 | done (uncommitted) |
 
-Pending: WU-1.5 (PR-2) onwards.
+Pending: WU-2.1 (PR-3) onwards.
 
 ## TDD evidence (PR-1b)
 
@@ -67,3 +68,17 @@ composition fails `testCompositionPrefersCanonicalBook`.
 7. `apply()` with a missing book reports every row as failed (instead of
    silently returning 0 updated); a missing key returns `updated 0, failed []`
    as before.
+
+## PR-2 (WU-1.5) evidence
+
+| Evidence | Value |
+|---|---|
+| RED | 13 controller tests: 10 errors (scope contract not loadable from the test double) + 3 failures from the old view (selectors, repost, neutral nouns) |
+| GREEN | `CatalogoActualizarPreciosControllerTest` 30 tests / 91 assertions OK (includes two real Twig render tests: escaped repost of hidden inputs, inert page without targets) |
+| Plugin suite | `catalogo_core` 1651 tests / 6654 assertions, 2 warnings, 1 skipped (same warnings/skips as PR-1b) |
+| Consumer suite | `tarifario` 278 tests / 1174 assertions, 2 skipped (baseline unchanged) |
+| Static analysis | `composer phpstan:plugins` no errors |
+| Behaviour fixed | `#[AdminOnly]` declared, 4th ctor arg `FALSE`; apply form reposts target/scope/key/pct/filters (was broken); neutral nouns; page inert without targets; unknown target/scope fail closed |
+| Added | `PriceUpdateScopes::labels()` (+ test) for the scope selector |
+| Rollback boundary | Revert the PR-2 commit; attribute removal downgrades `fs_pages.admin_only` on next visit, no data to undo |
+| Pending | Real-DB browser smoke of the page was not run (no Kernel in tests) |

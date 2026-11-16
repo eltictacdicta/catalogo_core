@@ -21,35 +21,80 @@ declare(strict_types=1);
 require_once FS_FOLDER . '/base/fs_controller.php';
 require_once FS_FOLDER . '/base/fs_settings.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceListAvailability.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceUpdateService.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
 
+use FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopes;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry;
+
 /**
- * Batch price update page (multitarifa task 4.2, R-BU-001..005, design D6).
+ * Batch price update page (R-BU-001..005, design D6/D9/D11).
+ *
+ * One page for every price surface: the operator picks a TARGET (where the
+ * prices live: a price list, a consumer-registered target) and a SCOPE (which
+ * rows: articles). The controller only handles codes and labels; storage and
+ * row selection belong to the target/scope/book collaborators.
  *
  * Two-phase flow, each phase an admin-gated CSRF-checked POST:
- *   preview → computes affected articles and prospective prices via
+ *   preview → computes affected rows and prospective prices via
  *   CatalogoPriceUpdateService (zero write); zero matches → warning via
  *   new_message(), nothing applied.
  *   apply → explicit confirm checkbox, persists exactly the previewed rows
- *   for the target list, then shows the resumen (updated count + affected
- *   references) via new_message(); failed rows via new_error_msg().
+ *   through the target book, then shows the resumen (updated count + affected
+ *   keys) via new_message(); failed rows via new_error_msg(). The apply form
+ *   reposts every filter and the percent, so apply recomputes the same rows.
  *
- * Filter set (R-BU-002, AND-combined): codlista (required) + codfamilia
- * (+ incluir_subfamilias) + codgrupo. articulos.pvp is never rewritten.
+ * Unknown/unavailable target or scope, an empty registry and a missing target
+ * key all fail closed: error message, zero writes. articulos.pvp is never
+ * rewritten.
  */
+#[\FSFramework\Attribute\AdminOnly]
 class catalogo_actualizar_precios extends fs_controller
 {
-    /** Multi-tariff master flag: hides the whole page when off (R-CO-003). */
+    /** Multi-tariff master flag: explains an inert page (R-CO-003). */
     public bool $multi_tariff = false;
 
-    /** Active tariffs take over price editing: the list UI goes inert. */
+    /** Active tariffs take over price editing: only informs the operator. */
     public bool $tariffs_active = false;
 
-    /** @var list<\FSFramework\model\catalogo_lista_precio> active lists only */
-    public array $listas = [];
+    /** @var array<string, string> available targets, code => label */
+    public array $targets = [];
+
+    /** @var array<string, string> scopes, code => label */
+    public array $scopes = [];
+
+    public string $selected_target = '';
+
+    public string $selected_scope = '';
+
+    /** Request field that carries the key of the selected target (e.g. codlista). */
+    public string $target_key_field = 'codlista';
+
+    public string $target_key_label = '';
+
+    /** @var list<array{value: string, label: string}> key options of the selected target */
+    public array $target_key_options = [];
+
+    public string $scope_key_label = 'Referencia';
+
+    /**
+     * Values echoed back into the filter and apply forms.
+     *
+     * @var array{key: string, pct: string, codfamilia: string, incluir_subfamilias: bool, codgrupo: string}
+     */
+    public array $form = [
+        'key' => '',
+        'pct' => '0',
+        'codfamilia' => '',
+        'incluir_subfamilias' => false,
+        'codgrupo' => '',
+    ];
 
     /** @var list<\FSFramework\model\familia> */
     public array $familias = [];
@@ -57,12 +102,13 @@ class catalogo_actualizar_precios extends fs_controller
     /** @var list<\FSFramework\model\catalogo_grupo> */
     public array $grupos = [];
 
-    /** @var list<array{referencia: string, precio_actual: float, precio_nuevo: float}> preview rows */
+    /** @var list<array{key: string, label: string, precio_actual: float, precio_nuevo: float}> preview rows */
     public array $preview_rows = [];
 
     public function __construct()
     {
-        parent::__construct(__CLASS__, 'Actualizar precios', 'ventas', TRUE, TRUE);
+        // The 4th argument is OBSOLETE and ignored: #[AdminOnly] is the gate.
+        parent::__construct(__CLASS__, 'Actualizar precios', 'ventas', FALSE, TRUE);
     }
 
     protected function private_core()
@@ -73,14 +119,9 @@ class catalogo_actualizar_precios extends fs_controller
         $this->tariffs_active = $availability->tariffsActive();
         $this->multi_tariff = $availability->listUiEnabled();
         $this->loadFormData();
+        $this->prepareSelection();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            return;
-        }
-
-        if ($this->tariffs_active) {
-            // Inert page: the lists mirror the tariffs, never edit them here.
-            $this->new_error_msg('Hay tarifas activas: los precios se gestionan por tarifa.');
             return;
         }
 
@@ -89,19 +130,7 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
-        $action = (string) ($_POST['action'] ?? '');
-        switch ($action) {
-            case 'preview':
-                $this->runPreview();
-                break;
-
-            case 'apply':
-                $this->runApply();
-                break;
-
-            default:
-                $this->new_error_msg('Acción no válida.');
-        }
+        $this->handlePost();
     }
 
     /**
@@ -121,14 +150,89 @@ class catalogo_actualizar_precios extends fs_controller
     }
 
     /**
-     * AND-combined filter set from the POST (R-BU-002).
+     * POST entry point after the CSRF check: resolves target and scope and
+     * dispatches the whitelisted action. Everything unresolvable fails closed.
+     */
+    protected function handlePost(): void
+    {
+        $target = $this->resolveTarget($this->requestValue('target'));
+        if ($target === null) {
+            $this->preview_rows = [];
+            if (PriceUpdateTargetRegistry::available() === []) {
+                $this->new_error_msg('No hay destinos de actualización disponibles.');
+            } else {
+                $this->new_error_msg('Destino de actualización no válido.');
+            }
+            return;
+        }
+
+        $scopeCode = $this->requestValue('scope');
+        $scope = $this->resolveScope($scopeCode !== '' ? $scopeCode : PriceUpdateScopes::defaultCode());
+        if ($scope === null) {
+            $this->preview_rows = [];
+            $this->new_error_msg('Ámbito de actualización no válido.');
+            return;
+        }
+
+        $filters = $this->readFilters($target);
+
+        switch ((string) ($_POST['action'] ?? '')) {
+            case 'preview':
+                $this->runPreview($scope, $target, $filters);
+                break;
+
+            case 'apply':
+                $this->runApply($scope, $target, $filters);
+                break;
+
+            default:
+                $this->new_error_msg('Acción no válida.');
+        }
+    }
+
+    /** Scope lookup; overridable seam for the controller tests. */
+    protected function resolveScope(string $code): ?PriceUpdateScopeInterface
+    {
+        return PriceUpdateScopes::forCode($code);
+    }
+
+    /**
+     * The requested target when it is registered AND available; the default
+     * target when none was requested; null otherwise (fail closed).
+     */
+    private function resolveTarget(string $requested): ?PriceUpdateTargetInterface
+    {
+        $available = PriceUpdateTargetRegistry::available();
+        if ($available === []) {
+            return null;
+        }
+
+        $code = $requested !== '' ? $requested : PriceUpdateTargetRegistry::defaultCode();
+        if (!isset($available[$code])) {
+            return null;
+        }
+
+        return PriceUpdateTargetRegistry::resolve((string) $code);
+    }
+
+    /** POST value first, then GET (preselection links), as a trimmed string. */
+    private function requestValue(string $name): string
+    {
+        return trim((string) ($_POST[$name] ?? $_GET[$name] ?? ''));
+    }
+
+    /**
+     * AND-combined filter set from the POST (R-BU-002). The target key is read
+     * from the field the TARGET declares.
      *
      * @return array<string, mixed>
      */
-    private function readFilters(): array
+    private function readFilters(PriceUpdateTargetInterface $target): array
     {
+        $keyField = $target->keyField();
+
         return [
-            'codlista' => trim((string) ($_POST['codlista'] ?? '')),
+            $keyField => trim((string) ($_POST[$keyField] ?? '')),
             'codfamilia' => trim((string) ($_POST['codfamilia'] ?? '')),
             // Checkbox posts 'TRUE'; fs_model::str2bool() is model-only and
             // does not understand form values (only DB truthy 't'/'1').
@@ -137,39 +241,50 @@ class catalogo_actualizar_precios extends fs_controller
         ];
     }
 
-    /** Preview phase: computes the affected rows without persisting. */
-    private function runPreview(): void
+    private function readPct(): float
     {
-        $filters = $this->readFilters();
-        if ($filters['codlista'] === '') {
-            $this->new_error_msg('Debes seleccionar una lista de precio.');
+        return (float) str_replace(',', '.', (string) ($_POST['pct'] ?? '0'));
+    }
+
+    /**
+     * Preview phase: computes the affected rows without persisting.
+     *
+     * @param array<string, mixed> $filters
+     */
+    private function runPreview(
+        PriceUpdateScopeInterface $scope,
+        PriceUpdateTargetInterface $target,
+        array $filters
+    ): void {
+        if ($target->keyFromFilters($filters) === null) {
+            $this->new_error_msg('Debes seleccionar ' . $target->keyLabel() . '.');
             return;
         }
 
-        $collaborators = $this->resolveCollaborators();
-        if ($collaborators === null) {
-            return;
-        }
-
-        $pct = (float) str_replace(',', '.', (string) ($_POST['pct'] ?? '0'));
-        $rows = $this->service()->preview($collaborators['scope'], $collaborators['target'], $filters, $pct);
+        $rows = $this->service()->preview($scope, $target, $filters, $this->readPct());
 
         if (empty($rows)) {
             $this->preview_rows = [];
-            $this->new_message('Ningún artículo coincide con los filtros seleccionados. No se aplicó ningún cambio.');
+            $this->new_message('Ningún elemento coincide con los filtros seleccionados. No se aplicó ningún cambio.');
             return;
         }
 
-        $this->preview_rows = $this->toViewRows($rows);
-        $this->new_message('Vista previa: ' . count($rows) . ' artículos afectados. Revisa y confirma para aplicar.');
+        $this->preview_rows = $rows;
+        $this->new_message('Vista previa: ' . count($rows) . ' elementos afectados. Revisa y confirma para aplicar.');
     }
 
-    /** Apply phase: persists exactly the (recomputed) previewed rows. */
-    private function runApply(): void
-    {
-        $filters = $this->readFilters();
-        if ($filters['codlista'] === '') {
-            $this->new_error_msg('Debes seleccionar una lista de precio.');
+    /**
+     * Apply phase: persists exactly the (recomputed) previewed rows.
+     *
+     * @param array<string, mixed> $filters
+     */
+    private function runApply(
+        PriceUpdateScopeInterface $scope,
+        PriceUpdateTargetInterface $target,
+        array $filters
+    ): void {
+        if ($target->keyFromFilters($filters) === null) {
+            $this->new_error_msg('Debes seleccionar ' . $target->keyLabel() . '.');
             return;
         }
 
@@ -178,93 +293,72 @@ class catalogo_actualizar_precios extends fs_controller
             return;
         }
 
-        $collaborators = $this->resolveCollaborators();
-        if ($collaborators === null) {
-            return;
-        }
-
-        $pct = (float) str_replace(',', '.', (string) ($_POST['pct'] ?? '0'));
-        $scope = $collaborators['scope'];
-        $target = $collaborators['target'];
-        $rows = $this->service()->preview($scope, $target, $filters, $pct);
+        $rows = $this->service()->preview($scope, $target, $filters, $this->readPct());
 
         if (empty($rows)) {
             $this->preview_rows = [];
-            $this->new_message('Ningún artículo coincide con los filtros seleccionados. No se aplicó ningún cambio.');
+            $this->new_message('Ningún elemento coincide con los filtros seleccionados. No se aplicó ningún cambio.');
             return;
         }
 
         $result = $this->service()->apply($scope, $target, $filters, $rows);
 
         $affected = array_column($rows, 'key');
+        $summary = self::summarizeApply($result['updated'], $result['failed'])
+            . ' Afectados: ' . implode(', ', $affected);
 
         if (empty($result['failed'])) {
-            $this->new_message(self::summarizeApply($result['updated'], $result['failed'])
-                . ' Artículos afectados: ' . implode(', ', $affected));
+            $this->new_message($summary);
         } else {
-            $this->new_error_msg(self::summarizeApply($result['updated'], $result['failed'])
-                . ' Artículos afectados: ' . implode(', ', $affected));
+            $this->new_error_msg($summary);
         }
     }
 
     /**
-     * Transitional (WU-1.4 -> WU-1.5): until the page exposes the target and
-     * scope selectors, it operates on the base scope against the base target.
-     * Fails closed when the base target is not registered.
-     *
-     * @return array{scope: \FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface, target: \FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface}|null
+     * Fills the selectors and the echo values of the forms from the request.
+     * A requested target that is not available is NOT reflected: the default
+     * is shown instead (POSTs re-validate and fail closed).
      */
-    private function resolveCollaborators(): ?array
+    private function prepareSelection(): void
     {
-        $scope = \FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopes::forCode(
-            \FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopes::defaultCode()
-        );
-        $target = \FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry::resolve('lista');
+        $this->targets = PriceUpdateTargetRegistry::available();
+        $this->scopes = PriceUpdateScopes::labels();
 
-        if ($scope === null || $target === null) {
-            $this->new_error_msg('Destino de actualización no disponible.');
-            return null;
+        $target = $this->resolveTarget($this->requestValue('target'))
+            ?? $this->resolveTarget('');
+        if ($target !== null) {
+            $this->selected_target = $target->code();
+            $this->target_key_field = $target->keyField();
+            $this->target_key_label = $target->keyLabel();
+            $this->target_key_options = $target->keyOptions();
         }
 
-        return ['scope' => $scope, 'target' => $target];
-    }
-
-    /**
-     * Engine rows (key/label) in the shape the current view renders.
-     *
-     * @param list<array{key: string, label: string, precio_actual: float, precio_nuevo: float}> $rows
-     * @return list<array{referencia: string, precio_actual: float, precio_nuevo: float}>
-     */
-    private function toViewRows(array $rows): array
-    {
-        $view = [];
-        foreach ($rows as $row) {
-            $view[] = [
-                'referencia' => $row['key'],
-                'precio_actual' => $row['precio_actual'],
-                'precio_nuevo' => $row['precio_nuevo'],
-            ];
+        $scopeCode = $this->requestValue('scope');
+        $scope = $this->resolveScope($scopeCode !== '' ? $scopeCode : PriceUpdateScopes::defaultCode())
+            ?? $this->resolveScope(PriceUpdateScopes::defaultCode());
+        if ($scope !== null) {
+            $this->selected_scope = $scope->code();
+            $this->scope_key_label = $scope->keyLabel();
         }
 
-        return $view;
+        $pct = $this->requestValue('pct');
+        $this->form = [
+            'key' => $this->requestValue($this->target_key_field),
+            'pct' => $pct !== '' ? $pct : '0',
+            'codfamilia' => $this->requestValue('codfamilia'),
+            'incluir_subfamilias' => $this->requestValue('incluir_subfamilias') === 'TRUE',
+            'codgrupo' => $this->requestValue('codgrupo'),
+        ];
     }
 
     private function loadFormData(): void
     {
-        $this->listas = [];
-        foreach ((new \FSFramework\model\catalogo_lista_precio())->all() as $lista) {
-            // Inactive lists are excluded from public flows (R-MT-001).
-            if ($lista->activa) {
-                $this->listas[] = $lista;
-            }
-        }
-
         $this->familias = (new \FSFramework\model\familia())->all();
         $this->grupos = (new \FSFramework\model\catalogo_grupo())->all();
     }
 
-    private function service(): \FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService
+    private function service(): CatalogoPriceUpdateService
     {
-        return new \FSFramework\Plugins\catalogo_core\Services\CatalogoPriceUpdateService();
+        return new CatalogoPriceUpdateService();
     }
 }

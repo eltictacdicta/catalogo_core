@@ -57,6 +57,11 @@ final class ArticulosPriceUpdateScopeTest extends TestCase
         $this->assertNull(PriceUpdateScopes::forCode(''));
     }
 
+    public function testLabelsListEveryScopeCodeWithItsLabel(): void
+    {
+        $this->assertSame(['articulos' => 'Artículos'], PriceUpdateScopes::labels());
+    }
+
     public function testArticulosScopeHasNoCanonicalBookSoTheTargetDecides(): void
     {
         $scope = $this->makeScope(['F' => ['A']], []);

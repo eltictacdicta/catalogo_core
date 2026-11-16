@@ -20,6 +20,10 @@ declare(strict_types=1);
 
 namespace Tests\CatalogoCore;
 
+use FSFramework\Plugins\catalogo_core\Services\PriceBookInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateScopeInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetInterface;
+use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -46,6 +50,9 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         require_once FS_FOLDER . '/base/fs_model.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateTargetRegistry.php';
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateScopes.php';
+        PriceUpdateTargetRegistry::reset();
     }
 
     // ---- Page shape (R-BU-004: admin-gated) ----
@@ -67,15 +74,26 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         );
     }
 
-    /** Non-admin denial is enforced at the framework level (admin=TRUE). */
-    public function test_controller_is_admin_gated_in_ventas_folder(): void
+    /**
+     * R-BU-004 / D9: the real administrator gate is the class attribute. The
+     * 4th constructor argument is OBSOLETE and ignored, so it must not be the
+     * thing the test pins (it never protected anything).
+     */
+    public function testControllerDeclaresAdminOnlyAttribute(): void
     {
-        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        require_once FS_FOLDER . self::CONTROLLER_FILE;
 
+        $names = array_map(
+            static fn (\ReflectionAttribute $a): string => ltrim($a->getName(), '\\'),
+            (new \ReflectionClass('catalogo_actualizar_precios'))->getAttributes()
+        );
+        $this->assertContains(\FSFramework\Attribute\AdminOnly::class, $names);
+
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
         $this->assertMatchesRegularExpression(
-            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'ventas',\s*TRUE,\s*TRUE\)/",
+            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'ventas',\s*FALSE,\s*TRUE\)/",
             $source,
-            'Constructor must gate the page to admins (admin=TRUE) inside the ventas folder'
+            'The obsolete 4th argument is FALSE; the 5th keeps the page in the ventas menu'
         );
     }
 
@@ -125,16 +143,17 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         $this->assertLessThan($applyPos, $csrfPos, 'CSRF must be validated before apply persists');
     }
 
-    // ---- codlista required (R-BU-002) ----
+    // ---- target key required (R-BU-002) ----
 
-    public function test_codlista_is_required(): void
+    public function test_target_key_is_required_and_comes_from_the_target(): void
     {
         $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
 
+        $this->assertStringContainsString('keyFromFilters(', $source, 'The key is read through the target, never by field name');
         $this->assertMatchesRegularExpression(
-            "/codlista[^;]*===?\s*''/",
+            '/keyFromFilters\([^)]*\)\s*===\s*null/',
             $source,
-            'codlista must be explicitly required (fail closed when missing)'
+            'A missing target key must fail closed'
         );
     }
 
@@ -189,7 +208,7 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
 
         foreach ([
-            'name="codlista"',
+            'name="{{ fsc.target_key_field }}"',
             'name="codfamilia"',
             'name="incluir_subfamilias"',
             'name="codgrupo"',
@@ -230,5 +249,441 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             $source,
             'Checkbox flags are posted as TRUE/FALSE by the view; compare against TRUE explicitly'
         );
+    }
+
+    // =====================================================================
+    // WU-1.5 — seam: target / scope selection, apply repost, fail closed
+    // =====================================================================
+
+    public function testTargetSelectorRendersRegisteredTargetsAndScopeSelector(): void
+    {
+        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+
+        $this->assertMatchesRegularExpression('/<select[^>]*name="target"/', $content);
+        $this->assertMatchesRegularExpression('/<select[^>]*name="scope"/', $content);
+        $this->assertStringContainsString('fsc.targets', $content);
+        $this->assertStringContainsString('fsc.scopes', $content);
+        $this->assertStringContainsString('fsc.target_key_options', $content, 'The key options come from the selected target');
+    }
+
+    /** D11.2: the apply form used to post only action+confirm, so apply always failed. */
+    public function testApplyFormRepostsEveryFilterAndPercent(): void
+    {
+        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+
+        $start = strpos($content, 'name="action" value="apply"');
+        $this->assertNotFalse($start, 'The apply form must exist');
+        $applyForm = substr($content, $start, (int) strpos($content, '</form>', $start) - $start);
+
+        foreach (['target', 'scope', '{{ fsc.target_key_field }}', 'pct', 'codfamilia', 'incluir_subfamilias', 'codgrupo'] as $field) {
+            $this->assertMatchesRegularExpression(
+                '/type="hidden"\s+name="' . preg_quote($field, '/') . '"/',
+                $applyForm,
+                "The apply form must repost $field as a hidden input"
+            );
+        }
+        $this->assertStringContainsString('name="confirm"', $applyForm);
+    }
+
+    public function testApplyPersistsPreviewRowsWithRepostedFilters(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0, 'B' => 20.0]);
+        $scope = $this->fakeScope([['A', 'Uno'], ['B', 'Dos']]);
+        $this->registerTarget('fake', $book);
+
+        $controller = $this->makeController(['articulos' => $scope]);
+        $_POST = [
+            'action' => 'apply',
+            'confirm' => 'TRUE',
+            'target' => 'fake',
+            'scope' => 'articulos',
+            'clave' => 'K',
+            'pct' => '10',
+            'codfamilia' => 'F',
+            'incluir_subfamilias' => 'TRUE',
+            'codgrupo' => '5',
+        ];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $controller->errors);
+        $this->assertSame([['A', 11.0], ['B', 22.0]], $book->persisted, 'Exactly the previewed rows, with the reposted percent');
+        $this->assertSame(
+            ['codfamilia' => 'F', 'incluir_subfamilias' => true, 'codgrupo' => 5],
+            array_intersect_key($scope->lastFilters, array_flip(['codfamilia', 'incluir_subfamilias', 'codgrupo'])),
+            'Reposted filters reach the scope'
+        );
+        $this->assertStringContainsString('2 precios actualizados', implode(' ', $controller->messages), 'R-BU-005 summary is unchanged');
+    }
+
+    public function testPreviewNeverPersists(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'preview', 'target' => 'fake', 'scope' => 'articulos', 'clave' => 'K', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $book->persisted);
+        $this->assertCount(1, $controller->preview_rows);
+        $this->assertSame('A', $controller->preview_rows[0]['key']);
+    }
+
+    public function testApplyRequiresExplicitConfirmation(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'apply', 'target' => 'fake', 'scope' => 'articulos', 'clave' => 'K', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $book->persisted);
+        $this->assertNotSame([], $controller->errors);
+    }
+
+    /** D11.5: the empty-selection message must not name articles. */
+    public function testEmptyMatchMessageIsScopeNeutral(): void
+    {
+        $this->registerTarget('fake', $this->fakeBook([]));
+        $controller = $this->makeController(['articulos' => $this->fakeScope([])]);
+        $_POST = ['action' => 'preview', 'target' => 'fake', 'scope' => 'articulos', 'clave' => 'K', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $text = implode(' ', $controller->messages);
+        $this->assertStringContainsString('Ningún elemento coincide', $text);
+        $this->assertStringNotContainsStringIgnoringCase('artículo', $text);
+
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $this->assertStringNotContainsString('Ningún artículo coincide', $source);
+        $this->assertStringNotContainsString('artículos afectados', mb_strtolower($source));
+
+        $view = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+        $this->assertDoesNotMatchRegularExpression('/Vista previa:[^<]*artículos/u', $view);
+    }
+
+    /** Empty registry: neutral message and zero writes. */
+    public function testPageIsInertWithoutTargets(): void
+    {
+        PriceUpdateTargetRegistry::reset();
+        $scope = $this->fakeScope([['A', 'Uno']]);
+        $controller = $this->makeController(['articulos' => $scope]);
+        $_POST = ['action' => 'apply', 'confirm' => 'TRUE', 'target' => 'lista', 'scope' => 'articulos', 'codlista' => 'L1', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $controller->messages);
+        $this->assertCount(1, $controller->errors);
+        $this->assertStringContainsString('No hay destinos', $controller->errors[0]);
+        $this->assertSame(0, $scope->matchCalls, 'Nothing is even selected when there is no target');
+        $this->assertSame([], $controller->preview_rows);
+    }
+
+    public function testUnknownTargetFailsClosed(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'apply', 'confirm' => 'TRUE', 'target' => 'nope', 'scope' => 'articulos', 'clave' => 'K', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $book->persisted);
+        $this->assertCount(1, $controller->errors);
+        $this->assertSame([], $controller->messages);
+    }
+
+    public function testUnavailableTargetFailsClosed(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book, available: false);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'apply', 'confirm' => 'TRUE', 'target' => 'fake', 'scope' => 'articulos', 'clave' => 'K', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $book->persisted);
+        $this->assertNotSame([], $controller->errors);
+    }
+
+    public function testUnknownScopeFailsClosed(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'apply', 'confirm' => 'TRUE', 'target' => 'fake', 'scope' => 'otro', 'clave' => 'K', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $book->persisted);
+        $this->assertCount(1, $controller->errors);
+    }
+
+    public function testMissingTargetKeyFailsClosed(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'apply', 'confirm' => 'TRUE', 'target' => 'fake', 'scope' => 'articulos', 'clave' => '  ', 'pct' => '5', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([], $book->persisted);
+        $this->assertCount(1, $controller->errors);
+    }
+
+    public function testBlankTargetUsesTheDefaultTarget(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('lista', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_POST = ['action' => 'apply', 'confirm' => 'TRUE', 'clave' => 'K', 'pct' => '10', 'codfamilia' => 'F'];
+
+        $controller->callHandlePost();
+
+        $this->assertSame([['A', 11.0]], $book->persisted, 'No target and no scope posted: defaults apply (single-option flow)');
+    }
+
+    /** Renders the real view: echoed values land in the hidden inputs, escaped. */
+    public function testViewRendersThePreviewAndRepostsEscapedValues(): void
+    {
+        $twig = new \Twig\Environment(
+            new \Twig\Loader\ArrayLoader([
+                'header.html.twig' => '',
+                'footer.html.twig' => '',
+                'page' => (string) file_get_contents(FS_FOLDER . self::VIEW_FILE),
+            ]),
+            ['autoescape' => 'html', 'strict_variables' => true]
+        );
+        $twig->addFunction(new \Twig\TwigFunction('csrf_field', static fn (): string => '<input type="hidden" name="_token" value="t">', ['is_safe' => ['html']]));
+
+        $fsc = new class {
+            public bool $tariffs_active = false;
+            public bool $multi_tariff = true;
+            public array $targets = ['lista' => 'Lista de precio', 'otro' => 'Otro'];
+            public array $scopes = ['articulos' => 'Artículos'];
+            public string $selected_target = 'otro';
+            public string $selected_scope = 'articulos';
+            public string $target_key_field = 'codlista';
+            public string $target_key_label = 'lista de precio';
+            public array $target_key_options = [['value' => 'L1', 'label' => 'Lista uno']];
+            public string $scope_key_label = 'Referencia';
+            public array $form = ['key' => 'L1', 'pct' => '7,5', 'codfamilia' => '"><script>x</script>', 'incluir_subfamilias' => true, 'codgrupo' => '5'];
+            public array $familias = [];
+            public array $grupos = [];
+            public array $preview_rows = [['key' => 'A1', 'label' => 'Uno', 'precio_actual' => 10.0, 'precio_nuevo' => 11.0]];
+
+            public function url(): string
+            {
+                return 'index.php?page=catalogo_actualizar_precios';
+            }
+        };
+
+        $html = $twig->render('page', ['fsc' => $fsc]);
+
+        $this->assertStringContainsString('<option value="otro" selected>Otro</option>', $html);
+        $this->assertStringContainsString('Vista previa: 1 elementos', $html);
+        $this->assertStringContainsString('<input type="hidden" name="codlista" value="L1" />', $html);
+        $this->assertStringContainsString('<input type="hidden" name="pct" value="7,5" />', $html);
+        $this->assertStringContainsString('<input type="hidden" name="incluir_subfamilias" value="TRUE" />', $html);
+        $this->assertStringContainsString('<input type="hidden" name="codgrupo" value="5" />', $html);
+        $this->assertStringNotContainsString('<script>x</script>', $html, 'Echoed values must be escaped');
+        $this->assertStringContainsString('&quot;&gt;&lt;script&gt;', $html);
+    }
+
+    public function testViewShowsAnInertNoticeWithoutTargets(): void
+    {
+        $twig = new \Twig\Environment(
+            new \Twig\Loader\ArrayLoader([
+                'header.html.twig' => '',
+                'footer.html.twig' => '',
+                'page' => (string) file_get_contents(FS_FOLDER . self::VIEW_FILE),
+            ]),
+            ['autoescape' => 'html', 'strict_variables' => true]
+        );
+        $twig->addFunction(new \Twig\TwigFunction('csrf_field', static fn (): string => '', ['is_safe' => ['html']]));
+        $fsc = new class {
+            public bool $tariffs_active = true;
+            public bool $multi_tariff = false;
+            public array $targets = [];
+        };
+
+        $html = $twig->render('page', ['fsc' => $fsc]);
+
+        $this->assertStringContainsString('No hay destinos de actualización disponibles.', $html);
+        $this->assertStringNotContainsString('<form', $html, 'No form is offered without a target');
+    }
+
+    // ---- doubles ----
+
+    protected function tearDown(): void
+    {
+        PriceUpdateTargetRegistry::reset();
+        $_POST = [];
+        parent::tearDown();
+    }
+
+    /** @param array<string, PriceUpdateScopeInterface> $scopes */
+    private function makeController(array $scopes): object
+    {
+        require_once FS_FOLDER . self::CONTROLLER_FILE;
+
+        return new class($scopes) extends \catalogo_actualizar_precios {
+            /** @var list<string> */
+            public array $errors = [];
+
+            /** @var list<string> */
+            public array $messages = [];
+
+            /** @param array<string, PriceUpdateScopeInterface> $fScopes */
+            public function __construct(private readonly array $fScopes)
+            {
+                // Skips fs_controller: no Kernel/DB in this suite.
+            }
+
+            public function new_error_msg($msg, $tipo = 'error', $alerta = false, $guardar = true)
+            {
+                $this->errors[] = (string) $msg;
+            }
+
+            public function new_message($msg, $save = false, $tipo = 'msg', $alerta = false)
+            {
+                $this->messages[] = (string) $msg;
+            }
+
+            protected function resolveScope(string $code): ?PriceUpdateScopeInterface
+            {
+                return $this->fScopes[$code] ?? null;
+            }
+
+            public function callHandlePost(): void
+            {
+                $this->handlePost();
+            }
+        };
+    }
+
+    private function registerTarget(string $code, PriceBookInterface $book, bool $available = true): void
+    {
+        PriceUpdateTargetRegistry::register(new class($code, $book, $available) implements PriceUpdateTargetInterface {
+            public function __construct(
+                private readonly string $fCode,
+                private readonly PriceBookInterface $fBook,
+                private readonly bool $fAvailable,
+            ) {
+            }
+
+            public function code(): string
+            {
+                return $this->fCode;
+            }
+
+            public function label(): string
+            {
+                return ucfirst($this->fCode);
+            }
+
+            public function isAvailable(): bool
+            {
+                return $this->fAvailable;
+            }
+
+            public function keyField(): string
+            {
+                return 'clave';
+            }
+
+            public function keyLabel(): string
+            {
+                return 'clave';
+            }
+
+            public function keyOptions(): array
+            {
+                return [['value' => 'K', 'label' => 'Clave K']];
+            }
+
+            public function keyFromFilters(array $filters): ?string
+            {
+                $value = trim((string) ($filters['clave'] ?? ''));
+
+                return $value === '' ? null : $value;
+            }
+
+            public function bookFor(string $scope, string $key): ?PriceBookInterface
+            {
+                return $this->fBook;
+            }
+        });
+    }
+
+    /** @param list<array{string, string}> $rows */
+    private function fakeScope(array $rows): object
+    {
+        return new class($rows) implements PriceUpdateScopeInterface {
+            /** @var array<string, mixed> */
+            public array $lastFilters = [];
+
+            public int $matchCalls = 0;
+
+            public function __construct(private readonly array $fRows)
+            {
+            }
+
+            public function code(): string
+            {
+                return 'articulos';
+            }
+
+            public function label(): string
+            {
+                return 'Artículos';
+            }
+
+            public function keyLabel(): string
+            {
+                return 'Referencia';
+            }
+
+            public function match(array $filters): array
+            {
+                $this->matchCalls++;
+                $this->lastFilters = $filters;
+
+                return array_map(static fn (array $r): array => ['key' => $r[0], 'label' => $r[1]], $this->fRows);
+            }
+
+            public function canonicalBook(string $key): ?PriceBookInterface
+            {
+                return null;
+            }
+        };
+    }
+
+    /** @param array<string, float> $prices */
+    private function fakeBook(array $prices): object
+    {
+        return new class($prices) implements PriceBookInterface {
+            /** @var list<array{string, float}> */
+            public array $persisted = [];
+
+            public function __construct(private readonly array $fPrices)
+            {
+            }
+
+            public function currentPrices(array $keys): array
+            {
+                return array_intersect_key($this->fPrices, array_flip($keys));
+            }
+
+            public function persist(string $key, float $price): bool
+            {
+                $this->persisted[] = [$key, $price];
+
+                return true;
+            }
+        };
     }
 }

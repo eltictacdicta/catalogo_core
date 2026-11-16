@@ -273,4 +273,22 @@ final class PriceUpdateScopes
     {
         return self::DEFAULT_CODE;
     }
+
+    /**
+     * Every scope code with its label, in display order.
+     *
+     * @return array<string, string>
+     */
+    public static function labels(): array
+    {
+        $labels = [];
+        foreach (['articulos'] as $code) {
+            $scope = self::forCode($code);
+            if ($scope !== null) {
+                $labels[$code] = $scope->label();
+            }
+        }
+
+        return $labels;
+    }
 }

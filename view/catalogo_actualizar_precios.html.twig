@@ -1,37 +1,68 @@
 {#
 /**
  * Plugin: catalogo_core
- * Batch price update page (multitarifa, R-BU-001..005).
+ * Batch price update page (R-BU-001..005, scope x target).
  *
  * Twig nativo con autoescape (sin filtros que salteen el escape con datos de usuario).
  * Dos fases, cada una POST con CSRF: preview (sin escritura) y apply con casilla
- * de confirmación. codlista es obligatorio; los filtros opcionales se combinan
- * con AND. Solo se ofrecen listas activas (R-MT-001); si la multi-tarifa está
- * desactivada, la página entera se oculta (R-CO-003).
+ * de confirmación. El destino (target) y el ámbito (scope) se eligen con un
+ * formulario GET; el campo de clave del destino (lista, tarifa...) lo declara el
+ * propio destino. Los filtros opcionales se combinan con AND. El formulario de
+ * apply repostea el destino, el ámbito, la clave, el porcentaje y todos los
+ * filtros: el servidor recalcula las mismas filas del preview.
  */
 #}
 {% include 'header.html.twig' %}
 
 <div class="container">
-   {% if fsc.tariffs_active %}
+   {% if not fsc.targets %}
    <div class="alert alert-info">
-      Hay tarifas activas: los precios se editan por tarifa y esta página no se usa.
-   </div>
-   {% elseif not fsc.multi_tariff %}
-   <div class="alert alert-warning">
+      No hay destinos de actualización disponibles.
+      {% if fsc.tariffs_active %}
+      Hay tarifas activas: los precios se editan por tarifa.
+      {% elseif not fsc.multi_tariff %}
       La multi-tarifa está desactivada. Actívala en <strong>Opciones de catálogo</strong> para actualizar precios por lista.
+      {% endif %}
    </div>
    {% endif %}
 
    <div class="page-header">
       <h1><i class="fa fa-refresh" aria-hidden="true"></i>&nbsp; Actualizar precios</h1>
       <p class="help-block">
-         Actualiza por lotes los precios de una lista. Flujo en dos fases:
+         Actualiza por lotes los precios de un destino. Flujo en dos fases:
          primero una vista previa sin cambios, luego confirmas para aplicar.
       </p>
    </div>
 
-   {% if fsc.multi_tariff %}
+   {% if fsc.targets %}
+   <div class="panel panel-default">
+      <div class="panel-heading">
+         <h3 class="panel-title">Destino y ámbito</h3>
+      </div>
+      <div class="panel-body">
+         <form action="index.php" method="get" class="form-inline" role="form">
+            <input type="hidden" name="page" value="catalogo_actualizar_precios" />
+            <div class="form-group">
+               <label for="target">Destino</label>
+               <select name="target" id="target" class="form-control">
+                  {% for code, label in fsc.targets %}
+                  <option value="{{ code }}"{% if code == fsc.selected_target %} selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+               </select>
+            </div>
+            <div class="form-group">
+               <label for="scope">Ámbito</label>
+               <select name="scope" id="scope" class="form-control">
+                  {% for code, label in fsc.scopes %}
+                  <option value="{{ code }}"{% if code == fsc.selected_scope %} selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+               </select>
+            </div>
+            <button class="btn btn-default" type="submit">Cambiar</button>
+         </form>
+      </div>
+   </div>
+
    <div class="panel panel-default">
       <div class="panel-heading">
          <h3 class="panel-title">Filtros</h3>
@@ -40,12 +71,14 @@
          <form action="{{ fsc.url() }}" method="post" role="form">
             {{ csrf_field() }}
             <input type="hidden" name="action" value="preview" />
+            <input type="hidden" name="target" value="{{ fsc.selected_target }}" />
+            <input type="hidden" name="scope" value="{{ fsc.selected_scope }}" />
             <div class="form-group">
-               <label for="codlista">Lista de precio *</label>
-               <select name="codlista" id="codlista" class="form-control" required>
+               <label for="target_key">{{ fsc.target_key_label|capitalize }} *</label>
+               <select name="{{ fsc.target_key_field }}" id="target_key" class="form-control" required>
                   <option value="">-- selecciona --</option>
-                  {% for lista in fsc.listas %}
-                  <option value="{{ lista.codlista }}">{{ lista.nombre }}</option>
+                  {% for option in fsc.target_key_options %}
+                  <option value="{{ option.value }}"{% if option.value == fsc.form.key %} selected{% endif %}>{{ option.label }}</option>
                   {% endfor %}
                </select>
             </div>
@@ -54,13 +87,13 @@
                <select name="codfamilia" id="codfamilia" class="form-control">
                   <option value="">-- todas --</option>
                   {% for familia in fsc.familias %}
-                  <option value="{{ familia.codfamilia }}">{{ familia.descripcion }}</option>
+                  <option value="{{ familia.codfamilia }}"{% if familia.codfamilia == fsc.form.codfamilia %} selected{% endif %}>{{ familia.descripcion }}</option>
                   {% endfor %}
                </select>
             </div>
             <div class="checkbox">
                <label>
-                  <input type="checkbox" name="incluir_subfamilias" value="TRUE" /> Incluir subfamilias
+                  <input type="checkbox" name="incluir_subfamilias" value="TRUE"{% if fsc.form.incluir_subfamilias %} checked{% endif %} /> Incluir subfamilias
                </label>
             </div>
             <div class="form-group">
@@ -68,13 +101,13 @@
                <select name="codgrupo" id="codgrupo" class="form-control">
                   <option value="">-- ninguno --</option>
                   {% for grupo in fsc.grupos %}
-                  <option value="{{ grupo.id }}">{{ grupo.nombre }}</option>
+                  <option value="{{ grupo.id }}"{% if grupo.id ~ '' == fsc.form.codgrupo %} selected{% endif %}>{{ grupo.nombre }}</option>
                   {% endfor %}
                </select>
             </div>
             <div class="form-group">
                <label for="pct">Porcentaje (%)</label>
-               <input type="text" name="pct" id="pct" class="form-control" value="0" required />
+               <input type="text" name="pct" id="pct" class="form-control" value="{{ fsc.form.pct }}" required />
             </div>
             <button class="btn btn-primary" type="submit">
                <span class="glyphicon glyphicon-search"></span> &nbsp; Vista previa
@@ -86,13 +119,14 @@
    {% if fsc.preview_rows %}
    <div class="panel panel-default">
       <div class="panel-heading">
-         <h3 class="panel-title">Vista previa: {{ fsc.preview_rows|length }} artículos</h3>
+         <h3 class="panel-title">Vista previa: {{ fsc.preview_rows|length }} elementos</h3>
       </div>
       <div class="table-responsive">
          <table class="table table-hover">
             <thead>
                <tr>
-                  <th>Referencia</th>
+                  <th>{{ fsc.scope_key_label }}</th>
+                  <th>Descripción</th>
                   <th>Precio actual</th>
                   <th>Precio nuevo</th>
                </tr>
@@ -100,7 +134,8 @@
             <tbody>
                {% for row in fsc.preview_rows %}
                <tr>
-                  <td>{{ row.referencia }}</td>
+                  <td>{{ row.key }}</td>
+                  <td>{{ row.label }}</td>
                   <td>{{ row.precio_actual }}</td>
                   <td>{{ row.precio_nuevo }}</td>
                </tr>
@@ -112,6 +147,13 @@
          <form action="{{ fsc.url() }}" method="post" role="form">
             {{ csrf_field() }}
             <input type="hidden" name="action" value="apply" />
+            <input type="hidden" name="target" value="{{ fsc.selected_target }}" />
+            <input type="hidden" name="scope" value="{{ fsc.selected_scope }}" />
+            <input type="hidden" name="{{ fsc.target_key_field }}" value="{{ fsc.form.key }}" />
+            <input type="hidden" name="pct" value="{{ fsc.form.pct }}" />
+            <input type="hidden" name="codfamilia" value="{{ fsc.form.codfamilia }}" />
+            <input type="hidden" name="incluir_subfamilias" value="{{ fsc.form.incluir_subfamilias ? 'TRUE' : 'FALSE' }}" />
+            <input type="hidden" name="codgrupo" value="{{ fsc.form.codgrupo }}" />
             <div class="checkbox">
                <label>
                   <input type="checkbox" name="confirm" value="TRUE" /> Confirmo aplicar estos cambios

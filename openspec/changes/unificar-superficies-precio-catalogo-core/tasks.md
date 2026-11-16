@@ -12,7 +12,7 @@
 > (R-BU-001..004, R-BU-006..008; **R-BU-005 sin cambios**),
 > `specs/catalogo-render-hooks/spec.md` (R-CRH-001..002).
 >
-> **Estado:** en ejecución. WU-0.1 (PR-1a) y WU-1.1..1.4 (PR-1b) completadas; el resto pendiente.
+> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2) completadas; el resto pendiente.
 > Evidencia y desviaciones: `apply-progress.md`.
 >
 > **Versiones de partida:** `catalogo_core` 1.15.2, `tarifario` 3.4.2.
@@ -293,31 +293,31 @@ correcciones de D11. Cuatro de ellas son funcionales y cada una tiene su RED pro
   - Notas: los delegados se retiran en WU-1.5. R-BU-005 no cambia: el test de
         `summarizeApply()` sigue idéntico.
 
-- [ ] **WU-1.5 — Controlador y vista (F1b).**
+- [x] **WU-1.5 — Controlador y vista (F1b).**
   Archivos: `plugins/catalogo_core/controller/catalogo_actualizar_precios.php`,
   `plugins/catalogo_core/view/catalogo_actualizar_precios.html.twig`,
   `plugins/catalogo_core/tests/CatalogoActualizarPreciosControllerTest.php`.
   Requisitos: R-BU-002, R-BU-004, R-BU-005, R-PSO-005.
-  - [ ] **RED (D11.3):** `testControllerDeclaresAdminOnlyAttribute` — el atributo
+  - [x] **RED (D11.3):** `testControllerDeclaresAdminOnlyAttribute` — el atributo
         existe por reflexión y el 4.º argumento del constructor es `FALSE`.
-  - [ ] **RED (D11.2):** `testApplyFormRepostsEveryFilterAndPercent` — el formulario
+  - [x] **RED (D11.2):** `testApplyFormRepostsEveryFilterAndPercent` — el formulario
         de apply contiene `hidden` para `codlista`, `pct`, `codfamilia`,
         `incluir_subfamilias` y `codgrupo`; y
         `testApplyPersistsPreviewRowsWithRepostedFilters` — el POST de apply con
         esos campos persiste exactamente las filas del preview.
-  - [ ] **RED (D11.5):** `testEmptyMatchMessageIsScopeNeutral` — el mensaje usa un
+  - [x] **RED (D11.5):** `testEmptyMatchMessageIsScopeNeutral` — el mensaje usa un
         sustantivo neutral ("Ningún elemento coincide…") y no "artículo".
-  - [ ] **RED (seam):** `testTargetSelectorRendersRegisteredTargetsAndScopeSelector`,
+  - [x] **RED (seam):** `testTargetSelectorRendersRegisteredTargetsAndScopeSelector`,
         `testPageIsInertWithoutTargets` (registro vacío → mensaje neutral y cero
         escrituras), `testUnknownTargetFailsClosed`.
-  - [ ] **GREEN:** controlador que resuelve target/scope y falla cerrado, declara
+  - [x] **GREEN:** controlador que resuelve target/scope y falla cerrado, declara
         `#[\FSFramework\Attribute\AdminOnly]`, pasa el 4.º argumento a `FALSE` (5.º
         sigue `TRUE`), reposta filtros como `hidden`, usa el campo de clave
         `target->keyField()` y sustantivos neutrales; vista con selectores de
         target/scope. Retirar los delegados de WU-1.4.
-  - [ ] **Verify:** RUN-CC `tests/CatalogoActualizarPreciosControllerTest.php` y
+  - [x] **Verify:** RUN-CC `tests/CatalogoActualizarPreciosControllerTest.php` y
         RUN-TAR completo.
-  - [ ] **Rollback:** quitar el atributo degrada `fs_pages.admin_only` en la
+  - [x] **Rollback:** quitar el atributo degrada `fs_pages.admin_only` en la
         siguiente visita; no hay datos que deshacer.
   - Notas: `test_controller_is_admin_gated_in_ventas_folder` se reescribe para
         afirmar el atributo y el 5.º argumento (design C10). `summarizeApply()` y su
