@@ -1126,7 +1126,6 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         $views = [
             'plugins/catalogo_core/View/tarif_opcional_edit.html.twig',
             'plugins/catalogo_core/View/tarif_opcional.html.twig',
-            'plugins/tarifario/View/tarif_actualizar_precios.html.twig',
             'plugins/tarifario/View/tarif_historial_precios.html.twig',
         ];
 

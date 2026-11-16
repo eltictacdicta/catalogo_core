@@ -57,6 +57,7 @@ class PriceSurfaceOwnershipTest extends TestCase
         '/Services/CanonicalPriceBooks.php',
         '/Services/ListaPriceUpdateTarget.php',
         '/Services/PriceUpdateFilterRegistry.php',
+        '/Event/PriceUpdatePersistedEvent.php',
     ];
 
     /** Frozen by R-TAR-HOOK-003 / R-PSO-004 — MUST NOT change. */
@@ -153,6 +154,18 @@ class PriceSurfaceOwnershipTest extends TestCase
             self::FROZEN_HOOKS,
             $names,
             'Host views must declare exactly the four frozen hooks; any new hook lives only in the price update view (R-CRH-002).'
+        );
+    }
+
+    // =====================================================================
+    // R-PSO-006 — the retired tariff price page keeps no view
+    // =====================================================================
+
+    public function testRetiredPriceUpdateViewIsAbsent(): void
+    {
+        $this->assertFileDoesNotExist(
+            dirname($this->pluginRoot()) . '/tarifario/View/tarif_actualizar_precios.' . 'html.twig', // composed: the reference audit must find no literal
+            'The retired page has no view: its URL is a redirect shim (R-BU-008)'
         );
     }
 

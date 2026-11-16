@@ -648,6 +648,66 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         $this->assertLessThan((int) strpos($html, 'Vista previa'), $hook, 'Before the submit button');
     }
 
+    // ---- WU-4.1: legacy redirect notice (R-BU-008, R-BU-002) ----
+
+    /** Only the whitelisted code produces a (neutral) message; anything else is dropped. */
+    public function testSelectionRequiredNoticeIsWhitelisted(): void
+    {
+        require_once FS_FOLDER . self::CONTROLLER_FILE;
+
+        $known = \catalogo_actualizar_precios::noticeFor('seleccion_requerida');
+        $this->assertNotSame('', $known);
+        $this->assertStringNotContainsString('tarifa', mb_strtolower($known), 'Neutral wording: no consumer vocabulary');
+        $this->assertSame('', \catalogo_actualizar_precios::noticeFor(''));
+        $this->assertSame('', \catalogo_actualizar_precios::noticeFor('<script>alert(1)</script>'));
+        $this->assertSame('', \catalogo_actualizar_precios::noticeFor('SELECCION_REQUERIDA'));
+
+        $controller = $this->makeController([]);
+        $_GET = ['aviso' => '<b>x</b>'];
+        $controller->callPrepareNotice();
+        $this->assertSame('', $controller->notice, 'An unknown code is neither reflected nor stored');
+
+        $_GET = ['aviso' => 'seleccion_requerida'];
+        $controller->callPrepareNotice();
+        $this->assertSame($known, $controller->notice);
+
+        $view = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+        $this->assertStringContainsString('fsc.notice', $view);
+        $this->assertDoesNotMatchRegularExpression('/\{\{\s*fsc\.notice\s*\|\s*raw/', $view);
+    }
+
+    /** The notice is read-only: no target, key or write results from it. */
+    public function testNoticeDoesNotPreselectAnyTarget(): void
+    {
+        $book = $this->fakeBook(['A' => 10.0]);
+        $this->registerTarget('fake', $book);
+        $controller = $this->makeController(['articulos' => $this->fakeScope([['A', 'Uno']])]);
+        $_GET = ['aviso' => 'seleccion_requerida'];
+        $_POST = [];
+
+        $controller->callPrepareNotice();
+        $controller->callPrepareSelection();
+
+        $this->assertSame('', $controller->form['key'], 'No key is preselected by the notice');
+        $this->assertSame([], $book->persisted, 'The notice never writes');
+        $this->assertSame([], $controller->errors);
+        $this->assertSame([], $controller->messages);
+        $this->assertStringNotContainsString(
+            'aviso',
+            $this->selectionBody(),
+            'prepareSelection() does not look at the notice'
+        );
+    }
+
+    private function selectionBody(): string
+    {
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
+        $start = (int) strpos($source, 'protected function prepareSelection');
+        $end = (int) strpos($source, 'protected function prepareExtraFilters');
+
+        return substr($source, $start, $end - $start);
+    }
+
     // ---- doubles ----
 
     protected function tearDown(): void
@@ -655,6 +715,7 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         PriceUpdateTargetRegistry::reset();
         PriceUpdateFilterRegistry::reset();
         $_POST = [];
+        $_GET = [];
         parent::tearDown();
     }
 
@@ -694,6 +755,16 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             public function callHandlePost(): void
             {
                 $this->handlePost();
+            }
+
+            public function callPrepareNotice(): void
+            {
+                $this->prepareNotice();
+            }
+
+            public function callPrepareSelection(): void
+            {
+                $this->prepareSelection();
             }
 
             public function callPrepareExtraFilters(string $scopeCode): void

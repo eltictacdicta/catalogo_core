@@ -1119,7 +1119,6 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         }
 
         foreach ([
-            '/plugins/tarifario/View/tarif_actualizar_precios.html.twig',
             '/plugins/tarifario/View/tarif_historial_precios.html.twig',
         ] as $viewPath) {
             $src = $this->source($viewPath);

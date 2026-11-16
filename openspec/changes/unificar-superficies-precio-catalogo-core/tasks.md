@@ -12,7 +12,7 @@
 > (R-BU-001..004, R-BU-006..008; **R-BU-005 sin cambios**),
 > `specs/catalogo-render-hooks/spec.md` (R-CRH-001..002).
 >
-> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2), WU-2.1 y WU-2.2 (PR-3) y WU-3.1 (PR-4) completadas; el resto pendiente (GATE-3 abierto).
+> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2), WU-2.1 y WU-2.2 (PR-3), WU-3.1 (PR-4) WU-3.2 y WU-3.3 (PR-5) y WU-3.4/3.5 (PR-5b) y WU-4.1..4.5 (PR-6, atómico) completadas; GATE-3 cerrado; el resto pendiente.
 > Evidencia y desviaciones: `apply-progress.md`.
 >
 > **Versiones de partida:** `catalogo_core` 1.15.2, `tarifario` 3.4.2.
@@ -122,6 +122,7 @@ es el de `design.md` §12 y §13.
 | **PR-3** | WU-2.1, 2.2 | ~400–480 | PR-2 | Paridad de opcionales verde |
 | **PR-4** | WU-3.1 | ~300–380 | PR-3 | Hook neutral, cero bytes sin registro |
 | **PR-5** | WU-3.2, 3.3 | ~570–650 | PR-4 | `GATE-3` cerrado + paridad de artículos + golden capturado |
+| **PR-5b** | WU-3.4, 3.5 | ~330–420 | PR-5 | Evento neutro + historial de opcionales por el consumidor; paridad de historial verde |
 | **PR-6** | WU-4.1..4.5 (atómico, dos repos) | adiciones ~180–240; borrados ~750–850; **total ~930–1090** | PR-5 | `size:exception`; indivisible por R-PSO-006 |
 | **PR-7** | WU-5.1 | ~240–280 | PR-6 | Cero referencias a la vista muerta |
 | **PR-8** | WU-5.2 (opcional) | ~250–400 | PR-7 | `GATE-5b` decide ejecutar o diferir |
@@ -145,7 +146,8 @@ borrados.
 4. **PR-4 no puede mergear sin PR-3.** El hook vive en la vista ya generalizada.
 5. **PR-5 no puede mergear sin PR-4 ni sin `GATE-3`.** El consumidor necesita
    `PriceUpdateFilterRegistry` (1.18.0) y su propio change de `tarifario`.
-6. **PR-6 es atómico y no se parte.** WU-4.2 (shim), WU-4.3 (borrado + fixtures),
+6. **PR-6 no puede mergear sin PR-5b** (D-OPC-HIST: sin el evento, el retiro de la
+   página legacy dejaría de auditar los opcionales de tarifa). **PR-6 es atómico y no se parte.** WU-4.2 (shim), WU-4.3 (borrado + fixtures),
    WU-4.4 (fila `<fs_pages>`) y WU-4.5 (replay) viajan juntos, en dos commits de
    repo (`catalogo_core` + `tarifario`) que aterrizan consecutivos **sin deploy
    intermedio**. Además, PR-6 no puede mergear sin PR-5: sin el target `tarifa`
@@ -388,19 +390,22 @@ opcionales; el storage es `catalogo_opcional_precios` keyed
 **Gate de fase:** `GATE-3` cerrado, paridad preview/apply de artículos byte a byte
 en filas, orden, totales y escrituras, y golden capturado antes de F4.
 
-- [ ] **GATE-3 — Delta del consumidor (R-PSO-007), propiedad de `tarifario`.**
+- [x] **GATE-3 — Delta del consumidor (R-PSO-007), propiedad de `tarifario`.**
   Requisitos: R-PSO-007.
-  - [ ] Abrir el change del consumidor en
-        `plugins/tarifario/openspec/changes/<nombre-del-consumidor>/` que documente
+  - [x] Abrir el change del consumidor en
+        `plugins/tarifario/openspec/changes/aportar-target-tarifa-a-actualizar-precios/` que documente
         `tarifario/catalogo-integration` y referencie el contrato de registro de
         `catalogo_core` sin redefinirlo. **No lo escribe este change**; se registra
         aquí como dependencia porque WU-3.2/WU-4.2 modifican producción de
         `tarifario`.
-  - [ ] **Verify:** las rutas de este change siguen todas bajo
+  - [x] **Verify:** las rutas de este change siguen todas bajo
         `plugins/catalogo_core/openspec/changes/unificar-superficies-precio-catalogo-core/`;
         `git status` no muestra archivos nuevos de este change en el árbol
         `plugins/tarifario/openspec/`.
-
+  - Notas: el change del consumidor (proposal, delta R-TAR-PRC-001…007, tasks) lo
+        redactó el agente a petición del usuario y es **propiedad de `tarifario`**:
+        es otro change con nombre propio, no un artefacto de este. El único
+        archivo nuevo en el árbol de `tarifario` es ese directorio.
 - [x] **WU-3.1 — Registro de filtros y marcador de hook.**
   Archivos: `plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php` (nuevo),
   `plugins/catalogo_core/view/catalogo_actualizar_precios.html.twig`,
@@ -428,7 +433,7 @@ en filas, orden, totales y escrituras, y golden capturado antes de F4.
         `ventas_opcional.html.twig` (R-CRH-002). `$this->template` y el cuerpo de la
         vista no cambian de semántica.
 
-- [ ] **WU-3.2 — Target `tarifa`, libro de artículos, filtro de grupo de rol y registro.**
+- [x] **WU-3.2 — Target `tarifa`, libro de artículos, filtro de grupo de rol y registro.**
   Archivos: `plugins/tarifario/Services/TarifaPriceUpdateTarget.php`,
   `plugins/tarifario/Services/TarifaArticlePriceBook.php`,
   `plugins/tarifario/Services/TarifaRoleGroupPriceFilter.php` (nuevos),
@@ -439,14 +444,14 @@ en filas, orden, totales y escrituras, y golden capturado antes de F4.
   `plugins/tarifario/tests/Integration/PriceUpdateTargetRegistrationTest.php`
   (nuevos).
   Requisitos: R-PSO-002, R-BU-002, R-BU-007, R-CRH-001.
-  - [ ] **RED:** `testTargetKeyFieldAndOptions` (`codtarifa`, tarifas activas),
+  - [x] **RED:** `testTargetKeyFieldAndOptions` (`codtarifa`, tarifas activas),
         `testTargetAvailabilityRequiresActiveTariff`,
         `testBookForArticulosReadsTarifArticuloPrecios`,
         `testBookForOpcionalesReturnsNull`,
         `testBookPersistsViaGetAndSaveToKeepHistory`,
         `testFilterKeysViewContextAndNarrow`, `testFilterSupportsOnlyArticulos`,
         `testInitRegistersTargetFilterAndHookOnce`, `testInitWithoutCoreDoesNotFatal`.
-  - [ ] **GREEN:** target que lee y escribe **solo** `tarif_articulo_precios` con
+  - [x] **GREEN:** target que lee y escribe **solo** `tarif_articulo_precios` con
         clave `(referencia, codtarifa)`; `persist()` usa
         `tarif_articulo_precio::get()` + `save()` para conservar
         `tarif_precio_historial`; filtro `codgrupo_rol` sobre
@@ -454,36 +459,78 @@ en filas, orden, totales y escrituras, y golden capturado antes de F4.
         con el selector de grupo (solo `scope=articulos`); registro idempotente en
         `Init::init()` con guardas estáticas y `class_exists` por pieza
         (`PriceUpdateTargetRegistry` ≥ 1.16.0, `PriceUpdateFilterRegistry` ≥ 1.18.0).
-  - [ ] **Verify:** RUN-TAR `tests/Services/TarifaPriceUpdateTargetTest.php`,
+  - [x] **Verify:** RUN-TAR `tests/Services/TarifaPriceUpdateTargetTest.php`,
         `tests/Services/TarifaRoleGroupPriceFilterTest.php`,
         `tests/Integration/PriceUpdateTargetRegistrationTest.php`; luego RUN-TAR
         completo; `ddev exec php -l` sobre los archivos nuevos y `Init.php`.
-  - [ ] **Rollback:** el target deja de registrarse, el hook queda sin registrar
+  - [x] **Rollback:** el target deja de registrarse, el hook queda sin registrar
         (cero bytes) y las filas escritas en `tarif_articulo_precios` son las mismas
         que escribía la legacy.
   - Notas: la paridad exige que el libro de tarifa **no** consulte el canónico
         (D10, R-BU-007). El filtro de grupo de rol (`codgrupo_rol`) es distinto del
         grupo canónico de artículos (`codgrupo`); no confundirlos.
 
-- [ ] **WU-3.3 — Paridad de artículos y captura del golden.**
+- [x] **WU-3.3 — Paridad de artículos y captura del golden.**
   Archivos: `plugins/tarifario/tests/PriceUpdateParityTest.php` (ampliado),
   `plugins/tarifario/tests/Fixtures/price_update_parity_legacy.json` (generado),
   `plugins/tarifario/tests/Support/` (fixture y driver ampliados).
   Requisitos: R-BU-007, R-BU-001, R-BU-003.
-  - [ ] **RED:** `testArticlePreviewParityWithLegacyPage` (mismo fixture,
+  - [x] **RED:** `testArticlePreviewParityWithLegacyPage` (mismo fixture,
         `target=tarifa` + `codtarifa=T` contra la legacy con `tipo=articulos`,
         `b_codfamilia` + `b_codgrupo` mapeado a `codgrupo_rol`, `offset=0`),
         `testArticleParityWhenCanonicalAndTariffRowsCoexist` (D10: el libro de tarifa
         ignora la fila canónica), `testArticleApplyWritesSameTariffRows`,
         `testPreviewDoesNotWriteInEitherPath`, `testGoldenMatchesLegacyOutput`.
-  - [ ] **GREEN:** driver de artículos sobre `load_preview_articulos()` /
+  - [x] **GREEN:** driver de artículos sobre `load_preview_articulos()` /
         `aplicar_cambios_articulos()`; capturar la salida esperada de la legacy en
         `Fixtures/price_update_parity_legacy.json` una vez verde.
-  - [ ] **Verify:** RUN-TAR `tests/PriceUpdateParityTest.php` y RUN-CC completo.
-  - [ ] **Rollback:** tests + golden; revertir no toca producción.
+  - [x] **Verify:** RUN-TAR `tests/PriceUpdateParityTest.php` y RUN-CC completo.
+  - [x] **Rollback:** tests + golden; revertir no toca producción.
   - Notas: todo caso de paridad incluye al menos un filtro de acotado (el motor base
         devuelve `[]` sin filtros por decisión de seguridad, D10.4). El golden se
         graba **antes** de F4 porque F4 elimina el oráculo.
+
+- [x] **WU-3.4 — Evento neutro de precios persistidos (lado core).**
+  Archivos: `plugins/catalogo_core/Event/PriceUpdatePersistedEvent.php` (nuevo),
+  `plugins/catalogo_core/Services/CatalogoPriceUpdateService.php`,
+  `plugins/catalogo_core/tests/Services/CatalogoPriceUpdateServiceTest.php`,
+  `plugins/catalogo_core/tests/PriceSurfaceOwnershipTest.php` (`SEAM_FILES`).
+  Requisitos: R-BU-009, R-PSO-002.
+  - [x] **RED:** `testApplyDispatchesOnePersistedEventWithOldAndNewPrices`,
+        `testFailedRowsAreNotInTheEvent`, `testNoListenersMeansNoExtraBookRead`,
+        `testThrowingListenerDoesNotChangeTheResult`,
+        `testOldPriceComesFromTheBookNotFromTheRows`,
+        `testEventIsNotDispatchedWhenNothingWasPersisted`.
+  - [x] **GREEN:** evento informativo; lectura previa única de `currentPrices()` solo
+        con listeners; despacho en `try/catch` + `error_log()` etiquetado.
+  - [x] **Verify:** RUN-CC `tests/Services/CatalogoPriceUpdateServiceTest.php`,
+        `tests/PriceSurfaceOwnershipTest.php`; luego RUN-CC completo y
+        `ddev exec composer phpstan:plugins`.
+  - [x] **Rollback:** sin el evento, el apply vuelve al comportamiento previo (sin
+        lectura extra ni despacho).
+  - Notas: decisión D-OPC-HIST, ver design D13.
+
+- [x] **WU-3.5 — Historial de opcionales de tarifa (lado consumidor).**
+  Archivos: `plugins/tarifario/Services/TarifaOpcionalHistoryListener.php` (nuevo),
+  `plugins/tarifario/Init.php`,
+  `plugins/tarifario/tests/Services/TarifaOpcionalHistoryListenerTest.php` (nuevo),
+  `plugins/tarifario/tests/Integration/PriceUpdateTargetRegistrationTest.php`,
+  `plugins/tarifario/tests/PriceUpdateParityTest.php` (historial).
+  Requisitos: R-BU-009, R-BU-007; consumidor: R-TAR-PRC-008.
+  - [x] **RED:** `testRecordsHistoryOnlyForOpcionalesOnTheTarifaTarget`,
+        `testIgnoresArticlesAndOtherTargets`,
+        `testSkipsDeltasBelowTheEpsilon` (mismo criterio que el legacy),
+        `testRegistersOnceAndOnlyWhenTheOwnerEventExists`,
+        `testOpcionalHistoryParityWithLegacyPage`.
+  - [x] **GREEN:** listener que llama a `tarif_opcional_precio_historial::registrar_cambio()`
+        con el `codtarifa` como `codlista` y el nick del usuario; registro idempotente
+        en `Init::init()` con `class_exists()` del evento.
+  - [x] **Verify:** RUN-TAR de los tests anteriores y RUN-TAR completo.
+  - [x] **Rollback:** sin el listener, el apply de opcionales de tarifa funciona y no
+        audita.
+  - Notas: la paridad compara las filas de historial del legacy con las del motor
+        base más el listener sobre el mismo fixture.
+
 
 ## Fase F4 — Retiro de `tarif_actualizar_precios` (slice atómico)
 
@@ -492,31 +539,31 @@ nunca emite `codlista` derivada de `codtarifa`; la fila `fs_pages` se retira de
 forma idempotente; el replay del golden sigue verde. WU-4.2 y WU-4.3 viajan en el
 mismo slice, sin deploy intermedio entre los dos commits de repo.
 
-- [ ] **WU-4.1 — Aviso de selección requerida (lado core).**
+- [x] **WU-4.1 — Aviso de selección requerida (lado core).**
   Archivos: `plugins/catalogo_core/controller/catalogo_actualizar_precios.php`,
   `plugins/catalogo_core/tests/CatalogoActualizarPreciosControllerTest.php`.
   Requisitos: R-BU-008, R-BU-002.
-  - [ ] **RED:** `testSelectionRequiredNoticeIsWhitelisted` (`aviso=seleccion_requerida`
+  - [x] **RED:** `testSelectionRequiredNoticeIsWhitelisted` (`aviso=seleccion_requerida`
         pinta el mensaje neutral; códigos desconocidos se ignoran) y
         `testNoticeDoesNotPreselectAnyTarget`.
-  - [ ] **GREEN:** whitelist del código de aviso y mensaje neutral; el aviso nunca
+  - [x] **GREEN:** whitelist del código de aviso y mensaje neutral; el aviso nunca
         aplica ni escribe.
-  - [ ] **Verify:** RUN-CC `tests/CatalogoActualizarPreciosControllerTest.php`.
-  - [ ] **Rollback:** revertir el aviso no cambia el flujo de preview/apply.
+  - [x] **Verify:** RUN-CC `tests/CatalogoActualizarPreciosControllerTest.php`.
+  - [x] **Rollback:** revertir el aviso no cambia el flujo de preview/apply.
   - Notas: el aviso es de solo lectura; los códigos desconocidos no se reflejan en el
         HTML ni en el estado.
 
-- [ ] **WU-4.2 — Shim de redirect (lado consumidor).**
+- [x] **WU-4.2 — Shim de redirect (lado consumidor).**
   Archivos: `plugins/tarifario/controller/tarif_actualizar_precios.php` (reescrito),
   `plugins/tarifario/tests/LegacyRedirectShimTest.php` (nuevo).
   Requisitos: R-BU-008, R-PSO-005, R-PSO-006, R-PSO-002.
-  - [ ] **RED:** `testEmptyCodtarifaRedirectsWithoutPreselection`,
+  - [x] **RED:** `testEmptyCodtarifaRedirectsWithoutPreselection`,
         `testAvailableTariffTargetPreservesTargetAndCodtarifa`,
         `testUnavailableTargetOpensWithoutPreselectionAndWithNotice`,
         `testNeverEmitsCodlistaDerivedFromCodtarifa`,
         `testRedirectTargetIsFixedCatalogPage`,
         `testLegacyControllerHasNoPreviewOrApply`.
-  - [ ] **GREEN:** constructor exacto
+  - [x] **GREEN:** constructor exacto
         `parent::__construct(__CLASS__, 'Actualizar Precios', 'tarifario', FALSE, FALSE)`;
         `$this->template = FALSE`; guarda `is_file()` del controlador destino y
         `class_exists()` del registro (si falta, `header('Location: index.php')`);
@@ -524,9 +571,9 @@ mismo slice, sin deploy intermedio entre los dos commits de repo.
         sin BD. La URL destino siempre es
         `index.php?page=catalogo_actualizar_precios`; `codtarifa` y `codlista` solo
         se interpolan con `rawurlencode()`.
-  - [ ] **Verify:** RUN-TAR `tests/LegacyRedirectShimTest.php` y `ddev exec php -l
+  - [x] **Verify:** RUN-TAR `tests/LegacyRedirectShimTest.php` y `ddev exec php -l
         plugins/tarifario/controller/tarif_actualizar_precios.php`.
-  - [ ] **Rollback:** revertir restaura controlador y vista; `check_fs_page()`
+  - [x] **Rollback:** revertir restaura controlador y vista; `check_fs_page()`
         recrea la fila `fs_pages` con el menú original. Las filas de
         `fs_roles_access` quedan intactas.
   - Notas: **contradicción resuelta a favor del spec.** La tabla D8 (filas 3–4)
@@ -538,7 +585,7 @@ mismo slice, sin deploy intermedio entre los dos commits de repo.
         `build_redirect()` **no** necesita `$mirrorExists`: si se conserva, no puede
         influir en la URL (test lo prohíbe).
 
-- [ ] **WU-4.3 — Borrado de la vista y limpieza de fixtures (atómico con WU-4.2).**
+- [x] **WU-4.3 — Borrado de la vista y limpieza de fixtures (atómico con WU-4.2).**
   Archivos: `plugins/tarifario/View/tarif_actualizar_precios.html.twig` (borrado),
   `plugins/catalogo_core/tests/ArticuloListaCanonicaOwnershipTest.php` (entrada de
   `REPOINTED_LINKS` en la línea 47), `plugins/catalogo_core/tests/CatalogoOpcionalesUnifiedControllerTest.php`
@@ -547,50 +594,50 @@ mismo slice, sin deploy intermedio entre los dos commits de repo.
   (referencia en la línea 1122), `plugins/catalogo_core/tests/PriceSurfaceOwnershipTest.php`
   (ampliado).
   Requisitos: R-PSO-006, R-PSO-001.
-  - [ ] **RED:** `PriceSurfaceOwnershipTest::testRetiredPriceUpdateViewIsAbsent` y
+  - [x] **RED:** `PriceSurfaceOwnershipTest::testRetiredPriceUpdateViewIsAbsent` y
         las tres fixtures reescritas para afirmar la **ausencia** de la vista en vez
         de leerla; todas fallan mientras el archivo exista.
-  - [ ] **GREEN:** borrar la vista y eliminar las tres entradas en el mismo commit;
+  - [x] **GREEN:** borrar la vista y eliminar las tres entradas en el mismo commit;
         agregar la aserción de ausencia.
-  - [ ] **Verify:** RUN-CC + RUN-TAR; y
+  - [x] **Verify:** RUN-CC + RUN-TAR; y
         `grep -rn "tarif_actualizar_precios.html.twig" plugins --include="*.php" --include="*.twig" --exclude-dir=vendor --exclude-dir=openspec`
         → 0 resultados.
-  - [ ] **Rollback:** revertir el commit restaura la vista y las entradas de fixture.
+  - [x] **Rollback:** revertir el commit restaura la vista y las entradas de fixture.
   - Notas: **no se puede partir de WU-4.2.** Las fixtures de `catalogo_core` exigen
         la vista; si el borrado aterriza solo, la suite del core queda roja. Ver la
         restricción de tagging en `## Secuencia de releases`.
 
-- [ ] **WU-4.4 — Retiro idempotente de la fila `fs_pages`.**
+- [x] **WU-4.4 — Retiro idempotente de la fila `fs_pages`.**
   Archivos: `plugins/tarifario/Services/LegacyPricePageRetirement.php` (nuevo),
   `plugins/tarifario/Init.php` (`upgrade()`),
   `plugins/tarifario/tests/LegacyPricePageRetirementTest.php` (nuevo).
   Requisitos: R-PSO-005.
-  - [ ] **RED:** `testDeletesPreexistingPageRowAndClearsCache` (con `fs_db2` falso:
+  - [x] **RED:** `testDeletesPreexistingPageRowAndClearsCache` (con `fs_db2` falso:
         `fs_page::delete()` y limpieza de `m_fs_page_all`),
         `testIdempotentWhenRowMissing`, `testDoesNotTouchRolesAccess`,
         `testUpgradeInvokesRetirementNotInit`.
-  - [ ] **GREEN:** servicio idempotente y llamada desde `Init::upgrade()` (nunca
+  - [x] **GREEN:** servicio idempotente y llamada desde `Init::upgrade()` (nunca
         desde `init()`), con `try/catch` + `error_log` etiquetado.
-  - [ ] **Verify:** RUN-TAR `tests/LegacyPricePageRetirementTest.php`.
-  - [ ] **Rollback:** la visita a la URL legacy recrea la fila oculta; el rollback
+  - [x] **Verify:** RUN-TAR `tests/LegacyPricePageRetirementTest.php`.
+  - [x] **Rollback:** la visita a la URL legacy recrea la fila oculta; el rollback
         del plugin restaura el menú.
   - Notas: no se tocan `fs_roles_access`. `fs_pages.show_on_menu = FALSE` es la
         garantía durable; una fila oculta puede recrearse al visitar la URL legacy
         (design D12/C1).
 
-- [ ] **WU-4.5 — Replay del golden tras el retiro.**
+- [x] **WU-4.5 — Replay del golden tras el retiro.**
   Archivos: `plugins/tarifario/tests/PriceUpdateParityTest.php`,
   `plugins/tarifario/tests/Support/LegacyPriceUpdateDriver.php` y
   `LegacyPriceUpdateFakeDb.php` (borrados),
   `plugins/tarifario/tests/Fixtures/price_update_parity_legacy.json` (conservado).
   Requisitos: R-BU-007, R-BU-006.
-  - [ ] **RED:** `testLegacyDriverIsGone` y
+  - [x] **RED:** `testLegacyDriverIsGone` y
         `testGoldenReplayMatchesLegacyOutput` (el primero falla mientras el driver
         exista; el segundo falla si el replay no reproduce el golden).
-  - [ ] **GREEN:** el motor base, con `scope=articulos|opcionales` y `target=tarifa`,
+  - [x] **GREEN:** el motor base, con `scope=articulos|opcionales` y `target=tarifa`,
         reproduce el golden sin el oráculo legacy.
-  - [ ] **Verify:** RUN-TAR `tests/PriceUpdateParityTest.php` y RUN-CC completo.
-  - [ ] **Rollback:** el golden es un archivo de test; revertir restaura el driver.
+  - [x] **Verify:** RUN-TAR `tests/PriceUpdateParityTest.php` y RUN-CC completo.
+  - [x] **Rollback:** el golden es un archivo de test; revertir restaura el driver.
   - Notas: preserva la garantía de paridad después de borrar la página legacy. Si la
         reflexión resultó demasiado acoplada, la contingencia de design §7.1 es
         grabar el golden desde `ddev` sobre una BD sembrada y conservar solo el
@@ -691,7 +738,7 @@ en design §13.
 | `catalogo_core` | 1.16.0 | F0 + F1 (registro, scopes de artículos, target `lista`, motor, UI) | 1.º |
 | `catalogo_core` | 1.17.0 | F2 (opcionales) | 2.º |
 | `catalogo_core` | 1.18.0 | F3a (hook + registro de filtros) | 3.º |
-| `catalogo_core` | 1.19.0 | F4 lado core (aviso, limpieza de fixtures) | 4.º |
+| `catalogo_core` | 1.19.0 | evento `price_update_persisted` (WU-3.4) + F4 lado core (aviso, limpieza de fixtures) | 4.º |
 | `tarifario` | 3.5.0 | F3b + F4 lado consumidor (target, filtro, retiro, shim, golden replay) | 5.º (después de 1.19.0) |
 | `catalogo_core` | 1.20.0 | F5a (vista muerta + dedup si se ejecuta) | 6.º |
 

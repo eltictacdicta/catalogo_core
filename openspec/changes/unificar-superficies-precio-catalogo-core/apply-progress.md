@@ -14,9 +14,12 @@ Mode: Strict TDD. Runner: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_
 | WU-1.5 | PR-2 | done (commit e162a10) |
 | WU-2.1 | PR-3 | done (commits a0bf4f3 catalogo_core, 9efef13 tarifario) |
 | WU-2.2 | PR-3 | done |
-| WU-3.1 | PR-4 | done (uncommitted) |
+| WU-3.1 | PR-4 | done (commit 078862c) |
+| WU-3.2 | PR-5 | done (uncommitted, repo tarifario) |
+| WU-3.4 | PR-5b | done (uncommitted, repo catalogo_core) |
+| WU-3.5 | PR-5b | done (uncommitted, repo tarifario) |
 
-Pending: GATE-3 (consumer change, owned by tarifario), then WU-3.2 (PR-5) onwards.
+GATE-3 closed (consumer change `aportar-target-tarifa-a-actualizar-precios`, owned by tarifario). Pending: WU-3.3 (PR-5), then F4.
 
 ## TDD evidence (PR-1b)
 
@@ -167,8 +170,128 @@ post-persist hook so the consumer records the history.
 16. **Hook position.** The marker sits after `pct` inside the filter form, before the
     preview button, in the exact R-CRH-001 form (asserted by source and by render).
 
+17. **Seams for tests in `tarifario/Init.php`.** `targetRegistryClass()`,
+    `filterRegistryClass()`, `newPriceUpdateTarget()` and `newPriceUpdateFilter()` are
+    `protected` so the registration tests can simulate an absent or older owner and a
+    failing registration inside one process (PSR-4 autoload cannot be undone).
+18. **Hook template registered only with the filter registry.** The marker ships in
+    the same owner release as `PriceUpdateFilterRegistry` (1.18.0), so the template is
+    registered only when that class exists.
+19. **Services take collaborators as `object`.** The target, the book and the filter
+    accept duck-typed model doubles (`all_activas`, `all_for_referencias`/`get`+`save`,
+    `all_activos`, `get_referencias_grupo`), so the 30 new tests need no database.
+20. **`tarifario` is outside the `phpstan:plugins` scope**, so the new classes are
+    linted (`php -l`) and tested but not analysed by that gate.
+
+## TDD evidence (WU-3.2, repo tarifario)
+
+| Unit | RED | GREEN |
+|---|---|---|
+| WU-3.2 | `TarifaPriceUpdateTargetTest`: error, `TarifaArticlePriceBook.php` missing (the other two files likewise) | 13/13, 9/9 (`TarifaRoleGroupPriceFilterTest`), 8/8 (`PriceUpdateTargetRegistrationTest`); RUN-TAR 314 tests / 1300 assertions (2 skipped, pre-existing) |
+
+Mutation probes (restored and verified with `cmp`): book returns `0.0` for a missing
+row → `testArticleWithoutTariffRowIsOmittedNeverZero` fails; filter keeps every row →
+4 filter tests fail.
+
+21. **D-OPC-HIST resolved by the user (option 2).** New units WU-3.4 (neutral event
+    `catalogo_core.price_update_persisted`, R-BU-009, design D13) and WU-3.5
+    (tarifario listener, R-TAR-PRC-008) in a new slice PR-5b, mandatory before PR-6.
+    Not in the original task list; added to `tasks.md`, the spec delta and the design.
+22. **The history model lives in `catalogo_core`, not in `tarifario`.**
+    `tarif_opcional_precio_historial` and the history-writing `tarif_opcional_precio`
+    ship in `plugins/catalogo_core/model/`. The decision still holds because the
+    only case that lost the audit is `target=tarifa x scope=opcionales`, which is a
+    tariff concept; list-target updates never had history.
+23. **Engine behaviour of the event.** `apply()` reads the previous prices once for
+    the whole batch, only when a listener exists, and a row persisted without a
+    previous price reports `0.0` (same as the retired page). A throwing listener is
+    logged and ignored; nothing is dispatched when no row persisted.
+
+## TDD evidence (WU-3.4 / WU-3.5)
+
+| Unit | RED | GREEN |
+|---|---|---|
+| WU-3.4 | `CatalogoPriceUpdateServiceTest`: 7 errors, `PriceUpdatePersistedEvent` missing | 24/24; RUN-CC 1702 tests / 6761 assertions (2 warnings, 1 skipped, pre-existing); phpstan clean |
+| WU-3.5 | `TarifaOpcionalHistoryListenerTest` (class missing) and `testInitRegistersTheOpcionalHistoryListenerOnce` (0 !== 1) | 6/6, registration 10/10, parity 9/9; RUN-TAR 325 tests / 1326 assertions (2 skipped, pre-existing) |
+
+Mutation probes (restored, `cmp` verified): previous price taken from the reposted
+row, and "always listening", fail 2 engine tests; the listener ignoring the target
+check fails 2 tests (list target and article/other target). History parity
+(`testOptionalHistoryParityWithLegacyPage`) compares the legacy page's history rows
+with the base engine plus the listener over the same fake engine; the zero-price
+case leaves no history in either path, so the test also asserts that at least one
+case exercises the history path.
+
 ### Pending gate
 
-GATE-3 (consumer change in `plugins/tarifario/openspec/changes/...` documenting
-`tarifario/catalogo-integration`) is NOT written by this change and is still
-open. It must exist before WU-3.2/WU-4.2 modify `tarifario` production code.
+GATE-3 is closed: the consumer change lives in
+`plugins/tarifario/openspec/changes/aportar-target-tarifa-a-actualizar-precios/`
+(proposal, delta `tarifario/catalogo-integration` R-TAR-PRC-001..007, tasks). It is
+a separate, tarifario-owned change that references this contract without
+redefining it. Open decision carried by it: D-OPC-HIST (opcional batch history),
+to be resolved before WU-4.2.
+
+## TDD evidence (WU-3.3)
+
+| Unit | RED | GREEN |
+|---|---|---|
+| WU-3.3 | Driver/fixture de artículos ausentes: `PriceUpdateParityTest` sin casos de artículos | `PriceUpdateParityTest` 17 tests / 209 assertions; RUN-TAR 333 tests / 1465 assertions (2 skipped, pre-existing) |
+
+Mutation probes (restored, `cmp` verified): (1) `TarifaArticlePriceBook::currentPrices()`
+reading `catalogo_articulo_precios` (trap row for canonical storage) fails 6 tests,
+including `testArticleParityWhenCanonicalAndTariffRowsCoexist`; (2) the role-group
+filter keeping every row fails 3 tests. An earlier malformed probe (nonexistent
+class) was discarded and redone.
+
+Golden: `Fixtures/price_update_parity_legacy.json` (13 cases) captured from the legacy
+page before F4; regenerate only with `UPDATE_PRICE_PARITY_GOLDEN=1` (superseded in WU-4.5: the capture hook went away with the legacy page). It must stay after
+WU-4.5 (the replay compares the base engine against the golden once the legacy driver
+and fake DB are deleted). RUN-CC was not re-run: no catalogo_core file changed in this unit.
+
+Known limitation: article ordering parity assumes uppercase ASCII references (SQL
+collation vs `strcmp` in the fake engine).
+
+## PR-6 / F4 evidence (WU-4.1 .. WU-4.5, atomic, two repos)
+
+| Unit | RED | GREEN |
+|---|---|---|
+| WU-4.1 | `testSelectionRequiredNoticeIsWhitelisted`, `testNoticeDoesNotPreselectAnyTarget` (no `noticeFor()` / `prepareNotice()`) | `CatalogoActualizarPreciosControllerTest` 38 tests / 118 assertions |
+| WU-4.2 | `LegacyRedirectShimTest` (no `build_redirect()`): 5 errors | 10 tests / 60 assertions; shim 85 lines |
+| WU-4.3 | `PriceSurfaceOwnershipTest::testRetiredPriceUpdateViewIsAbsent` fails while the view exists | view deleted, three fixture entries removed; reference audit grep = 0 |
+| WU-4.4 | `LegacyPricePageRetirementTest` (class missing) | 6 tests / 19 assertions |
+| WU-4.5 | `testLegacyDriverIsGone` fails while the driver exists | `PriceUpdateParityTest` 13 tests / 90 assertions |
+
+Full runs after F4: RUN-CC 1705 tests / 6771 assertions (2 warnings, 1 skipped,
+pre-existing); RUN-TAR 345 tests / 1423 assertions (2 skipped, pre-existing);
+`composer phpstan:plugins` clean.
+
+Mutation probes (restored, `cmp` verified): `noticeFor()` reflecting unknown codes
+fails the whitelist test; the redirect emitting `codlista` instead of `codtarifa`
+fails 4 shim tests; `retire()` not deleting fails 2 retirement tests.
+
+### Deviations (PR-6)
+
+24. **Order inside the atomic slice.** WU-4.5 was done first so the parity test no
+    longer needed the legacy controller before WU-4.2 rewrote it. Same slice, no
+    intermediate state is deployable.
+25. **Fake engine kept, renamed.** The design asked to delete `LegacyPriceUpdateFakeDb`
+    with the driver, but the base engine replay still needs a fake `fs_db2` engine.
+    It was renamed `PriceUpdateFakeDb`, its four legacy-only SELECT branches and two
+    helpers were removed, and only `LegacyPriceUpdateDriver` was deleted. This is the
+    design §7.1 contingency (replay against the golden over a fake engine).
+26. **Golden regeneration.** `UPDATE_PRICE_PARITY_GOLDEN=1` is gone with the oracle.
+    The golden can only be recaptured from the last revision of `tarifario` that still
+    has the legacy page (git history). Removed paired tests: the legacy-vs-base
+    comparisons now live in `testGoldenReplayMatchesLegacyOutput`; added
+    `testGoldenCasesExerciseRealData`, `testListTargetWritesTheSameCanonicalRowsAsTheGolden`.
+27. **Shim base class.** The shim extends `fs_controller` (not `tarif_controller`), so
+    `TarifControllerLanguageCallsTest::CONTROLLERS` lost `tarif_actualizar_precios`
+    (three subclasses remain). `build_redirect()` takes `(string $codtarifa, bool
+    $tarifaTargetAvailable)`; there is no `$mirrorExists`. The percentage is not
+    carried through the redirect.
+28. **Notice transport.** `catalogo_actualizar_precios` exposes `public string $notice`
+    and the view guards it with `fsc.notice is defined`, so existing view tests with
+    plain `fsc` doubles keep working. `prepareSelection()` became `protected` as a test seam.
+29. **Retirement seam.** `Init::upgrade()` calls `retireLegacyPricePage()`; the service
+    swallows and logs failures (`[tarifario] legacy price page retirement failed`).
+    The row can reappear hidden when the legacy URL is visited (design D12/C1).

@@ -86,6 +86,19 @@ class catalogo_actualizar_precios extends fs_controller
     public string $scope_key_label = 'Referencia';
 
     /**
+     * Neutral notices a redirect may request through `aviso=<code>`. Only these
+     * codes resolve to text; anything else is dropped and never reflected.
+     *
+     * @var array<string, string>
+     */
+    private const NOTICES = [
+        'seleccion_requerida' => 'Selecciona un destino y una clave para actualizar los precios.',
+    ];
+
+    /** Resolved notice text ('' when none): read-only, never selects or writes. */
+    public string $notice = '';
+
+    /**
      * Values echoed back into the filter and apply forms.
      *
      * @var array{key: string, pct: string, codfamilia: string, incluir_subfamilias: bool, codgrupo: string}
@@ -133,6 +146,7 @@ class catalogo_actualizar_precios extends fs_controller
         $this->tariffs_active = $availability->tariffsActive();
         $this->multi_tariff = $availability->listUiEnabled();
         $this->loadFormData();
+        $this->prepareNotice();
         $this->prepareSelection();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -335,12 +349,24 @@ class catalogo_actualizar_precios extends fs_controller
         }
     }
 
+    /** Whitelisted notice text for a code; '' for anything unknown. */
+    public static function noticeFor(string $code): string
+    {
+        return self::NOTICES[$code] ?? '';
+    }
+
+    /** Reads `aviso` (GET) into `$notice`. Informational only. */
+    protected function prepareNotice(): void
+    {
+        $this->notice = self::noticeFor(trim((string) ($_GET['aviso'] ?? '')));
+    }
+
     /**
      * Fills the selectors and the echo values of the forms from the request.
      * A requested target that is not available is NOT reflected: the default
      * is shown instead (POSTs re-validate and fail closed).
      */
-    private function prepareSelection(): void
+    protected function prepareSelection(): void
     {
         $this->targets = PriceUpdateTargetRegistry::available();
         $this->scopes = PriceUpdateScopes::labels();

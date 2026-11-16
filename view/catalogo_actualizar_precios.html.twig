@@ -18,6 +18,10 @@
 {% include 'header.html.twig' %}
 
 <div class="container">
+   {% if fsc.notice is defined and fsc.notice %}
+   <div class="alert alert-warning">{{ fsc.notice }}</div>
+   {% endif %}
+
    {% if not fsc.targets %}
    <div class="alert alert-info">
       No hay destinos de actualización disponibles.
