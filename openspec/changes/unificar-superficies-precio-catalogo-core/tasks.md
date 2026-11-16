@@ -12,7 +12,7 @@
 > (R-BU-001..004, R-BU-006..008; **R-BU-005 sin cambios**),
 > `specs/catalogo-render-hooks/spec.md` (R-CRH-001..002).
 >
-> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2) completadas; el resto pendiente.
+> **Estado:** en ejecución. WU-0.1 (PR-1a), WU-1.1..1.4 (PR-1b) y WU-1.5 (PR-2), WU-2.1 y WU-2.2 (PR-3) completadas; el resto pendiente.
 > Evidencia y desviaciones: `apply-progress.md`.
 >
 > **Versiones de partida:** `catalogo_core` 1.15.2, `tarifario` 3.4.2.
@@ -329,43 +329,43 @@ correcciones de D11. Cuatro de ellas son funcionales y cada una tiene su RED pro
 opcionales; el storage es `catalogo_opcional_precios` keyed
 `(id_opcional, codlista)` sin importar el target.
 
-- [ ] **WU-2.1 — Scope y libro canónico de opcionales.**
+- [x] **WU-2.1 — Scope y libro canónico de opcionales.**
   Archivos: `plugins/catalogo_core/Services/PriceUpdateScopes.php` (extendido),
   `plugins/catalogo_core/Services/CanonicalPriceBooks.php` (extendido),
   `plugins/catalogo_core/tests/Services/OpcionalesPriceUpdateScopeTest.php` (nuevo),
   `plugins/catalogo_core/tests/Services/CanonicalOpcionalPriceBookTest.php` (nuevo).
   Requisitos: R-BU-006, R-BU-001, R-BU-002, R-BU-003.
-  - [ ] **RED:** `testOptionalMembershipFiltersByCatalogoOpcionalFamiliasWithRecursion`,
+  - [x] **RED:** `testOptionalMembershipFiltersByCatalogoOpcionalFamiliasWithRecursion`,
         `testOptionalGroupFilterIsIgnored` (el grupo canónico de artículos no aplica),
         `testRowsAreOrderedByCodigo`, `testOptionalPaginationBeyondItemLimit`
         (paginar `catalogo_opcional::all($offset, $limit)` hasta agotar y ordenar por
         `codigo`), `testCanonicalOptionalBookReadsIdOpcionalAndCodlista`,
         `testOptionalBookOmitsMissingRows`, `testOptionalBookPersistsExistingRowOnly`
         (sin inserción desde apply).
-  - [ ] **GREEN:** `OpcionalesPriceScope` (matching por
+  - [x] **GREEN:** `OpcionalesPriceScope` (matching por
         `catalogo_opcional_familias` con la misma recursividad de subfamilias;
         `canonicalBook()` devuelve el libro canónico de opcionales) y el libro
         `catalogo_opcional_precios` con clave `(id_opcional, codlista)`.
-  - [ ] **Verify:** RUN-CC ambos archivos de test.
-  - [ ] **Rollback:** el scope de opcionales desaparece y la página sigue con
+  - [x] **Verify:** RUN-CC ambos archivos de test.
+  - [x] **Rollback:** el scope de opcionales desaparece y la página sigue con
         artículos; las filas escritas son las mismas que escribe la página legacy.
   - Notas: composición canónico-primero (D1): para `opcionales`, el libro del target
         no se consulta nunca. `model/tarif_opcional_precio.php` ya extiende
         `catalogo_opcional_precio`, así que la tabla es la misma.
 
-- [ ] **WU-2.2 — Arnés de paridad sin BD y paridad de opcionales.**
+- [x] **WU-2.2 — Arnés de paridad sin BD y paridad de opcionales.**
   Archivos: `plugins/tarifario/tests/Support/PriceUpdateParityFixture.php`,
   `plugins/tarifario/tests/Support/LegacyPriceUpdateFakeDb.php`,
   `plugins/tarifario/tests/Support/LegacyPriceUpdateDriver.php`,
   `plugins/tarifario/tests/PriceUpdateParityTest.php` (todos nuevos).
   Requisitos: R-BU-006, R-BU-007, R-BU-001.
-  - [ ] **RED:** `testOptionalPreviewParityWithLegacyPage` — mismo fixture,
+  - [x] **RED:** `testOptionalPreviewParityWithLegacyPage` — mismo fixture,
         `scope=opcionales` + `target=lista` + `codlista=T` contra la página legacy
         (`tipo=opcionales`, `codtarifa=T`, `offset=0`): mismas tripletas
         `(id_opcional, precio_actual, precio_nuevo)`, mismo orden, mismo conteo y
         misma suma. `testOptionalApplyWritesSameCanonicalRows`: ambos caminos
         escriben `(id_opcional, codlista, precio)` y el preview no escribe.
-  - [ ] **GREEN:** fixture con semilla única (familias y árbol, artículos,
+  - [x] **GREEN:** fixture con semilla única (familias y árbol, artículos,
         opcionales, filas canónicas, filas de tarifa, grupos de rol y membresías);
         `fs_db2` falso que responde las consultas exactas de la página legacy y
         registra escrituras; driver con `newInstanceWithoutConstructor()` sobre
@@ -374,8 +374,8 @@ opcionales; el storage es `catalogo_opcional_precios` keyed
         e invocación por reflexión de `load_preview()` /
         `aplicar_cambios_opcionales()`; subclase anónima que anula `new_message`,
         `new_error_msg`, `var2str` y `default_codidioma`.
-  - [ ] **Verify:** RUN-TAR `tests/PriceUpdateParityTest.php` y RUN-CC completo.
-  - [ ] **Rollback:** solo tests; revertir no toca producción.
+  - [x] **Verify:** RUN-TAR `tests/PriceUpdateParityTest.php` y RUN-CC completo.
+  - [x] **Rollback:** solo tests; revertir no toca producción.
   - Notas: el fixture row-by-row se mantiene por debajo de `FS_ITEM_LIMIT` para que
         la legacy no pagine; la paridad de conteo con más filas se prueba aparte
         contra `total_resultados`. El apply legacy exige POST `ids_opcionales` con

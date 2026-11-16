@@ -11,9 +11,11 @@ Mode: Strict TDD. Runner: `ddev exec php vendor/bin/phpunit -c plugins/catalogo_
 | WU-1.2 | PR-1b | done |
 | WU-1.3 | PR-1b | done |
 | WU-1.4 | PR-1b | done |
-| WU-1.5 | PR-2 | done (uncommitted) |
+| WU-1.5 | PR-2 | done (commit e162a10) |
+| WU-2.1 | PR-3 | done (uncommitted) |
+| WU-2.2 | PR-3 | done (uncommitted) |
 
-Pending: WU-2.1 (PR-3) onwards.
+Pending: WU-3.1 (PR-4) onwards.
 
 ## TDD evidence (PR-1b)
 
@@ -82,3 +84,54 @@ composition fails `testCompositionPrefersCanonicalBook`.
 | Added | `PriceUpdateScopes::labels()` (+ test) for the scope selector |
 | Rollback boundary | Revert the PR-2 commit; attribute removal downgrades `fs_pages.admin_only` on next visit, no data to undo |
 | Pending | Real-DB browser smoke of the page was not run (no Kernel in tests) |
+
+## PR-3 (WU-2.1, WU-2.2) evidence
+
+| Unit | RED | GREEN |
+|---|---|---|
+| WU-2.1 | `OpcionalesPriceUpdateScopeTest` (11) and `CanonicalOpcionalPriceBookTest` (9): errors, classes missing | 11/11 and 9/9 |
+| WU-2.2 | Parity harness is test code, so the oracle is the legacy page itself; it was proven able to fail with mutation probes (below) | `PriceUpdateParityTest` 6 tests / 54 assertions |
+
+Mutation probes (reverted afterwards): ordering optionals by id instead of
+codigo fails 2 parity tests; a book that answers 0.0 for a missing row fails 4;
+a book that inserts a missing row fails `testOptionalBookPersistsExistingRowOnly`.
+
+| Evidence | Value |
+|---|---|
+| Plugin suite | `catalogo_core` 1671 tests / 6687 assertions, 2 warnings, 1 skipped (same warnings/skips as before) |
+| Consumer suite | `tarifario` 284 tests / 1228 assertions, 2 skipped (baseline 278 + 6 parity tests) |
+| Static analysis | `composer phpstan:plugins` no errors |
+| Guardrails | `PriceSurfaceOwnershipTest` green (no consumer tokens in the seam files, allowlist unchanged) |
+| Rollback boundary | Revert the PR-3 commit: the opcionales scope/book and the harness disappear; the page keeps working with articulos |
+
+### Deviations (PR-3)
+
+8. **Membership read.** WU-2.1 says to paginate `catalogo_opcional::all()`. The
+   scope instead reads `catalogo_opcional_familia::get_opcionales_from_familia()`
+   per family: that query has no `LIMIT`, so there is nothing to paginate and no
+   silent cutoff (D11.1 equivalent). `testOptionalPaginationBeyondItemLimit` was
+   named `testFamilyWithMoreOptionalsThanItemLimitIsComplete` (120 rows).
+9. **Row key and labels.** The key is the opcional `id` (what the book is keyed
+   by); `keyLabel()` is `ID` (design said `Código`, which would show an id under
+   a "Código" header) and the label is `codigo — nombre`. Order is by `codigo`
+   with `id` as tie-break.
+10. **`canonicalBook($key)`** receives the target key (the list code), which the
+    engine already passes; for `opcionales` it builds the book of that list.
+11. **Shared family walk.** `ArticulosPriceScope` and `OpcionalesPriceScope` share
+    a `FamilyTreeSelection` trait (behaviour of the articles scope unchanged).
+12. **Harness shape.** The fake sits behind `fs_db2` as the static engine (not a
+    fake `fs_db2` instance): the legacy page and the real models of both paths
+    share one double, and the base book runs the real `catalogo_opcional_precio`
+    over it. The article side of the seed (articles, tariff rows, role groups,
+    golden file) is left to WU-3.3 with the `tarifa` target.
+
+### Open risk for the user (decide before PR-6 / F4)
+
+The legacy opcional apply saves through `tarif_opcional_precio::save()`, which
+appends a row to `tarif_opcional_precio_historial` when the price changes. The
+canonical book saves through `catalogo_opcional_precio::save()` (the design's
+choice), which records **no history**. Once the legacy page is retired in F4,
+batch updates of opcionales would stop being audited. The harness counts the
+legacy history writes (`LegacyPriceUpdateFakeDb::$historyWrites`). Options: keep
+it as is (history only for articles, as the design says), or add a neutral
+post-persist hook so the consumer records the history.

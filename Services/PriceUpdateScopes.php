@@ -20,6 +20,8 @@ declare(strict_types=1);
 
 namespace FSFramework\Plugins\catalogo_core\Services;
 
+require_once FS_FOLDER . '/plugins/catalogo_core/Services/CanonicalPriceBooks.php';
+
 /**
  * A price update scope: WHICH rows a batch update touches (articles, ...).
  *
@@ -53,16 +55,67 @@ interface PriceUpdateScopeInterface
 }
 
 /**
+ * Family tree walk shared by the scopes that select by family: the family
+ * itself plus (when recursive) every descendant, through the existing
+ * familia::hijas() hierarchy.
+ */
+trait FamilyTreeSelection
+{
+    /** @var \FSFramework\model\familia|null */
+    private $familiaModel = null;
+
+    /**
+     * @return list<string>
+     */
+    private function familyTreeCodes(string $codfamilia, bool $recursive): array
+    {
+        $codes = [$codfamilia];
+        if ($recursive) {
+            $this->collectChildren($codfamilia, $codes);
+        }
+
+        return $codes;
+    }
+
+    /** @param list<string> $codes */
+    private function collectChildren(string $codmadre, array &$codes): void
+    {
+        foreach ($this->familiaModel()->hijas($codmadre) as $hija) {
+            $code = (string) $hija->codfamilia;
+            if (!in_array($code, $codes, true)) {
+                $codes[] = $code;
+                $this->collectChildren($code, $codes);
+            }
+        }
+    }
+
+    private function familiaModel(): \FSFramework\model\familia
+    {
+        if ($this->familiaModel === null) {
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
+            $this->familiaModel = new \FSFramework\model\familia();
+        }
+
+        return $this->familiaModel;
+    }
+
+    /** @internal testing-only */
+    public function setFamiliaModel(\FSFramework\model\familia $model): void
+    {
+        $this->familiaModel = $model;
+    }
+}
+
+/**
  * Scope "articulos": articles selected by family (+ recursive subfamilies)
  * and/or article group, AND-combined. Storage depends on the target, so there
  * is no canonical book.
  */
 final class ArticulosPriceScope implements PriceUpdateScopeInterface
 {
-    private const PAGE_FALLBACK = 50;
+    use FamilyTreeSelection;
 
-    /** @var \FSFramework\model\familia|null */
-    private $familiaModel = null;
+    private const PAGE_FALLBACK = 50;
 
     /** @var \FSFramework\model\articulo|null */
     private $articuloModel = null;
@@ -140,34 +193,6 @@ final class ArticulosPriceScope implements PriceUpdateScopeInterface
     }
 
     /**
-     * The family itself plus (when recursive) every descendant, through the
-     * existing familia::hijas() hierarchy.
-     *
-     * @return list<string>
-     */
-    private function familyTreeCodes(string $codfamilia, bool $recursive): array
-    {
-        $codes = [$codfamilia];
-        if ($recursive) {
-            $this->collectChildren($codfamilia, $codes);
-        }
-
-        return $codes;
-    }
-
-    /** @param list<string> $codes */
-    private function collectChildren(string $codmadre, array &$codes): void
-    {
-        foreach ($this->familiaModel()->hijas($codmadre) as $hija) {
-            $code = (string) $hija->codfamilia;
-            if (!in_array($code, $codes, true)) {
-                $codes[] = $code;
-                $this->collectChildren($code, $codes);
-            }
-        }
-    }
-
-    /**
      * Every article of the families, paginating until each one is exhausted:
      * articulo::all_from_familia() is capped by FS_ITEM_LIMIT per call.
      *
@@ -203,16 +228,6 @@ final class ArticulosPriceScope implements PriceUpdateScopeInterface
         return array_map('strval', array_keys($refs));
     }
 
-    private function familiaModel(): \FSFramework\model\familia
-    {
-        if ($this->familiaModel === null) {
-            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/familia.php';
-            $this->familiaModel = new \FSFramework\model\familia();
-        }
-
-        return $this->familiaModel;
-    }
-
     private function articuloModel(): \FSFramework\model\articulo
     {
         if ($this->articuloModel === null) {
@@ -234,12 +249,6 @@ final class ArticulosPriceScope implements PriceUpdateScopeInterface
     }
 
     /** @internal testing-only */
-    public function setFamiliaModel(\FSFramework\model\familia $model): void
-    {
-        $this->familiaModel = $model;
-    }
-
-    /** @internal testing-only */
     public function setArticuloModel(\FSFramework\model\articulo $model): void
     {
         $this->articuloModel = $model;
@@ -249,6 +258,107 @@ final class ArticulosPriceScope implements PriceUpdateScopeInterface
     public function setGrupoArticuloModel(\FSFramework\model\catalogo_grupo_articulo $model): void
     {
         $this->grupoArticuloModel = $model;
+    }
+}
+
+/**
+ * Scope "opcionales": opcionales selected by family (+ recursive subfamilies)
+ * through catalogo_opcional_familias. The article group filter does not apply.
+ * The storage is always the canonical opcional book (catalogo_opcional_precios
+ * keyed by (id_opcional, codlista)), so the target is never consulted (D1).
+ *
+ * The row key is the opcional id (what the book is keyed by); the label shows
+ * "codigo — nombre". Rows are ordered by codigo, like the legacy page.
+ */
+final class OpcionalesPriceScope implements PriceUpdateScopeInterface
+{
+    use FamilyTreeSelection;
+
+    /** @var \FSFramework\model\catalogo_opcional_familia|null */
+    private $opcionalFamiliaModel = null;
+
+    public function code(): string
+    {
+        return 'opcionales';
+    }
+
+    public function label(): string
+    {
+        return 'Opcionales';
+    }
+
+    public function keyLabel(): string
+    {
+        return 'ID';
+    }
+
+    public function canonicalBook(string $key): ?PriceBookInterface
+    {
+        // The book is keyed by the list the target selects; the engine passes
+        // that list as $key. See CatalogoPriceUpdateService::bookFor().
+        return CanonicalPriceBooks::opcionales($key);
+    }
+
+    /**
+     * Filter keys: codfamilia (required), incluir_subfamilias (optional bool).
+     * Any other key (including codgrupo) is ignored. Without a family nothing
+     * is selected (fail closed).
+     *
+     * @param array<string, mixed> $filters
+     * @return list<array{key: string, label: string}>
+     */
+    public function match(array $filters): array
+    {
+        $codfamilia = trim((string) ($filters['codfamilia'] ?? ''));
+        if ($codfamilia === '') {
+            return [];
+        }
+
+        $recursive = (bool) ($filters['incluir_subfamilias'] ?? false);
+        $selected = [];
+        foreach ($this->familyTreeCodes($codfamilia, $recursive) as $code) {
+            foreach ($this->opcionalFamiliaModel()->get_opcionales_from_familia($code) as $opcional) {
+                $id = (int) $opcional->id;
+                $selected[$id] = [
+                    'id' => $id,
+                    'codigo' => trim((string) ($opcional->codigo ?? '')),
+                    'nombre' => trim((string) ($opcional->nombre ?? '')),
+                ];
+            }
+        }
+
+        // Deterministic order, independent of how the families were walked.
+        usort($selected, static function (array $a, array $b): int {
+            return [$a['codigo'], $a['id']] <=> [$b['codigo'], $b['id']];
+        });
+
+        $rows = [];
+        foreach ($selected as $opcional) {
+            $rows[] = [
+                'key' => (string) $opcional['id'],
+                'label' => $opcional['codigo'] !== '' && $opcional['nombre'] !== ''
+                    ? $opcional['codigo'] . ' — ' . $opcional['nombre']
+                    : ($opcional['nombre'] !== '' ? $opcional['nombre'] : $opcional['codigo']),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function opcionalFamiliaModel(): \FSFramework\model\catalogo_opcional_familia
+    {
+        if ($this->opcionalFamiliaModel === null) {
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_familia.php';
+            $this->opcionalFamiliaModel = new \FSFramework\model\catalogo_opcional_familia();
+        }
+
+        return $this->opcionalFamiliaModel;
+    }
+
+    /** @internal testing-only */
+    public function setOpcionalFamiliaModel(\FSFramework\model\catalogo_opcional_familia $model): void
+    {
+        $this->opcionalFamiliaModel = $model;
     }
 }
 
@@ -265,6 +375,7 @@ final class PriceUpdateScopes
     {
         return match ($code) {
             'articulos' => new ArticulosPriceScope(),
+            'opcionales' => new OpcionalesPriceScope(),
             default => null,
         };
     }
@@ -282,7 +393,7 @@ final class PriceUpdateScopes
     public static function labels(): array
     {
         $labels = [];
-        foreach (['articulos'] as $code) {
+        foreach (['articulos', 'opcionales'] as $code) {
             $scope = self::forCode($code);
             if ($scope !== null) {
                 $labels[$code] = $scope->label();

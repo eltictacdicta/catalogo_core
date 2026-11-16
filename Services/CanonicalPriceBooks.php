@@ -142,11 +142,95 @@ final class CanonicalArticlePriceBook implements PriceBookInterface
     }
 }
 
+/**
+ * Canonical opcional price book: reads and writes `catalogo_opcional_precios`
+ * keyed by (id_opcional, codlista) (R-BU-006). It does not depend on the
+ * target: the same storage serves every destination.
+ *
+ * A key without a row is ABSENT from the result (never 0.0). The apply never
+ * inserts: only an existing (id_opcional, codlista) row is persisted, and its
+ * stored percentage is preserved because the row is loaded and saved whole.
+ */
+final class CanonicalOpcionalPriceBook implements PriceBookInterface
+{
+    /** @var \FSFramework\model\catalogo_opcional_precio|null */
+    private $precioModel;
+
+    public function __construct(
+        private readonly string $codlista,
+        ?\FSFramework\model\catalogo_opcional_precio $precioModel = null,
+    ) {
+        $this->precioModel = $precioModel;
+    }
+
+    public function currentPrices(array $keys): array
+    {
+        if ($keys === []) {
+            return [];
+        }
+
+        $wanted = [];
+        foreach ($keys as $key) {
+            $wanted[(string) $key] = true;
+        }
+
+        $found = [];
+        foreach ($this->precioModel()->all_from_lista($this->codlista) as $row) {
+            $id = (string) $row->id_opcional;
+            if (isset($wanted[$id])) {
+                $found[$id] = (float) $row->precio;
+            }
+        }
+
+        // Answer in the order the keys were asked.
+        $prices = [];
+        foreach ($keys as $key) {
+            if (array_key_exists((string) $key, $found)) {
+                $prices[(string) $key] = $found[(string) $key];
+            }
+        }
+
+        return $prices;
+    }
+
+    public function persist(string $key, float $price): bool
+    {
+        if (!ctype_digit($key)) {
+            return false;
+        }
+
+        $row = $this->precioModel()->get((int) $key, $this->codlista);
+        if (!$row) {
+            return false;
+        }
+
+        $row->precio = $price;
+
+        return (bool) $row->save();
+    }
+
+    private function precioModel(): \FSFramework\model\catalogo_opcional_precio
+    {
+        if ($this->precioModel === null) {
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
+            require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_opcional_precio.php';
+            $this->precioModel = new \FSFramework\model\catalogo_opcional_precio();
+        }
+
+        return $this->precioModel;
+    }
+}
+
 /** Factory of the canonical price books owned by catalogo_core. */
 final class CanonicalPriceBooks
 {
     public static function articulos(string $codlista): PriceBookInterface
     {
         return new CanonicalArticlePriceBook($codlista);
+    }
+
+    public static function opcionales(string $codlista): PriceBookInterface
+    {
+        return new CanonicalOpcionalPriceBook($codlista);
     }
 }
