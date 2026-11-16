@@ -30,14 +30,14 @@ use Symfony\Component\Yaml\Yaml;
  * task 4.3, D7 / R-FJ-008).
  *
  * Two rules: every new UI string carries the `catalogo-core-` plugin prefix, and
- * every key the new templates use resolves in both shipped locales (es_ES and
- * en_EN, the fallback). Existing unprefixed keys belong to the pre-existing
+ * every key the new templates use resolves in both shipped locales (es and en,
+ * keyed by base language so any region variant resolves through the fallback). Existing unprefixed keys belong to the pre-existing
  * catalog pages and are deliberately out of scope: only the templates this
  * capability introduces are audited.
  */
 final class TranslationAuditTest extends TestCase
 {
-    private const LOCALES = ['es_ES', 'en_EN'];
+    private const LOCALES = ['es', 'en'];
 
     /**
      * D7 seed set (tasks.md 4.3). Shape keys added ahead of the deferred tree
