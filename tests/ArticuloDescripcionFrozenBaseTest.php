@@ -39,12 +39,12 @@ final class ArticuloDescripcionFrozenBaseTest extends TestCase
     public function test_default_language_save_does_not_write_the_base_column(): void
     {
         $db = new IdiomaRegistryFake(
-            [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
-            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Old row']]
+            [['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
+            [['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Old row']]
         );
         $art = new FakeArticulo($db, 'ART1', 'Base original');
 
-        $this->assertTrue($art->set_descripcion_idioma('es', 'New row', 'New short'));
+        $this->assertTrue($art->set_descripcion_idioma('es_ES', 'New row', 'New short'));
 
         $row = $db->descripciones[0];
         $this->assertSame('New row', $row['descripcion'], 'the language row carries the new text');
@@ -85,7 +85,7 @@ final class ArticuloDescripcionFrozenBaseTest extends TestCase
         // Runtime guard: with no language rows, the base text stays readable
         // through the read chain and nothing is materialised.
         $db = new IdiomaRegistryFake(
-            [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
+            [['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
             []
         );
         $art = new FakeArticulo($db, 'ART1', 'Legacy base');

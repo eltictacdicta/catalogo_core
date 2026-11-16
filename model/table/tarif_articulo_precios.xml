@@ -4,6 +4,8 @@
     - activo: si el artículo está activo en esta tarifa (false = solo consulta histórica)
     - en_tarifa: si el artículo se incluye al exportar la tarifa a clientes
     - en_catalogo: si el artículo aparece visible en el catálogo de la tarifa
+    - tipo_precio: NULL/normal = precio numérico; bajo_demanda, consultar, proximamente = precio 0 y se muestra el texto
+    - precio_nota: texto libre que acompaña al tipo (p. ej. "Sep '26")
 -->
 <tabla>
     <columna>
@@ -40,6 +42,16 @@
         <nombre>en_sap</nombre>
         <tipo>boolean</tipo>
         <defecto>false</defecto>
+    </columna>
+    <columna>
+        <nombre>tipo_precio</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>YES</nulo>
+    </columna>
+    <columna>
+        <nombre>precio_nota</nombre>
+        <tipo>character varying(100)</tipo>
+        <nulo>YES</nulo>
     </columna>
     <restriccion>
         <nombre>tarif_articulo_precios_pkey</nombre>

@@ -1482,7 +1482,8 @@ class articulo extends \fs_model
         }
 
         $defaultCode = (string) $this->language_registry()->get_effective_default_code();
-        if (is_null($codidioma) || $codidioma === '') {
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
+        if ($codidioma === '') {
             $codidioma = $defaultCode;
         }
 
@@ -1530,7 +1531,8 @@ class articulo extends \fs_model
             return '';
         }
 
-        if (is_null($codidioma) || $codidioma === '') {
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
+        if ($codidioma === '') {
             $codidioma = (string) $this->language_registry()->get_effective_default_code();
         }
 
@@ -1553,6 +1555,8 @@ class articulo extends \fs_model
      */
     public function set_descripcion_idioma($codidioma, $descripcion, $descripcion_corta = null)
     {
+        // Callers that still pass a bare legacy code ('es', 'en') keep working.
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
         $d = $this->description_model()->get_by_articulo_idioma($this->referencia, $codidioma);
 
         if (!$d) {

@@ -26,8 +26,8 @@ final class CatalogoIdiomaTest extends TestCase
 
         $sql = $model->install();
 
-        $this->assertStringContainsString("'es', 'Español'", $sql);
-        $this->assertStringContainsString("'en', 'English'", $sql);
+        $this->assertStringContainsString("'es_ES', 'Español'", $sql);
+        $this->assertStringContainsString("'en_GB', 'English'", $sql);
     }
 
     public function test_ensure_defaults_skips_when_table_has_rows(): void
@@ -77,13 +77,13 @@ final class CatalogoIdiomaTest extends TestCase
     public function test_get_default_returns_only_an_active_default(): void
     {
         $active = (new FakeCatalogoIdioma())->useFakeDb(new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
         ]));
-        $this->assertSame('es', $active->get_default()->codidioma);
+        $this->assertSame('es_ES', $active->get_default()->codidioma);
 
         $inactive = (new FakeCatalogoIdioma())->useFakeDb(new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => false, 'por_defecto' => true],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => false, 'por_defecto' => true],
         ]));
         $this->assertFalse($inactive->get_default(), 'an inactive default is not a usable default');
     }
@@ -91,8 +91,8 @@ final class CatalogoIdiomaTest extends TestCase
     public function test_all_activos_excludes_inactive_languages(): void
     {
         $model = (new FakeCatalogoIdioma())->useFakeDb(new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => false, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => false, 'por_defecto' => false],
         ]));
 
         $names = array_map(static fn ($idioma): string => $idioma->nombre, $model->all_activos());
@@ -103,23 +103,23 @@ final class CatalogoIdiomaTest extends TestCase
     public function test_get_effective_default_code_prefers_configured_default(): void
     {
         $model = (new FakeCatalogoIdioma())->useFakeDb(new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => false],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => true],
         ]));
 
-        $this->assertSame('en', $model->get_effective_default_code());
+        $this->assertSame('en_GB', $model->get_effective_default_code());
     }
 
     public function test_set_default_switches_the_pointer(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
         ]);
         $model = (new FakeCatalogoIdioma())->useFakeDb($db);
 
-        $this->assertTrue($model->set_default('en'));
-        $this->assertSame('en', $model->get_effective_default_code());
+        $this->assertTrue($model->set_default('en_GB'));
+        $this->assertSame('en_GB', $model->get_effective_default_code());
     }
 
     public function test_registry_validation_bounds(): void
@@ -130,11 +130,11 @@ final class CatalogoIdiomaTest extends TestCase
         $model->nombre = 'Valido';
         $this->assertFalse($model->test(), 'a codidioma shorter than 2 chars must be rejected');
 
-        $model->codidioma = 'es';
+        $model->codidioma = 'es_ES';
         $model->nombre = str_repeat('a', 51);
         $this->assertFalse($model->test(), 'a nombre longer than 50 chars must be rejected');
 
-        $model->codidioma = 'es';
+        $model->codidioma = 'es_ES';
         $model->nombre = 'Español';
         $this->assertTrue($model->test());
     }

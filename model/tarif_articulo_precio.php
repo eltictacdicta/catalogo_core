@@ -68,6 +68,46 @@ class tarif_articulo_precio extends \fs_model
      */
     public $en_sap;
 
+    /** Price types whose label is shown instead of the (zero) amount. */
+    public const TIPOS_PRECIO = ['normal', 'bajo_demanda', 'consultar', 'proximamente'];
+
+    /**
+     * Text shown instead of the amount, per catalogue language (2-letter
+     * prefix of the language code; Spanish is the fallback).
+     */
+    public const ETIQUETAS_TIPO_PRECIO = [
+        'bajo_demanda' => ['es' => 'Bajo demanda', 'en' => 'By demand', 'fr' => 'Sur demande'],
+        'consultar' => ['es' => 'Consultar', 'en' => 'On request', 'fr' => 'Nous consulter'],
+        'proximamente' => ['es' => 'Próximamente', 'en' => 'Coming soon', 'fr' => 'Prochainement'],
+    ];
+
+    /**
+     * Label for a non-numeric price, or null when the type is 'normal'.
+     */
+    public static function etiqueta_tipo_precio(?string $tipo, ?string $nota, ?string $codidioma): ?string
+    {
+        $etiquetas = self::ETIQUETAS_TIPO_PRECIO[(string) $tipo] ?? null;
+        if ($etiquetas === null) {
+            return null;
+        }
+
+        $etiqueta = $etiquetas[strtolower(substr((string) $codidioma, 0, 2))] ?? $etiquetas['es'];
+
+        return trim((string) $nota) === '' ? $etiqueta : $etiqueta . ': ' . $nota;
+    }
+
+    /**
+     * 'normal' (numeric price) or one of the text types in TIPOS_PRECIO.
+     * @var string
+     */
+    public $tipo_precio;
+
+    /**
+     * Free text shown next to a non-normal type (e.g. "Sep '26").
+     * @var string|null
+     */
+    public $precio_nota;
+
     public function __construct($data = FALSE)
     {
         parent::__construct('tarif_articulo_precios');
@@ -80,6 +120,8 @@ class tarif_articulo_precio extends \fs_model
             $this->en_tarifa = isset($data['en_tarifa']) ? $this->str2bool($data['en_tarifa']) : false;
             $this->en_catalogo = isset($data['en_catalogo']) ? $this->str2bool($data['en_catalogo']) : false;
             $this->en_sap = isset($data['en_sap']) ? $this->str2bool($data['en_sap']) : false;
+            $this->tipo_precio = empty($data['tipo_precio']) ? 'normal' : $data['tipo_precio'];
+            $this->precio_nota = $data['precio_nota'] ?? null;
         } else {
             $this->referencia = NULL;
             $this->codtarifa = NULL;
@@ -88,6 +130,8 @@ class tarif_articulo_precio extends \fs_model
             $this->en_tarifa = false;
             $this->en_catalogo = false;
             $this->en_sap = false;
+            $this->tipo_precio = 'normal';
+            $this->precio_nota = null;
         }
     }
 
@@ -167,6 +211,18 @@ class tarif_articulo_precio extends \fs_model
             return FALSE;
         }
 
+        // A text type only makes sense without an amount: setting a real
+        // price (inline edit, bulk update) turns the row back to 'normal'.
+        if ($this->precio > 0 || !in_array($this->tipo_precio, self::TIPOS_PRECIO, true)) {
+            $this->tipo_precio = 'normal';
+        }
+        if ($this->tipo_precio === 'normal') {
+            $this->precio_nota = null;
+        }
+        $this->precio_nota = $this->precio_nota === null || trim((string) $this->precio_nota) === ''
+            ? null
+            : mb_substr(trim((string) $this->precio_nota), 0, 100); // stored raw: views escape it on output
+
         return TRUE;
     }
 
@@ -187,18 +243,22 @@ class tarif_articulo_precio extends \fs_model
                     . "activo = " . $this->var2str($this->activo) . ","
                     . "en_tarifa = " . $this->var2str($this->en_tarifa) . ","
                     . "en_catalogo = " . $this->var2str($this->en_catalogo) . ","
-                    . "en_sap = " . $this->var2str($this->en_sap)
+                    . "en_sap = " . $this->var2str($this->en_sap) . ","
+                    . "tipo_precio = " . $this->var2str($this->tipo_precio) . ","
+                    . "precio_nota = " . $this->var2str($this->precio_nota)
                     . " WHERE referencia = " . $this->var2str($this->referencia)
                     . " AND codtarifa = " . $this->var2str($this->codtarifa) . ";";
             } else {
-                $sql = "INSERT INTO " . $this->table_name . " (referencia, codtarifa, precio, activo, en_tarifa, en_catalogo, en_sap) VALUES ("
+                $sql = "INSERT INTO " . $this->table_name . " (referencia, codtarifa, precio, activo, en_tarifa, en_catalogo, en_sap, tipo_precio, precio_nota) VALUES ("
                     . $this->var2str($this->referencia) . ","
                     . $this->var2str($this->codtarifa) . ","
                     . $this->var2str($this->precio) . ","
                     . $this->var2str($this->activo) . ","
                     . $this->var2str($this->en_tarifa) . ","
                     . $this->var2str($this->en_catalogo) . ","
-                    . $this->var2str($this->en_sap) . ");";
+                    . $this->var2str($this->en_sap) . ","
+                    . $this->var2str($this->tipo_precio) . ","
+                    . $this->var2str($this->precio_nota) . ");";
             }
 
             $result = $this->db->exec($sql);
@@ -348,6 +408,8 @@ class tarif_articulo_precio extends \fs_model
                     'activo' => isset($d['activo']) ? $this->str2bool($d['activo']) : true,
                     'en_tarifa' => isset($d['en_tarifa']) ? $this->str2bool($d['en_tarifa']) : false,
                     'en_catalogo' => isset($d['en_catalogo']) ? $this->str2bool($d['en_catalogo']) : false,
+                    'tipo_precio' => empty($d['tipo_precio']) ? 'normal' : $d['tipo_precio'],
+                    'precio_nota' => $d['precio_nota'] ?? null,
                 ];
             }
         }

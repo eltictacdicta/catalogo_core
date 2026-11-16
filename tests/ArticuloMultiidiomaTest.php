@@ -43,27 +43,27 @@ final class ArticuloMultiidiomaTest extends TestCase
     {
         $db = new IdiomaRegistryFake(
             [
-                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola'],
-                ['referencia' => 'ART1', 'codidioma' => 'en', 'descripcion' => 'Hello'],
+                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Hola'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Hello'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', 'Base');
 
-        $this->assertSame('Hello', $art->get_descripcion_idioma('en'));
-        $this->assertSame('Hola', $art->get_descripcion_idioma('es'));
+        $this->assertSame('Hello', $art->get_descripcion_idioma('en_GB'));
+        $this->assertSame('Hola', $art->get_descripcion_idioma('es_ES'));
     }
 
     public function test_fallback_uses_the_configured_default_not_a_hard_coded_es(): void
     {
         // No `por_defecto` row: resolution degrades deterministically to the
-        // lowest active code ('en'), which must drive a null/absent request.
+        // lowest active code ('en_GB'), which must drive a null/absent request.
         $db = new IdiomaRegistryFake(
-            [['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false]],
-            [['referencia' => 'ART1', 'codidioma' => 'en', 'descripcion' => 'Hello EN']]
+            [['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false]],
+            [['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Hello EN']]
         );
         $art = new FakeArticulo($db, 'ART1', 'Base');
 
@@ -75,29 +75,29 @@ final class ArticuloMultiidiomaTest extends TestCase
     {
         $db = new IdiomaRegistryFake(
             [
-                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
             []
         );
 
         $withBase = new FakeArticulo($db, 'ART1', 'Base text');
-        $this->assertSame('Base text', $withBase->get_descripcion_idioma('fr'));
+        $this->assertSame('Base text', $withBase->get_descripcion_idioma('fr_FR'));
 
         $withoutBase = new FakeArticulo($db, 'ART2', '');
-        $this->assertSame('', $withoutBase->get_descripcion_idioma('fr'));
+        $this->assertSame('', $withoutBase->get_descripcion_idioma('fr_FR'));
     }
 
     public function test_reads_materialise_nothing(): void
     {
         $db = new IdiomaRegistryFake(
-            [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
+            [['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
             []
         );
         $art = new FakeArticulo($db, 'ART1', 'Base');
 
-        $art->get_descripcion_idioma('fr');
-        $art->get_descripcion_idioma('es');
+        $art->get_descripcion_idioma('fr_FR');
+        $art->get_descripcion_idioma('es_ES');
         $art->get_descripcion_idioma();
 
         $this->assertSame([], $db->descripciones, 'no leg of the read chain may create a row');
@@ -107,12 +107,12 @@ final class ArticuloMultiidiomaTest extends TestCase
     public function test_descripcion_idioma_truncates_long_text(): void
     {
         $db = new IdiomaRegistryFake(
-            [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
+            [['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
             []
         );
         $art = new FakeArticulo($db, 'ART2', str_repeat('a', 150));
 
-        $this->assertSame('aaaaaaaaaa...', $art->descripcion_idioma('es', 10));
+        $this->assertSame('aaaaaaaaaa...', $art->descripcion_idioma('es_ES', 10));
         $this->assertSame('aaaaaaaaaa...', $art->descripcion_idioma(null, 10));
     }
 
@@ -123,18 +123,18 @@ final class ArticuloMultiidiomaTest extends TestCase
         // language's short text, or '' — never another language's text.
         $db = new IdiomaRegistryFake(
             [
-                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola', 'descripcion_corta' => 'Corta ES'],
-                ['referencia' => 'ART1', 'codidioma' => 'en', 'descripcion' => 'Hello', 'descripcion_corta' => 'Short EN'],
+                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Hola', 'descripcion_corta' => 'Corta ES'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Hello', 'descripcion_corta' => 'Short EN'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', 'Base');
 
-        $this->assertSame('Short EN', $art->get_descripcion_corta_idioma('en'));
+        $this->assertSame('Short EN', $art->get_descripcion_corta_idioma('en_GB'));
         $this->assertSame('Corta ES', $art->get_descripcion_corta_idioma(), 'a null code resolves the configured default');
-        $this->assertSame('', $art->get_descripcion_corta_idioma('fr'), 'no cross-language fallback for the short text');
+        $this->assertSame('', $art->get_descripcion_corta_idioma('fr_FR'), 'no cross-language fallback for the short text');
     }
 }

@@ -82,56 +82,56 @@ final class CatalogoIdiomaManagementTest extends TestCase
     public function test_full_lifecycle_round_trip_persists_each_mutation(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
         ]);
 
         // Create.
         $create = $this->registry($db);
-        $create->codidioma = 'fr';
+        $create->codidioma = 'fr_FR';
         $create->nombre = 'Français';
         $create->activo = true;
         $create->por_defecto = false;
         $this->assertTrue($create->save(), 'a new language must persist');
-        $this->assertSame('Français', $db->idiomas['fr']['nombre']);
+        $this->assertSame('Français', $db->idiomas['fr_FR']['nombre']);
 
         // Rename (a fresh bound double, like the panel's row form).
         $rename = $this->registry($db);
-        $rename->codidioma = 'fr';
+        $rename->codidioma = 'fr_FR';
         $rename->nombre = 'Francés';
         $rename->activo = true;
         $rename->por_defecto = false;
         $this->assertTrue($rename->save(), 'a rename must persist');
-        $this->assertSame('Francés', $db->idiomas['fr']['nombre']);
+        $this->assertSame('Francés', $db->idiomas['fr_FR']['nombre']);
 
         // Deactivate.
         $deactivate = $this->registry($db);
-        $deactivate->codidioma = 'fr';
+        $deactivate->codidioma = 'fr_FR';
         $deactivate->nombre = 'Francés';
         $deactivate->activo = false;
         $deactivate->por_defecto = false;
         $this->assertTrue($deactivate->save(), 'a non-default language must be deactivatable');
-        $this->assertFalse($db->idiomas['fr']['activo']);
+        $this->assertFalse($db->idiomas['fr_FR']['activo']);
 
         // Reactivate.
         $reactivate = $this->registry($db);
-        $reactivate->codidioma = 'fr';
+        $reactivate->codidioma = 'fr_FR';
         $reactivate->nombre = 'Francés';
         $reactivate->activo = true;
         $reactivate->por_defecto = false;
         $this->assertTrue($reactivate->save(), 'a deactivated language must be reactivatable');
-        $this->assertTrue($db->idiomas['fr']['activo']);
+        $this->assertTrue($db->idiomas['fr_FR']['activo']);
 
         // The registry reflects every mutation through the listing the panel reads.
         $codes = array_map(static fn ($idioma): string => (string) $idioma->codidioma, $this->registry($db)->all());
-        $this->assertContains('fr', $codes, 'the management listing must reflect the created language');
-        $this->assertSame(['es'], $db->activeDefaults(), 'the lifecycle must not disturb the default invariant');
+        $this->assertContains('fr_FR', $codes, 'the management listing must reflect the created language');
+        $this->assertSame(['es_ES'], $db->activeDefaults(), 'the lifecycle must not disturb the default invariant');
     }
 
     public function test_invalid_payload_is_rejected_and_persists_nothing(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
         ]);
 
         $tooShort = $this->registry($db);
@@ -143,12 +143,12 @@ final class CatalogoIdiomaManagementTest extends TestCase
         $this->assertArrayNotHasKey('x', $db->idiomas);
 
         $tooLong = $this->registry($db);
-        $tooLong->codidioma = 'fr';
+        $tooLong->codidioma = 'fr_FR';
         $tooLong->nombre = str_repeat('a', 51);
         $this->assertFalse($tooLong->test(), 'a nombre longer than 50 chars must be rejected');
         $this->assertFalse($tooLong->save(), 'an invalid payload must not persist');
         $this->assertNotEmpty($tooLong->errors, 'the rejection must be reported');
-        $this->assertArrayNotHasKey('fr', $db->idiomas);
+        $this->assertArrayNotHasKey('fr_FR', $db->idiomas);
     }
 
     public function test_management_surface_dispatches_the_four_language_actions(): void

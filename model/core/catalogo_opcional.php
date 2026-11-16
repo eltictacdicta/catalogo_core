@@ -137,6 +137,7 @@ class catalogo_opcional extends \fs_model
 
     private function resolveIdiomaValue(string $codidioma, string $field, string $base): string
     {
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
         if ($this->codigo === null || $this->codigo === '') {
             return $base;
         }
@@ -199,7 +200,7 @@ class catalogo_opcional extends \fs_model
      */
     public function set_idioma($codidioma, $nombre, $descripcion): bool
     {
-        $codidioma = trim((string) $codidioma);
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
         if ($this->codigo === null || $this->codigo === '' || $codidioma === '') {
             return false;
         }

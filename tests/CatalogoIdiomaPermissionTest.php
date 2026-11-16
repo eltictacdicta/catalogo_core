@@ -167,8 +167,8 @@ final class CatalogoIdiomaPermissionTest extends TestCase
     private function seedTwoLanguages(): IdiomaRegistryFake
     {
         return new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
         ]);
     }
 
@@ -181,10 +181,10 @@ final class CatalogoIdiomaPermissionTest extends TestCase
         // Create.
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'save',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
             'nombre' => 'Français',
         ]));
-        $this->assertArrayHasKey('fr', $db->idiomas, 'an administrator must be able to create a language');
+        $this->assertArrayHasKey('fr_FR', $db->idiomas, 'an administrator must be able to create a language');
         $this->assertContains(FSTranslator::trans('language-created'), $controller->get_messages());
 
         // Rename. Each mutation reloads the registry, exactly like the page
@@ -192,43 +192,43 @@ final class CatalogoIdiomaPermissionTest extends TestCase
         $controller->setIdiomasTodos($this->registryRows($db));
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'save',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
             'nombre' => 'French',
         ]));
-        $this->assertSame('French', $db->idiomas['fr']['nombre'], 'a rename must persist');
+        $this->assertSame('French', $db->idiomas['fr_FR']['nombre'], 'a rename must persist');
 
         // Deactivate.
         $controller->setIdiomasTodos($this->registryRows($db));
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'toggle_active',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
         ]));
-        $this->assertFalse($db->idiomas['fr']['activo'], 'a non-default language must be deactivatable');
+        $this->assertFalse($db->idiomas['fr_FR']['activo'], 'a non-default language must be deactivatable');
 
         // Reactivate.
         $controller->setIdiomasTodos($this->registryRows($db));
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'toggle_active',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
         ]));
-        $this->assertTrue($db->idiomas['fr']['activo'], 'a deactivated language must be reactivatable');
+        $this->assertTrue($db->idiomas['fr_FR']['activo'], 'a deactivated language must be reactivatable');
 
         // Set default.
         $controller->setIdiomasTodos($this->registryRows($db));
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'set_default',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
         ]));
-        $this->assertSame(['fr'], $db->activeDefaults(), 'setting a default must flip the pointer');
+        $this->assertSame(['fr_FR'], $db->activeDefaults(), 'setting a default must flip the pointer');
         $this->assertContains(FSTranslator::trans('language-default-changed'), $controller->get_messages());
 
         // Delete a non-default language.
         $controller->setIdiomasTodos($this->registryRows($db));
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'delete',
-            'codidioma' => 'en',
+            'codidioma' => 'en_GB',
         ]));
-        $this->assertArrayNotHasKey('en', $db->idiomas, 'a non-default language must be deletable');
+        $this->assertArrayNotHasKey('en_GB', $db->idiomas, 'a non-default language must be deletable');
         $this->assertContains(FSTranslator::trans('language-deleted'), $controller->get_messages());
     }
 
@@ -240,11 +240,11 @@ final class CatalogoIdiomaPermissionTest extends TestCase
 
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'save',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
             'nombre' => 'Français',
         ]));
 
-        $this->assertArrayNotHasKey('fr', $db->idiomas, 'a non-administrator must not create a language');
+        $this->assertArrayNotHasKey('fr_FR', $db->idiomas, 'a non-administrator must not create a language');
         $this->assertSame([], $db->executed, 'a refused mutation must emit no statement');
         $this->assertNotEmpty($controller->get_errors(), 'the refusal must be explicit');
     }
@@ -257,11 +257,11 @@ final class CatalogoIdiomaPermissionTest extends TestCase
 
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'save',
-            'codidioma' => 'fr',
+            'codidioma' => 'fr_FR',
             'nombre' => 'Français',
         ]));
 
-        $this->assertArrayNotHasKey('fr', $db->idiomas, 'an invalid CSRF token must persist nothing');
+        $this->assertArrayNotHasKey('fr_FR', $db->idiomas, 'an invalid CSRF token must persist nothing');
         $this->assertSame([], $db->executed, 'a CSRF failure must emit no statement');
         $this->assertContains(
             FSTranslator::trans('language-csrf-invalid'),
@@ -285,7 +285,7 @@ final class CatalogoIdiomaPermissionTest extends TestCase
         );
         $this->assertFalse(
             $controller->callShouldDispatch(Request::create(
-                '/index.php?page=opciones_catalogo&idioma_action=delete&codidioma=en',
+                '/index.php?page=opciones_catalogo&idioma_action=delete&codidioma=en_GB',
                 'GET'
             )),
             'a GET carrying idioma_action in the query string must never dispatch'
@@ -317,21 +317,21 @@ final class CatalogoIdiomaPermissionTest extends TestCase
 
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'delete',
-            'codidioma' => 'es',
+            'codidioma' => 'es_ES',
         ]));
-        $this->assertArrayHasKey('es', $db->idiomas, 'the default language must not be deletable');
+        $this->assertArrayHasKey('es_ES', $db->idiomas, 'the default language must not be deletable');
 
         // The last language cannot be deleted.
         $single = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
         ]);
         $controller = $this->buildController($single, true, true);
         $controller->setIdiomasTodos($this->registryRows($single));
 
         $controller->callGestionarIdioma($this->postRequest($controller, [
             'idioma_action' => 'delete',
-            'codidioma' => 'es',
+            'codidioma' => 'es_ES',
         ]));
-        $this->assertArrayHasKey('es', $single->idiomas, 'the last language must not be deletable');
+        $this->assertArrayHasKey('es_ES', $single->idiomas, 'the last language must not be deletable');
     }
 }

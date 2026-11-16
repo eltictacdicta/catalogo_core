@@ -45,14 +45,14 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
     public function test_requested_language_wins(): void
     {
         $db = new FakeOpcionalIdiomaDb([
-            ['codigo' => 'OPC0001', 'codidioma' => 'en', 'nombre' => 'Hello', 'descripcion' => 'Desc EN'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'en_GB', 'nombre' => 'Hello', 'descripcion' => 'Desc EN'],
         ]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Hola', 'Desc ES');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Hola', 'Desc ES');
 
-        $this->assertSame('Hello', $opcional->get_nombre_idioma('en'));
-        $this->assertSame('Desc EN', $opcional->get_descripcion_idioma('en'));
-        $this->assertSame('Hola', $opcional->get_nombre_idioma('es'), 'the configured default resolves the base column');
-        $this->assertSame('Desc ES', $opcional->get_descripcion_idioma('es'));
+        $this->assertSame('Hello', $opcional->get_nombre_idioma('en_GB'));
+        $this->assertSame('Desc EN', $opcional->get_descripcion_idioma('en_GB'));
+        $this->assertSame('Hola', $opcional->get_nombre_idioma('es_ES'), 'the configured default resolves the base column');
+        $this->assertSame('Desc ES', $opcional->get_descripcion_idioma('es_ES'));
     }
 
     public function test_fallback_uses_the_configured_default(): void
@@ -60,27 +60,27 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
         // Mirror semantics: the configured default is stored in the base
         // columns, so a requested language with no child row reads the base.
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'en', 'OPC0001', 'Hello EN', 'Desc EN');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'en_GB', 'OPC0001', 'Hello EN', 'Desc EN');
 
-        $this->assertSame('Hello EN', $opcional->get_nombre_idioma('fr'), 'fr has no row: the configured default (base) wins');
-        $this->assertSame('Desc EN', $opcional->get_descripcion_idioma('fr'));
+        $this->assertSame('Hello EN', $opcional->get_nombre_idioma('fr_FR'), 'fr has no row: the configured default (base) wins');
+        $this->assertSame('Desc EN', $opcional->get_descripcion_idioma('fr_FR'));
     }
 
     public function test_base_column_is_the_terminal_fallback(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base name', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base name', 'Base desc');
 
-        $this->assertSame('Base name', $opcional->get_nombre_idioma('fr'));
-        $this->assertSame('Base desc', $opcional->get_descripcion_idioma('fr'));
+        $this->assertSame('Base name', $opcional->get_nombre_idioma('fr_FR'));
+        $this->assertSame('Base desc', $opcional->get_descripcion_idioma('fr_FR'));
     }
 
     public function test_no_language_returns_the_base_column(): void
     {
         $db = new FakeOpcionalIdiomaDb([
-            ['codigo' => 'OPC0001', 'codidioma' => 'es', 'nombre' => 'Hola', 'descripcion' => 'Desc ES'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'es_ES', 'nombre' => 'Hola', 'descripcion' => 'Desc ES'],
         ]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base name', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base name', 'Base desc');
 
         $this->assertSame('Base name', $opcional->get_nombre_idioma(), 'a null code resolves the base column');
         $this->assertSame('Base name', $opcional->get_nombre_idioma(''), 'an empty code resolves the base column');
@@ -93,40 +93,40 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
         // the fallback legs trigger on an ABSENT ROW, not on an empty column.
         // A partial row is a legitimate explicit override for that language.
         $db = new FakeOpcionalIdiomaDb([
-            ['codigo' => 'OPC0001', 'codidioma' => 'en', 'nombre' => '', 'descripcion' => 'Only desc'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'en_GB', 'nombre' => '', 'descripcion' => 'Only desc'],
         ]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base', 'Base desc');
 
-        $this->assertSame('', $opcional->get_nombre_idioma('en'));
-        $this->assertSame('Only desc', $opcional->get_descripcion_idioma('en'));
+        $this->assertSame('', $opcional->get_nombre_idioma('en_GB'));
+        $this->assertSame('Only desc', $opcional->get_descripcion_idioma('en_GB'));
     }
 
     public function test_empty_pair_removes_the_row(): void
     {
         $db = new FakeOpcionalIdiomaDb([
-            ['codigo' => 'OPC0001', 'codidioma' => 'en', 'nombre' => 'Hello', 'descripcion' => 'Desc EN'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'en_GB', 'nombre' => 'Hello', 'descripcion' => 'Desc EN'],
         ]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base', 'Base desc');
 
-        $this->assertTrue($opcional->set_idioma('en', '', ''));
+        $this->assertTrue($opcional->set_idioma('en_GB', '', ''));
         $this->assertSame([], $db->rows, 'the all-empty pair must delete the existing row');
     }
 
     public function test_empty_pair_on_absent_language_materialises_nothing(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base', 'Base desc');
 
-        $this->assertTrue($opcional->set_idioma('fr', '', ''));
+        $this->assertTrue($opcional->set_idioma('fr_FR', '', ''));
         $this->assertSame([], $db->rows, 'an empty pair for a language with no row must not create one');
     }
 
     public function test_partial_pair_is_preserved(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base', 'Base desc');
 
-        $this->assertTrue($opcional->set_idioma('en', 'Hello', ''));
+        $this->assertTrue($opcional->set_idioma('en_GB', 'Hello', ''));
         $this->assertCount(1, $db->rows);
         $this->assertSame('Hello', $db->rows[0]['nombre']);
         $this->assertSame('', $db->rows[0]['descripcion']);
@@ -135,11 +135,11 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
     public function test_set_idioma_upserts_an_existing_row(): void
     {
         $db = new FakeOpcionalIdiomaDb([
-            ['codigo' => 'OPC0001', 'codidioma' => 'en', 'nombre' => 'Old', 'descripcion' => 'Old desc'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'en_GB', 'nombre' => 'Old', 'descripcion' => 'Old desc'],
         ]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base', 'Base desc');
 
-        $this->assertTrue($opcional->set_idioma('en', 'New', 'New desc'));
+        $this->assertTrue($opcional->set_idioma('en_GB', 'New', 'New desc'));
 
         $this->assertCount(1, $db->rows, 'an upsert must not duplicate the natural key');
         $this->assertSame('New', $db->rows[0]['nombre']);
@@ -149,9 +149,9 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
     public function test_set_idioma_default_code_writes_the_base_columns(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Old', 'Old desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Old', 'Old desc');
 
-        $this->assertTrue($opcional->set_idioma('es', 'Nuevo', 'Nueva desc'));
+        $this->assertTrue($opcional->set_idioma('es_ES', 'Nuevo', 'Nueva desc'));
 
         $this->assertSame('Nuevo', $opcional->nombre, 'the default language mirrors into the base name');
         $this->assertSame('Nueva desc', $opcional->descripcion, 'the default language mirrors into the base description');
@@ -166,10 +166,10 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
     public function test_set_idioma_default_code_with_empty_name_is_rejected(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Old', 'Old desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Old', 'Old desc');
 
         $this->assertFalse(
-            $opcional->set_idioma('es', '', 'Sin nombre'),
+            $opcional->set_idioma('es_ES', '', 'Sin nombre'),
             'the default-language name is required by test()'
         );
 
@@ -182,23 +182,23 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
     public function test_get_idiomas_returns_all_rows(): void
     {
         $db = new FakeOpcionalIdiomaDb([
-            ['codigo' => 'OPC0001', 'codidioma' => 'es', 'nombre' => 'Hola', 'descripcion' => 'Desc ES'],
-            ['codigo' => 'OPC0001', 'codidioma' => 'en', 'nombre' => 'Hello', 'descripcion' => 'Desc EN'],
-            ['codigo' => 'OPC0002', 'codidioma' => 'en', 'nombre' => 'Other', 'descripcion' => 'Other desc'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'es_ES', 'nombre' => 'Hola', 'descripcion' => 'Desc ES'],
+            ['codigo' => 'OPC0001', 'codidioma' => 'en_GB', 'nombre' => 'Hello', 'descripcion' => 'Desc EN'],
+            ['codigo' => 'OPC0002', 'codidioma' => 'en_GB', 'nombre' => 'Other', 'descripcion' => 'Other desc'],
         ]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'fr', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'fr_FR', 'OPC0001', 'Base', 'Base desc');
 
         $rows = $opcional->get_idiomas();
         $this->assertCount(2, $rows, 'only the rows of this opcional are returned');
-        $this->assertSame(['en', 'es'], array_map(static fn ($row): string => (string) $row->codidioma, $rows));
+        $this->assertSame(['en_GB', 'es_ES'], array_map(static fn ($row): string => (string) $row->codidioma, $rows));
     }
 
     public function test_set_idioma_is_refused_without_a_codigo(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', '', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', '', 'Base', 'Base desc');
 
-        $this->assertFalse($opcional->set_idioma('en', 'Hello', 'Desc EN'));
+        $this->assertFalse($opcional->set_idioma('en_GB', 'Hello', 'Desc EN'));
         $this->assertSame([], $db->rows);
         $this->assertSame([], $db->executed, 'a refused upsert must issue no statement');
     }
@@ -206,12 +206,12 @@ final class CatalogoOpcionalIdiomaTest extends TestCase
     public function test_reads_materialise_nothing(): void
     {
         $db = new FakeOpcionalIdiomaDb([]);
-        $opcional = new FakeOpcionalIdiomaChain($db, 'es', 'OPC0001', 'Base', 'Base desc');
+        $opcional = new FakeOpcionalIdiomaChain($db, 'es_ES', 'OPC0001', 'Base', 'Base desc');
 
-        $opcional->get_nombre_idioma('fr');
-        $opcional->get_nombre_idioma('es');
+        $opcional->get_nombre_idioma('fr_FR');
+        $opcional->get_nombre_idioma('es_ES');
         $opcional->get_nombre_idioma();
-        $opcional->get_descripcion_idioma('en');
+        $opcional->get_descripcion_idioma('en_GB');
         $opcional->get_idiomas();
 
         $this->assertSame([], $db->executed, 'a read must issue no write statement');

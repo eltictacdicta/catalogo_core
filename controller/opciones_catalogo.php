@@ -153,7 +153,7 @@ class opciones_catalogo extends fs_controller
             return;
         }
 
-        $codidioma = strtolower(trim((string) $request->request->get('codidioma', '')));
+        $codidioma = \FSFramework\model\catalogo_idioma::normalize_code($request->request->get('codidioma', ''));
         if ($codidioma === '') {
             return;
         }

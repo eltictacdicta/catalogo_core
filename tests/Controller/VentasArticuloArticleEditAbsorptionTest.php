@@ -593,8 +593,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->runEditar([
             'sreferencia' => 'REF-1',
             'snueva_referencia' => 'REF-2',
-            'codidioma' => 'es',
-            'descripcion_es' => 'Changed',
+            'codidioma' => 'es_ES',
+            'descripcion_es_ES' => 'Changed',
         ]);
 
         $this->assertSame(1, $this->renameCalls, 'The reference change must go through the model reference setter');
@@ -608,8 +608,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->runEditar([
             'sreferencia' => 'REF-1',
             'snueva_referencia' => 'REF-9',
-            'codidioma' => 'es',
-            'descripcion_es' => 'Changed',
+            'codidioma' => 'es_ES',
+            'descripcion_es_ES' => 'Changed',
         ]);
 
         $this->assertSame(1, $this->renameCalls, 'The invalid/duplicate reference must reach the setter that rejects it');
@@ -623,8 +623,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     {
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'codidioma' => 'es',
-            'descripcion_es' => 'Desc',
+            'codidioma' => 'es_ES',
+            'descripcion_es_ES' => 'Desc',
             'scodfamilia' => 'FAM-1',
             'scodfabricante' => '',
             'scodimpuesto' => '',
@@ -711,17 +711,17 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     public function test_selector_save_persists_the_posted_default_language_value(): void
     {
         $this->idiomaDb = new IdiomaRegistryFake(
-            [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
-            [['referencia' => 'REF-1', 'codidioma' => 'es', 'descripcion' => 'BASE COLUMN', 'descripcion_corta' => null]]
+            [['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
+            [['referencia' => 'REF-1', 'codidioma' => 'es_ES', 'descripcion' => 'BASE COLUMN', 'descripcion_corta' => null]]
         );
         $this->trackedArticulo = $this->buildTrackedArticulo();
-        $this->controller->idiomas = [(object) ['codidioma' => 'es', 'por_defecto' => true]];
+        $this->controller->idiomas = [(object) ['codidioma' => 'es_ES', 'por_defecto' => true]];
 
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'codidioma' => 'es',
-            'descripcion_es' => 'POSTED DEFAULT',
-            'descripcion_corta_es' => '',
+            'codidioma' => 'es_ES',
+            'descripcion_es_ES' => 'POSTED DEFAULT',
+            'descripcion_corta_es_ES' => '',
             // The legacy base field is still posted by old clients; it must be
             // ignored for the language slot (defect g).
             'sdescripcion' => 'BASE COLUMN',
@@ -739,34 +739,34 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     {
         $this->idiomaDb = new IdiomaRegistryFake(
             [
-                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
             [
-                ['referencia' => 'REF-1', 'codidioma' => 'es', 'descripcion' => 'ES ORIGINAL', 'descripcion_corta' => null],
-                ['referencia' => 'REF-1', 'codidioma' => 'en', 'descripcion' => 'EN ORIGINAL', 'descripcion_corta' => null],
+                ['referencia' => 'REF-1', 'codidioma' => 'es_ES', 'descripcion' => 'ES ORIGINAL', 'descripcion_corta' => null],
+                ['referencia' => 'REF-1', 'codidioma' => 'en_GB', 'descripcion' => 'EN ORIGINAL', 'descripcion_corta' => null],
             ]
         );
         $this->trackedArticulo = $this->buildTrackedArticulo();
         $this->controller->idiomas = [
-            (object) ['codidioma' => 'es', 'por_defecto' => true],
-            (object) ['codidioma' => 'en', 'por_defecto' => false],
+            (object) ['codidioma' => 'es_ES', 'por_defecto' => true],
+            (object) ['codidioma' => 'en_GB', 'por_defecto' => false],
         ];
 
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'codidioma' => 'en',
-            'descripcion_en' => 'EN UPDATED',
-            'descripcion_corta_en' => '',
+            'codidioma' => 'en_GB',
+            'descripcion_en_GB' => 'EN UPDATED',
+            'descripcion_corta_en_GB' => '',
             // A stale payload for another language must be ignored entirely.
-            'descripcion_es' => 'ES INJECTED',
+            'descripcion_es_ES' => 'ES INJECTED',
         ]);
 
         $rows = $this->idiomaRowsByCode();
-        $this->assertSame('EN UPDATED', $rows['en']['descripcion'], 'The selected language pair must persist');
+        $this->assertSame('EN UPDATED', $rows['en_GB']['descripcion'], 'The selected language pair must persist');
         $this->assertSame(
             'ES ORIGINAL',
-            $rows['es']['descripcion'],
+            $rows['es_ES']['descripcion'],
             'A posted value must never be written into a different language slot (GDI-11)'
         );
     }
@@ -777,22 +777,22 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         // the legacy empty-input skip (defect b) refused to clear.
         $this->idiomaDb = new IdiomaRegistryFake(
             [
-                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
-            [['referencia' => 'REF-1', 'codidioma' => 'en', 'descripcion' => 'TO CLEAR', 'descripcion_corta' => null]]
+            [['referencia' => 'REF-1', 'codidioma' => 'en_GB', 'descripcion' => 'TO CLEAR', 'descripcion_corta' => null]]
         );
         $this->trackedArticulo = $this->buildTrackedArticulo();
         $this->controller->idiomas = [
-            (object) ['codidioma' => 'es', 'por_defecto' => true],
-            (object) ['codidioma' => 'en', 'por_defecto' => false],
+            (object) ['codidioma' => 'es_ES', 'por_defecto' => true],
+            (object) ['codidioma' => 'en_GB', 'por_defecto' => false],
         ];
 
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'codidioma' => 'en',
-            'descripcion_en' => '',
-            'descripcion_corta_en' => '',
+            'codidioma' => 'en_GB',
+            'descripcion_en_GB' => '',
+            'descripcion_corta_en_GB' => '',
         ]);
 
         $this->assertSame([], $this->idiomaDb->descripciones, 'An empty pair must delete the language row (GDI-07)');
@@ -932,8 +932,8 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         $this->guardAllowed = false;
         $this->runEditar([
             'sreferencia' => 'REF-1',
-            'codidioma' => 'es',
-            'descripcion_es' => 'MUTATED',
+            'codidioma' => 'es_ES',
+            'descripcion_es_ES' => 'MUTATED',
             'scodfamilia' => 'FAM-1',
         ]);
 

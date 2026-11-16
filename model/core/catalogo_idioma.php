@@ -16,7 +16,33 @@ namespace FSFramework\model;
 class catalogo_idioma extends \fs_model
 {
     public const TABLE = 'catalogo_idiomas';
-    public const DEFAULT_CODE = 'es';
+    public const DEFAULT_CODE = 'es_ES';
+
+    /** Region for bare language codes whose region is not the code itself. */
+    private const BARE_CODE_REGION = [
+        'en' => 'GB', 'ca' => 'ES', 'eu' => 'ES', 'gl' => 'ES', 'ja' => 'JP',
+        'zh' => 'CN', 'da' => 'DK', 'sv' => 'SE', 'el' => 'GR', 'cs' => 'CZ',
+    ];
+
+    /**
+     * Canonical locale form `ll_CC` (es_ES, en_GB, fr_FR). Accepts any case,
+     * `-` as separator and bare legacy codes (`fr` -> `fr_FR`, `en` -> `en_GB`).
+     * Anything else comes back trimmed so test() rejects it.
+     */
+    public static function normalize_code($code): string
+    {
+        $code = trim((string) $code);
+        if (preg_match('/^([a-z]{2})[_-]([a-z]{2})$/i', $code, $m)) {
+            return strtolower($m[1]) . '_' . strtoupper($m[2]);
+        }
+
+        if (preg_match('/^[a-z]{2}$/i', $code)) {
+            $lang = strtolower($code);
+            return $lang . '_' . (self::BARE_CODE_REGION[$lang] ?? strtoupper($lang));
+        }
+
+        return $code;
+    }
 
     public $codidioma;
     public $nombre;
@@ -58,8 +84,8 @@ class catalogo_idioma extends \fs_model
     private function default_idiomas_sql(): string
     {
         return 'INSERT INTO ' . $this->table_name . ' (codidioma, nombre, activo, por_defecto) VALUES '
-            . "('es', 'Español', TRUE, TRUE),"
-            . "('en', 'English', TRUE, FALSE);";
+            . "('es_ES', 'Español', TRUE, TRUE),"
+            . "('en_GB', 'English', TRUE, FALSE);";
     }
 
     public function url()
@@ -69,6 +95,7 @@ class catalogo_idioma extends \fs_model
 
     public function get($cod)
     {
+        $cod = self::normalize_code($cod);
         $data = $this->db->select('SELECT * FROM ' . $this->table_name . ' WHERE codidioma = ' . $this->var2str($cod) . ';');
         if ($data) {
             return new static($data[0]);
@@ -117,6 +144,7 @@ class catalogo_idioma extends \fs_model
      */
     public function set_default(string $codidioma): bool
     {
+        $codidioma = self::normalize_code($codidioma);
         $target = $this->get($codidioma);
         if (!$target || !$target->activo) {
             $this->new_error_msg('El idioma indicado no existe o está inactivo.');
@@ -181,11 +209,11 @@ class catalogo_idioma extends \fs_model
 
     public function test()
     {
-        $this->codidioma = $this->no_html(strtolower(trim((string) $this->codidioma)));
+        $this->codidioma = self::normalize_code($this->codidioma);
         $this->nombre = $this->no_html($this->nombre);
 
-        if (mb_strlen($this->codidioma) < 2 || mb_strlen($this->codidioma) > 5) {
-            $this->new_error_msg('Código de idioma no válido. Deben ser entre 2 y 5 caracteres.');
+        if (!preg_match('/^[a-z]{2}_[A-Z]{2}$/', $this->codidioma)) {
+            $this->new_error_msg('Código de idioma no válido. Use el formato estándar idioma_REGIÓN, por ejemplo es_ES, en_GB o fr_FR.');
             return false;
         }
 

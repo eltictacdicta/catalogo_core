@@ -200,7 +200,9 @@
                      {{ csrf_field() }}
                      <input type="hidden" name="idioma_action" value="save"/>
                      <div class="form-group">
-                         <input type="text" name="codidioma" class="form-control input-sm" placeholder="{{ 'language-code'|trans }}"
+                         <input type="text" name="codidioma" class="form-control input-sm" placeholder="es_ES"
+                                title="{{ 'language-code'|trans }}: es_ES, en_GB, fr_FR"
+                                pattern="[A-Za-z]{2}([_\-][A-Za-z]{2})?"
                                 maxlength="5" minlength="2" required="required"/>
                      </div>
                      <div class="form-group">

@@ -109,6 +109,39 @@ class familia extends \fs_model
         return $this->descripcion;
     }
 
+    /**
+     * Descripción en un idioma, con caída a `familias.descripcion` (el texto
+     * del idioma por defecto) cuando no hay traducción.
+     *
+     * @param string|null $codidioma
+     * @return string
+     */
+    public function get_descripcion_idioma($codidioma = null)
+    {
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
+        if ($codidioma === '' || is_null($this->codfamilia)) {
+            return (string) $this->descripcion;
+        }
+
+        $row = (new familia_descripcion())->get_by_familia_idioma($this->codfamilia, $codidioma);
+
+        return $row ? (string) $row->descripcion : (string) $this->descripcion;
+    }
+
+    /**
+     * Guarda la traducción de la descripción para un idioma (vacío = borrar).
+     *
+     * @return bool
+     */
+    public function set_descripcion_idioma($codidioma, $descripcion)
+    {
+        return (new familia_descripcion())->set_descripcion(
+            $this->codfamilia,
+            catalogo_idioma::normalize_code($codidioma),
+            $descripcion
+        );
+    }
+
     public function get($cod)
     {
         $data = $this->db->select(self::SQL_SELECT_ALL . $this->table_name . self::PK_WHERE . $this->var2str($cod) . ";");

@@ -39,21 +39,21 @@ final class CatalogoIdiomaInvariantsTest extends TestCase
     {
         $db = new IdiomaRegistryFake(
             [
-                ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-                ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+                ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola'],
+                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Hola'],
             ]
         );
         $descripcionesBefore = $db->descripciones;
 
         $model = $this->registry($db);
 
-        $this->assertTrue($model->set_default('en'));
-        $this->assertTrue($db->idiomas['en']['por_defecto'], 'the target must carry the flag');
-        $this->assertFalse($db->idiomas['es']['por_defecto'], 'the previous default must be cleared');
-        $this->assertSame(['en'], $db->activeDefaults());
+        $this->assertTrue($model->set_default('en_GB'));
+        $this->assertTrue($db->idiomas['en_GB']['por_defecto'], 'the target must carry the flag');
+        $this->assertFalse($db->idiomas['es_ES']['por_defecto'], 'the previous default must be cleared');
+        $this->assertSame(['en_GB'], $db->activeDefaults());
         $this->assertSame(1, $db->transactions, 'the flag flip must be a single transaction');
         $this->assertTrue($db->committed);
         $this->assertSame($descripcionesBefore, $db->descripciones, 'setting a default must move no description row');
@@ -69,58 +69,58 @@ final class CatalogoIdiomaInvariantsTest extends TestCase
     public function test_set_default_rejects_unknown_code(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
         ]);
         $model = $this->registry($db);
 
         $this->assertFalse($model->set_default('zz'));
         $this->assertNotEmpty($model->errors);
         $this->assertSame([], $db->executed, 'an unknown target must emit no statement');
-        $this->assertSame(['es'], $db->activeDefaults());
+        $this->assertSame(['es_ES'], $db->activeDefaults());
     }
 
     public function test_set_default_rejects_inactive_target(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'fr', 'nombre' => 'Français', 'activo' => false, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'fr_FR', 'nombre' => 'Français', 'activo' => false, 'por_defecto' => false],
         ]);
         $model = $this->registry($db);
 
-        $this->assertFalse($model->set_default('fr'));
+        $this->assertFalse($model->set_default('fr_FR'));
         $this->assertNotEmpty($model->errors);
-        $this->assertSame(['es'], $db->activeDefaults());
+        $this->assertSame(['es_ES'], $db->activeDefaults());
     }
 
     public function test_deactivating_the_default_is_rejected(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
         ]);
         $model = $this->registry($db);
-        $model->codidioma = 'es';
+        $model->codidioma = 'es_ES';
         $model->nombre = 'Español';
         $model->activo = false;
         $model->por_defecto = true;
 
         $this->assertFalse($model->save());
         $this->assertNotEmpty($model->errors);
-        $this->assertTrue($db->idiomas['es']['activo'], 'the default must stay active');
+        $this->assertTrue($db->idiomas['es_ES']['activo'], 'the default must stay active');
         $this->assertSame([], $db->executed, 'a rejected deactivation must emit no statement');
     }
 
     public function test_default_resolution_is_total(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => false, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => false, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
         ]);
         $model = $this->registry($db);
 
         $first = $model->get_effective_default_code();
         $second = $model->get_effective_default_code();
 
-        $this->assertSame('en', $first, 'an inactive configured default must degrade to an active language');
+        $this->assertSame('en_GB', $first, 'an inactive configured default must degrade to an active language');
         $this->assertSame($first, $second, 'resolution must be deterministic');
     }
 
@@ -145,56 +145,56 @@ final class CatalogoIdiomaInvariantsTest extends TestCase
     public function test_invariant_holds_after_every_mutation(): void
     {
         $db = new IdiomaRegistryFake([
-            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
-            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+            ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
         ]);
 
         // create a language
         $created = $this->registry($db);
-        $created->codidioma = 'fr';
+        $created->codidioma = 'fr_FR';
         $created->nombre = 'Français';
         $created->activo = true;
         $created->por_defecto = false;
         $this->assertTrue($created->save());
-        $this->assertSame(['es'], $db->activeDefaults());
+        $this->assertSame(['es_ES'], $db->activeDefaults());
 
         // rename it
         $renamed = $this->registry($db);
-        $renamed->codidioma = 'fr';
+        $renamed->codidioma = 'fr_FR';
         $renamed->nombre = 'French';
         $renamed->activo = true;
         $renamed->por_defecto = false;
         $this->assertTrue($renamed->save());
-        $this->assertSame(['es'], $db->activeDefaults());
+        $this->assertSame(['es_ES'], $db->activeDefaults());
 
         // set it as the default
-        $this->assertTrue($created->set_default('fr'));
-        $this->assertSame(['fr'], $db->activeDefaults());
+        $this->assertTrue($created->set_default('fr_FR'));
+        $this->assertSame(['fr_FR'], $db->activeDefaults());
 
         // deactivate a non-default language
         $deactivated = $this->registry($db);
-        $deactivated->codidioma = 'es';
+        $deactivated->codidioma = 'es_ES';
         $deactivated->nombre = 'Español';
         $deactivated->activo = false;
         $deactivated->por_defecto = false;
         $this->assertTrue($deactivated->save());
-        $this->assertSame(['fr'], $db->activeDefaults());
+        $this->assertSame(['fr_FR'], $db->activeDefaults());
 
         // reactivate it
         $reactivated = $this->registry($db);
-        $reactivated->codidioma = 'es';
+        $reactivated->codidioma = 'es_ES';
         $reactivated->nombre = 'Español';
         $reactivated->activo = true;
         $reactivated->por_defecto = false;
         $this->assertTrue($reactivated->save());
-        $this->assertSame(['fr'], $db->activeDefaults());
+        $this->assertSame(['fr_FR'], $db->activeDefaults());
 
         // delete a non-default language
         $deleted = $this->registry($db);
-        $deleted->codidioma = 'en';
+        $deleted->codidioma = 'en_GB';
         $deleted->por_defecto = false;
         $this->assertTrue($deleted->delete());
-        $this->assertSame(['fr'], $db->activeDefaults());
+        $this->assertSame(['fr_FR'], $db->activeDefaults());
     }
 
     private function registry(IdiomaRegistryFake $db): catalogo_idioma

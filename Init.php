@@ -15,6 +15,7 @@ use FSFramework\Plugins\catalogo_core\Services\CaracteristicaColumnDropMigration
 use FSFramework\Plugins\catalogo_core\Services\CaracteristicaRegistry;
 use FSFramework\Plugins\catalogo_core\Services\CatalogoOptions;
 use FSFramework\Plugins\catalogo_core\Services\FamiliaEstructuraMigration;
+use FSFramework\Plugins\catalogo_core\Services\IdiomaCodeMigration;
 use FSFramework\Plugins\catalogo_core\Services\TarifOpcionalExtMigration;
 use FSFramework\View\ViewHookRegistry;
 use Twig\Loader\FilesystemLoader;
@@ -566,6 +567,12 @@ final class Init
             if ($db instanceof \fs_db2) {
                 CatalogLegacyTableMigration::migrateIfNeeded($db);
             }
+            if ($db instanceof \fs_db2) {
+                // After the legacy rename, so codes copied from tarif_idiomas are covered too.
+                require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
+                require_once FS_FOLDER . '/plugins/catalogo_core/Services/IdiomaCodeMigration.php';
+                IdiomaCodeMigration::migrateIfNeeded($db);
+            }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());
         }
@@ -691,6 +698,7 @@ final class Init
         foreach ([
             'catalogo_idioma',
             'articulo_descripcion',
+            'familia_descripcion',
             'catalogo_lista_precio',
             // Multitarifa (D5): FK definition tables before their dependents.
             'catalogo_articulo_precio',
