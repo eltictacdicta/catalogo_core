@@ -125,8 +125,40 @@
                         <div class="panel-body">
                            <div class="form-group"><label>Código</label><input class="form-control" type="text" name="codigo" value="{{ fsc.opcional.codigo }}" maxlength="30"/></div>
                            <div class="form-group"><label>REF</label><input class="form-control" type="text" name="ref_sap" value="{{ fsc.opcional.ref_sap }}" maxlength="50" placeholder="SKU / Referencia SAP"/></div>
+                           {% if fsc.idiomas|length > 0 %}
+                           <div class="form-group">
+                              <label for="opcional_codidioma_selector">{{ 'language'|trans }}</label>
+                              <select class="form-control" id="opcional_codidioma_selector">
+                                 {% for idioma in fsc.idiomas %}
+                                 <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_defecto %} selected{% endif %}>{{ idioma.nombre }}</option>
+                                 {% endfor %}
+                              </select>
+                              <p class="help-block">{{ 'optional-languages-help'|trans }}</p>
+                           </div>
+                           {% for idioma in fsc.idiomas %}
+                           {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
+                           <div class="opcional-idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_defecto %} style="display:none;"{% endif %}>
+                              <div class="form-group"><label>{{ 'optional-name'|trans }} ({{ idioma.nombre }})</label><input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]" value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100"{% if idioma.codidioma == fsc.codidioma_defecto %} required{% endif %}/></div>
+                              <div class="form-group"><label>{{ 'optional-description'|trans }} ({{ idioma.nombre }})</label><textarea class="form-control" name="idioma_descripcion[{{ idioma.codidioma }}]" rows="3">{{ idioma_row ? idioma_row.descripcion : '' }}</textarea></div>
+                           </div>
+                           {% endfor %}
+                           <script>
+                           (function () {
+                              var selector = document.getElementById('opcional_codidioma_selector');
+                              if (!selector) { return; }
+                              var toggle = function () {
+                                 document.querySelectorAll('.opcional-idioma-panel').forEach(function (panel) {
+                                    panel.style.display = panel.getAttribute('data-codidioma') === selector.value ? '' : 'none';
+                                 });
+                              };
+                              selector.addEventListener('change', toggle);
+                              toggle();
+                           })();
+                           </script>
+                           {% else %}
                            <div class="form-group"><label>Nombre</label><input class="form-control" type="text" name="nombre" value="{{ fsc.opcional.nombre }}" maxlength="100" required/></div>
                            <div class="form-group"><label>Descripción</label><textarea class="form-control" name="descripcion" rows="3">{{ fsc.opcional.descripcion }}</textarea></div>
+                           {% endif %}
                            <div class="form-group"><label class="checkbox-inline"><input type="checkbox" name="activo" value="TRUE" {% if fsc.opcional.activo %}checked{% endif %}/> Opcional activo</label></div>
                         </div>
                      </div>

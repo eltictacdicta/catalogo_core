@@ -152,6 +152,104 @@ class catalogo_opcional_grupo extends \fs_model
     }
 
     /**
+     * Child-table model seam for the per-language names. Overridable so the
+     * read chain is unit-testable without a database.
+     */
+    protected function idioma_model()
+    {
+        return new catalogo_opcional_grupo_idioma();
+    }
+
+    /**
+     * Language registry seam. Overridable so the fallback chain is
+     * unit-testable without a database.
+     */
+    protected function language_registry()
+    {
+        return new catalogo_idioma();
+    }
+
+    private function effective_default_code(): string
+    {
+        return (string) $this->language_registry()->get_effective_default_code();
+    }
+
+    /**
+     * Nombre del grupo para un idioma.
+     *
+     * Sin código devuelve la columna base. Con código: el idioma por defecto
+     * configurado ES la columna base (semántica espejo, igual que los
+     * opcionales); otro idioma devuelve su fila y, si no existe, la base.
+     * Lectura pura: nunca materializa filas.
+     */
+    public function get_nombre_idioma($codidioma = null): string
+    {
+        $base = (string) $this->nombre;
+        if ($codidioma === null || $codidioma === '' || $this->codigo === null || $this->codigo === '') {
+            return $base;
+        }
+
+        $codidioma = (string) $codidioma;
+        if ($codidioma === $this->effective_default_code()) {
+            return $base;
+        }
+
+        $row = $this->idioma_model()->get_by_grupo_idioma($this->codigo, $codidioma);
+
+        return $row ? (string) $row->nombre : $base;
+    }
+
+    /**
+     * Filas de idioma (no por defecto) de este grupo.
+     *
+     * @return array<int, catalogo_opcional_grupo_idioma>
+     */
+    public function get_idiomas(): array
+    {
+        if ($this->codigo === null || $this->codigo === '') {
+            return [];
+        }
+
+        return $this->idioma_model()->all_from_grupo($this->codigo);
+    }
+
+    /**
+     * Upsert del nombre de un idioma. El idioma por defecto se refleja en la
+     * columna base y se persiste con save(); cualquier otro va a la tabla hija
+     * y un nombre vacío elimina la fila.
+     */
+    public function set_idioma($codidioma, $nombre): bool
+    {
+        $codidioma = trim((string) $codidioma);
+        if ($this->codigo === null || $this->codigo === '' || $codidioma === '') {
+            return false;
+        }
+
+        if ($codidioma === $this->effective_default_code()) {
+            $prev = $this->nombre;
+            $this->nombre = (string) $nombre;
+            if ($this->save()) {
+                return true;
+            }
+
+            $this->nombre = $prev;
+
+            return false;
+        }
+
+        $row = $this->idioma_model()->get_by_grupo_idioma($this->codigo, $codidioma);
+        if (!$row) {
+            $row = $this->idioma_model();
+            $row->codigo = $this->codigo;
+            $row->codidioma = $codidioma;
+        }
+
+        $row->nombre = (string) $nombre;
+
+        return (bool) $row->save();
+    }
+
+    /**
      * Opcional↔group bridge accessor. Overridable seam for the AD-7 cascade.
      */
     protected function grupo_rel_model(): catalogo_opcional_grupo_rel
@@ -354,6 +452,8 @@ class catalogo_opcional_grupo extends \fs_model
             'SELECT * FROM ' . $this->table_name
             . ' WHERE codigo LIKE ' . $this->var2str($like)
             . ' OR nombre LIKE ' . $this->var2str($like)
+            . ' OR EXISTS (SELECT 1 FROM ' . catalogo_opcional_grupo_idioma::TABLE . ' gi'
+            . ' WHERE gi.codigo = ' . $this->table_name . '.codigo AND gi.nombre LIKE ' . $this->var2str($like) . ')'
             . ' ORDER BY orden ASC, nombre ASC',
             $limit,
             $offset

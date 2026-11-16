@@ -257,6 +257,27 @@ final class InitOpcionalesTablesTest extends TestCase
         );
     }
 
+    public function test_init_ensures_the_opcional_grupo_idioma_table_at_boot_and_upgrade(): void
+    {
+        $src = $this->initSource();
+
+        $init = $this->methodSource($src, 'public function init(): void');
+        $this->assertStringContainsString('self::ensureOpcionalGrupoIdiomaTable();', $init);
+        $this->assertLessThan(
+            (int) strpos($init, 'self::ensureOpcionalGrupoIdiomaTable();'),
+            (int) strpos($init, 'self::ensureOpcionalGrupoRelTable();'),
+            'the group-name table must be ensured after the group bridge (its FK target exists by then)'
+        );
+
+        $catalog = $this->methodSource($src, 'private static function ensureCatalogTables(): void');
+        $this->assertStringContainsString("'catalogo_opcional_grupo_idioma'", $catalog);
+        $this->assertLessThan(
+            (int) strpos($catalog, "'catalogo_opcional_grupo_idioma'"),
+            (int) strpos($catalog, "'catalogo_opcional_grupo'"),
+            'catalogo_opcional_grupo must be ensured before its language table'
+        );
+    }
+
     /** Models added to the boot list by the opcionales-versatilidad change. */
     private const VERSATILIDAD_MODELS = [
         'catalogo_opcional_idioma' => 'catalogo_opcional_idiomas.xml',

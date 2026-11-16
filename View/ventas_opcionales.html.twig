@@ -77,6 +77,28 @@
                                  <input class="form-control" type="text" name="ref_sap" maxlength="50" autocomplete="off" placeholder="SKU / Referencia SAP"/>
                               </div>
                            </div>
+                           {% if fsc.idiomas|length > 0 %}
+                           {# Multiidioma: idiomas activos de opciones_catalogo; el idioma por defecto va primero y es obligatorio. #}
+                           {% for pasada in ['defecto', 'resto'] %}
+                           {% for idioma in fsc.idiomas %}
+                           {% set es_defecto = idioma.codidioma == fsc.codidioma_defecto %}
+                           {% if (pasada == 'defecto' and es_defecto) or (pasada == 'resto' and not es_defecto) %}
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">{{ 'optional-name'|trans }} ({{ idioma.nombre }})</label>
+                              <div class="col-sm-10">
+                                 <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]" maxlength="100" autocomplete="off"{% if es_defecto %} required{% endif %}/>
+                              </div>
+                           </div>
+                           <div class="form-group">
+                              <label class="col-sm-2 control-label">{{ 'optional-description'|trans }} ({{ idioma.nombre }})</label>
+                              <div class="col-sm-10">
+                                 <textarea class="form-control" name="idioma_descripcion[{{ idioma.codidioma }}]" rows="2"></textarea>
+                              </div>
+                           </div>
+                           {% endif %}
+                           {% endfor %}
+                           {% endfor %}
+                           {% else %}
                            <div class="form-group">
                               <label class="col-sm-2 control-label">Nombre</label>
                               <div class="col-sm-10">
@@ -89,6 +111,7 @@
                                  <textarea class="form-control" name="descripcion" rows="2"></textarea>
                               </div>
                            </div>
+                           {% endif %}
                            <div class="form-group">
                               <label class="col-sm-2 control-label">Tipo de precio</label>
                               <div class="col-sm-10">

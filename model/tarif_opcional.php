@@ -278,7 +278,7 @@ class tarif_opcional extends catalogo_opcional
             }
 
             if ($query != '') {
-                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR lower(COALESCE(e.ref_sap, '')) LIKE '%" . $query . "%')";
+                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR " . $this->nombre_idioma_match('o', $query) . " OR lower(COALESCE(e.ref_sap, '')) LIKE '%" . $query . "%')";
             }
 
             // SELECT DISTINCT + an ORDER BY expression requires the expression
@@ -352,7 +352,7 @@ class tarif_opcional extends catalogo_opcional
             }
 
             if ($query != '') {
-                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR lower(COALESCE(e.ref_sap, '')) LIKE '%" . $query . "%')";
+                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR " . $this->nombre_idioma_match('o', $query) . " OR lower(COALESCE(e.ref_sap, '')) LIKE '%" . $query . "%')";
             }
 
             if (count($where_conditions) > 0) {
@@ -362,7 +362,8 @@ class tarif_opcional extends catalogo_opcional
             $sql = 'SELECT COUNT(*) as total FROM ' . $this->table_name;
             if ($query != '') {
                 $sql .= " WHERE lower(codigo) LIKE '%" . $query . "%'"
-                    . " OR lower(nombre) LIKE '%" . $query . "%'";
+                    . " OR lower(nombre) LIKE '%" . $query . "%'"
+                    . ' OR ' . $this->nombre_idioma_match($this->table_name, $query);
             }
         }
 

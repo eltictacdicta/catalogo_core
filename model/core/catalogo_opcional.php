@@ -943,7 +943,7 @@ class catalogo_opcional extends \fs_model
             }
 
             if ($query != '') {
-                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%')";
+                $where_conditions[] = "(lower(o.codigo) LIKE '%" . $query . "%' OR lower(o.nombre) LIKE '%" . $query . "%' OR " . $this->nombre_idioma_match('o', $query) . ")";
             }
 
             if (count($where_conditions) > 0) {
@@ -954,7 +954,8 @@ class catalogo_opcional extends \fs_model
             $sql = 'SELECT * FROM ' . $this->table_name;
             if ($query != '') {
                 $sql .= " WHERE lower(codigo) LIKE '%" . $query . "%'"
-                    . " OR lower(nombre) LIKE '%" . $query . "%'";
+                    . " OR lower(nombre) LIKE '%" . $query . "%'"
+                    . ' OR ' . $this->nombre_idioma_match($this->table_name, $query);
             }
             $sql .= ' ORDER BY nombre ASC';
         }
@@ -967,6 +968,23 @@ class catalogo_opcional extends \fs_model
         }
 
         return $list;
+    }
+
+    /**
+     * Condición SQL: el opcional tiene un nombre traducido (cualquier idioma)
+     * que contiene `$query`. Complementa la búsqueda sobre la columna base
+     * (idioma por defecto) para que un opcional se encuentre también por su
+     * nombre en los demás idiomas configurados.
+     *
+     * `$query` debe llegar ya normalizado (minúsculas + no_html), igual que en
+     * el resto de condiciones de búsqueda.
+     *
+     * @param string $alias alias o nombre de tabla del opcional en la consulta externa
+     */
+    protected function nombre_idioma_match(string $alias, string $query): string
+    {
+        return 'EXISTS (SELECT 1 FROM ' . catalogo_opcional_idioma::TABLE . ' oi'
+            . ' WHERE oi.codigo = ' . $alias . ".codigo AND lower(oi.nombre) LIKE '%" . $query . "%')";
     }
 
     /**

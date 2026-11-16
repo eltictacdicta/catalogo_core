@@ -63,6 +63,7 @@ final class Init
         self::migrateOpcionalExtension();
         self::ensureArticuloOpcionalGrupoTable();
         self::ensureOpcionalGrupoRelTable();
+        self::ensureOpcionalGrupoIdiomaTable();
         try {
             self::ensureFamiliasTarifaTables();
         } catch (\Throwable $e) {
@@ -693,6 +694,21 @@ final class Init
         }
     }
 
+    /**
+     * Ensures the per-language group name table exists at boot (its FK targets
+     * `catalogo_opcional_grupos`, created by the helpers above). Idempotent:
+     * fs_model only creates the table when it is missing.
+     */
+    private static function ensureOpcionalGrupoIdiomaTable(): void
+    {
+        try {
+            self::touchNamespacedModel('catalogo_opcional_grupo');
+            self::touchNamespacedModel('catalogo_opcional_grupo_idioma');
+        } catch (\Throwable $e) {
+            error_log('[catalogo_core] opcional_grupo_idioma table ensure failed: ' . $e->getMessage());
+        }
+    }
+
     private static function ensureCatalogTables(): void
     {
         foreach ([
@@ -717,6 +733,7 @@ final class Init
             'catalogo_articulo_opcional',
             'catalogo_opcional_precio',
             'catalogo_opcional_grupo',
+            'catalogo_opcional_grupo_idioma',
             'catalogo_articulo_opcional_grupo',
             'catalogo_opcional_grupo_rel',
             'catalogo_flujo',

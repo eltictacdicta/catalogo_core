@@ -341,6 +341,31 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
                 return $this->opcionalStub;
             }
 
+            /** @var object|null Language-registry double (never a real DB read). */
+            public $idiomaRegistryStub = null;
+
+            protected function idioma_registry_model()
+            {
+                return $this->idiomaRegistryStub ?? new class() {
+                    public function ensure_defaults(): void
+                    {
+                    }
+
+                    public function all_activos(): array
+                    {
+                        return [
+                            (object) ['codidioma' => 'es', 'nombre' => 'Español'],
+                            (object) ['codidioma' => 'en', 'nombre' => 'English'],
+                        ];
+                    }
+
+                    public function get_effective_default_code(): string
+                    {
+                        return 'es';
+                    }
+                };
+            }
+
             protected function opcional_grupo_model()
             {
                 return $this->grupoStub ?? new class() {
@@ -686,6 +711,83 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         self::assertSame(['F1', 'F2'], $opcional->familias);
         self::assertSame(['T1' => 1.234, 'T2' => 12.5], $opcional->precios);
         self::assertNotSame([], $subject->messages);
+    }
+
+    public function test_new_opcional_persists_per_language_names(): void
+    {
+        $opcional = new UnifiedListOpcionalStub();
+        $subject = $this->buildSubject(
+            $this->request('/index.php?page=ventas_opcionales', 'POST', [
+                'codigo' => 'OPC0002',
+                'idioma_nombre' => ['es' => ' Hola ', 'en' => 'Hello', 'fr' => 'Bonjour'],
+                'idioma_descripcion' => ['es' => 'Desc ES', 'en' => 'Desc EN', 'fr' => 'Desc FR'],
+            ]),
+            null,
+            $opcional
+        );
+        $this->invoke($subject, 'load_idiomas');
+
+        $this->invoke($subject, 'new_opcional');
+
+        self::assertTrue($opcional->saved);
+        self::assertSame('Hola', $opcional->nombre, 'the configured default language mirrors into the base name');
+        self::assertSame('Desc ES', $opcional->descripcion, 'the configured default language mirrors into the base description');
+        self::assertSame(
+            ['en' => ['nombre' => 'Hello', 'descripcion' => 'Desc EN']],
+            $opcional->idiomas,
+            'only active non-default languages go through set_idioma(); unknown (fr) and default (es) are skipped'
+        );
+        self::assertSame([], $subject->errors);
+    }
+
+    public function test_new_opcional_skips_empty_language_pairs(): void
+    {
+        $opcional = new UnifiedListOpcionalStub();
+        $subject = $this->buildSubject(
+            $this->request('/index.php?page=ventas_opcionales', 'POST', [
+                'codigo' => 'OPC0002',
+                'idioma_nombre' => ['es' => 'Hola', 'en' => ''],
+                'idioma_descripcion' => ['es' => '', 'en' => ''],
+            ]),
+            null,
+            $opcional
+        );
+        $this->invoke($subject, 'load_idiomas');
+
+        $this->invoke($subject, 'new_opcional');
+
+        self::assertTrue($opcional->saved);
+        self::assertSame([], $opcional->idiomas, 'an empty pair must not materialise a language row');
+    }
+
+    public function test_new_opcional_requires_the_default_language_name(): void
+    {
+        $opcional = new UnifiedListOpcionalStub();
+        $subject = $this->buildSubject(
+            $this->request('/index.php?page=ventas_opcionales', 'POST', [
+                'codigo' => 'OPC0002',
+                'idioma_nombre' => ['es' => '  ', 'en' => 'Hello'],
+            ]),
+            null,
+            $opcional
+        );
+        $this->invoke($subject, 'load_idiomas');
+
+        $this->invoke($subject, 'new_opcional');
+
+        self::assertFalse($opcional->saved, 'a missing default-language name must not persist anything');
+        self::assertSame([], $opcional->idiomas);
+        self::assertNotSame([], $subject->errors);
+    }
+
+    public function test_create_modal_renders_a_field_pair_per_configured_language(): void
+    {
+        $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/ventas_opcionales.html.twig');
+
+        self::assertStringContainsString('name="idioma_nombre[{{ idioma.codidioma }}]"', $view);
+        self::assertStringContainsString('name="idioma_descripcion[{{ idioma.codidioma }}]"', $view);
+        self::assertStringContainsString('fsc.codidioma_defecto', $view, 'the default language must be resolved from the registry');
+        self::assertStringContainsString('{% if es_defecto %} required{% endif %}', $view, 'only the default-language name is required');
     }
 
     public function test_new_opcional_rejects_duplicate_or_bad_price(): void
@@ -1185,6 +1287,16 @@ final class UnifiedListOpcionalStub
     public function set_grupos(array $idGrupos): bool
     {
         $this->grupos = array_map('intval', array_values($idGrupos));
+
+        return true;
+    }
+
+    /** @var array<string, array{nombre: string, descripcion: string}> */
+    public array $idiomas = [];
+
+    public function set_idioma($codidioma, $nombre, $descripcion): bool
+    {
+        $this->idiomas[(string) $codidioma] = ['nombre' => (string) $nombre, 'descripcion' => (string) $descripcion];
 
         return true;
     }
