@@ -439,7 +439,15 @@ final class CatalogoFlujoCascadeWiringTest extends TestCase
             'the owning article row DELETE must still run'
         );
         $this->assertSame(
-            ['exec', 'cascade:referencia:ART1'],
+            [
+                "DELETE FROM articulos WHERE referencia = 'ART1';",
+                "DELETE FROM articulosprov WHERE referencia = 'ART1';",
+            ],
+            $db->executed,
+            'the MySQL driver prepares one statement per exec(): never chain them in a single call'
+        );
+        $this->assertSame(
+            ['exec', 'exec', 'cascade:referencia:ART1'],
             $journal->events,
             'the article flow cleanup must run only after the owning row DELETE succeeds'
         );

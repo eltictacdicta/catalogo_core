@@ -973,19 +973,32 @@ class articulo extends \fs_model
         }
 
         $this->clean_cache();
-        $sql = $this->exists() ? $this->buildUpdateSql() : $this->buildInsertSql();
+        $exists = $this->exists();
 
-        if ($this->db->exec($sql)) {
-            $this->exists = TRUE;
-            return TRUE;
+        // An article flagged as "no stock" keeps no stock rows. The driver runs
+        // one statement per exec(), so the cleanup is its own call.
+        $dropStocks = $exists && $this->nostock && $this->stockfis != 0;
+        if ($dropStocks) {
+            $this->stockfis = 0.0;
         }
 
-        return FALSE;
+        if (!$this->db->exec($exists ? $this->buildUpdateSql() : $this->buildInsertSql())) {
+            return FALSE;
+        }
+
+        $this->exists = TRUE;
+        if ($dropStocks) {
+            return (bool) $this->db->exec(
+                "DELETE FROM stocks" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";"
+            );
+        }
+
+        return TRUE;
     }
 
     private function buildUpdateSql(): string
     {
-        $sql = self::SQL_UPDATE . $this->table_name . " SET descripcion = " . $this->var2str($this->descripcion) .
+        return self::SQL_UPDATE . $this->table_name . " SET descripcion = " . $this->var2str($this->descripcion) .
             ", codfamilia = " . $this->var2str($this->codfamilia) .
             ", codfabricante = " . $this->var2str($this->codfabricante) .
             ", pvp = " . $this->var2str($this->pvp) .
@@ -1012,15 +1025,6 @@ class articulo extends \fs_model
             ", codsubcuentairpfcom = " . $this->var2str($this->codsubcuentairpfcom) .
             ", trazabilidad = " . $this->var2str($this->trazabilidad) .
             self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
-
-        if ($this->nostock && $this->stockfis != 0) {
-            $this->stockfis = 0.0;
-            $sql .= "DELETE FROM stocks" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
-            $sql .= self::SQL_UPDATE . $this->table_name . " SET stockfis = " . $this->var2str($this->stockfis) .
-                self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
-        }
-
-        return $sql;
     }
 
     private function buildInsertSql(): string
@@ -1063,11 +1067,15 @@ class articulo extends \fs_model
     {
         $this->clean_cache();
 
-        $sql = "DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
-        $sql .= "DELETE FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
+        // The driver runs one statement per exec(): the owning DELETE goes
+        // first and alone, so a rejected delete leaves everything intact.
+        $sql = "DELETE FROM " . $this->table_name . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";";
         if (!$this->db->exec($sql)) {
             return FALSE;
         }
+
+        // articulosprov has no FK to the article, so its rows are dropped here.
+        $this->db->exec("DELETE FROM articulosprov" . self::PK_REFERENCIA . $this->var2str($this->referencia) . ";");
 
         // FLC-09: only a successful owning DELETE may drop the flow
         // assignments, so a failed delete leaves the flow definitions intact.
