@@ -91,7 +91,10 @@ class VentasOpcionales extends PageController
             $this->delete_opcional();
         }
 
-        if ($this->request->request->has('codigo') && $this->request->request->has('nombre')) {
+        if (
+            $this->request->request->has('codigo')
+            && ($this->request->request->has('nombre') || $this->request->request->has('idioma_nombre'))
+        ) {
             $this->new_opcional();
         }
 

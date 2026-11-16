@@ -27,6 +27,7 @@ require_once 'plugins/catalogo_core/model/tarif_tarifa.php';
 require_once 'plugins/catalogo_core/model/tarif_tarifa_opcional.php';
 require_once 'plugins/catalogo_core/Services/CaracteristicaResolver.php';
 
+use FSFramework\model\catalogo_idioma;
 use FSFramework\model\catalogo_opcional_grupo;
 use FSFramework\model\catalogo_opcional_grupo_rel;
 use FSFramework\model\tarif_familia;
@@ -84,6 +85,19 @@ trait VentasOpcionalesListTrait
      * @var array<int, catalogo_opcional_grupo>
      */
     public array $grupos_opcional = [];
+
+    /**
+     * Idiomas activos configurados en `opciones_catalogo#idiomas`, para los
+     * campos nombre/descripción por idioma del modal de alta.
+     * @var array<int, catalogo_idioma>
+     */
+    public array $idiomas = [];
+
+    /**
+     * Código del idioma por defecto configurado. Su nombre/descripción se
+     * guarda en las columnas base del opcional (semántica espejo).
+     */
+    public string $codidioma_defecto = '';
 
     /**
      * Group labels per listed opcional id, resolved from one batched map (no N+1).
@@ -156,6 +170,17 @@ trait VentasOpcionalesListTrait
     protected function opcional_model()
     {
         return new tarif_opcional();
+    }
+
+    /**
+     * Language-registry accessor. Overridable seam so the create-modal language
+     * block is unit-testable without a live database.
+     *
+     * @return catalogo_idioma
+     */
+    protected function idioma_registry_model()
+    {
+        return new catalogo_idioma();
     }
 
     /**
@@ -245,6 +270,19 @@ trait VentasOpcionalesListTrait
         $this->ini_filters();
         $this->search_opcionales();
         $this->load_grupos_cache();
+        $this->load_idiomas();
+    }
+
+    /**
+     * Carga los idiomas activos y el idioma por defecto del registro
+     * `catalogo_idiomas` (los configurados en `opciones_catalogo`).
+     */
+    protected function load_idiomas(): void
+    {
+        $registry = $this->idioma_registry_model();
+        $registry->ensure_defaults();
+        $this->idiomas = $registry->all_activos();
+        $this->codidioma_defecto = (string) $registry->get_effective_default_code();
     }
 
     /**
@@ -779,12 +817,33 @@ trait VentasOpcionalesListTrait
             return;
         }
 
-        $nombre = trim((string) $this->request->request->get('nombre', ''));
+        // Multiidioma: el idioma por defecto configurado se refleja en las
+        // columnas base (nombre/descripcion); el resto se persiste vía set_idioma().
+        // `nombre`/`descripcion` planos siguen aceptándose (compatibilidad).
+        $idiomaNombres = (array) $this->request->request->all('idioma_nombre');
+        $idiomaDescripciones = (array) $this->request->request->all('idioma_descripcion');
+        $defaultCode = '';
+        if ($idiomaNombres !== []) {
+            $defaultCode = $this->codidioma_defecto !== ''
+                ? $this->codidioma_defecto
+                : (string) $this->idioma_registry_model()->get_effective_default_code();
+        }
+
+        if ($defaultCode !== '' && array_key_exists($defaultCode, $idiomaNombres)) {
+            $nombre = trim((string) $idiomaNombres[$defaultCode]);
+            $descripcion = (string) ($idiomaDescripciones[$defaultCode] ?? '');
+        } else {
+            $nombre = trim((string) $this->request->request->get('nombre', ''));
+            $descripcion = (string) $this->request->request->get('descripcion', '');
+        }
+
         if ($nombre === '') {
             $this->new_error_msg('El nombre del opcional es obligatorio.');
 
             return;
         }
+
+        $idiomasExtra = $this->collect_idiomas_extra($idiomaNombres, $idiomaDescripciones, $defaultCode);
 
         // Price mode: fixed (per-tarifa prices) or percentage (one global value
         // per mode + the effective per-tarifa row; design AD-1/AD-8).
@@ -837,7 +896,7 @@ trait VentasOpcionalesListTrait
 
         $opcional->codigo = $codigo;
         $opcional->nombre = $nombre;
-        $opcional->descripcion = (string) $this->request->request->get('descripcion', '');
+        $opcional->descripcion = $descripcion;
         $refSap = trim((string) $this->request->request->get('ref_sap', ''));
         $opcional->ref_sap = $refSap === '' ? null : $refSap;
         $opcional->tipo_precio = $esPorcentaje
@@ -853,9 +912,15 @@ trait VentasOpcionalesListTrait
             $tarifaDefecto = (string) $this->tarifa_defecto->codtarifa;
         }
 
-        $saved = $this->run_in_transaction(function () use ($opcional, $precios, $esPorcentaje, $porcentaje, $tarifaDefecto, $grupos): bool {
+        $saved = $this->run_in_transaction(function () use ($opcional, $precios, $esPorcentaje, $porcentaje, $tarifaDefecto, $grupos, $idiomasExtra): bool {
             if (!$opcional->save()) {
                 return false;
+            }
+
+            foreach ($idiomasExtra as $codidioma => $par) {
+                if (!$opcional->set_idioma($codidioma, $par['nombre'], $par['descripcion'])) {
+                    return false;
+                }
             }
 
             if (!$opcional->set_grupos($grupos)) {
@@ -886,6 +951,41 @@ trait VentasOpcionalesListTrait
         } else {
             $this->new_error_msg('¡Error al crear el opcional!');
         }
+    }
+
+    /**
+     * Pares nombre/descripción de los idiomas NO por defecto enviados desde el
+     * modal de alta. Solo se aceptan idiomas activos del registro; un par vacío
+     * se descarta (la ausencia no materializa filas).
+     *
+     * @param array<string, mixed> $nombres
+     * @param array<string, mixed> $descripciones
+     * @return array<string, array{nombre: string, descripcion: string}>
+     */
+    protected function collect_idiomas_extra(array $nombres, array $descripciones, string $defaultCode): array
+    {
+        $activos = [];
+        foreach ($this->idiomas as $idioma) {
+            $activos[(string) $idioma->codidioma] = true;
+        }
+
+        $extra = [];
+        foreach ($nombres as $codidioma => $nombre) {
+            $codidioma = trim((string) $codidioma);
+            if ($codidioma === '' || $codidioma === $defaultCode || !isset($activos[$codidioma])) {
+                continue;
+            }
+
+            $nombre = trim((string) $nombre);
+            $descripcion = trim((string) ($descripciones[$codidioma] ?? ''));
+            if ($nombre === '' && $descripcion === '') {
+                continue;
+            }
+
+            $extra[$codidioma] = ['nombre' => $nombre, 'descripcion' => $descripcion];
+        }
+
+        return $extra;
     }
 
     /**

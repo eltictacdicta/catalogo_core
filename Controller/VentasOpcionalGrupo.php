@@ -15,6 +15,7 @@ require_once FS_FOLDER . '/src/Controller/PageController.php';
 
 use FSFramework\Controller\PageController;
 use FSFramework\model\catalogo_articulo_opcional_grupo;
+use FSFramework\model\catalogo_idioma;
 use FSFramework\model\catalogo_opcional;
 use FSFramework\model\catalogo_opcional_grupo;
 use Symfony\Component\HttpFoundation\Request;
@@ -30,6 +31,12 @@ class VentasOpcionalGrupo extends PageController
     public array $opcionales_disponibles = [];
     /** @var array<int, \articulo> */
     public array $articulos = [];
+    /** @var array<int, catalogo_idioma> Idiomas activos (los de opciones_catalogo). */
+    public array $idiomas = [];
+    /** Idioma por defecto configurado: su nombre vive en la columna base. */
+    public string $codidioma_edit = '';
+    /** @var array<string, object|array<string, mixed>> Prefill del editor por codidioma. */
+    public array $idiomas_grupo = [];
 
     public function __construct()
     {
@@ -50,8 +57,78 @@ class VentasOpcionalGrupo extends PageController
         ];
     }
 
+    /**
+     * Language registry seam. Overridable so the editor language block can be
+     * exercised without a database.
+     */
+    protected function idioma_registry_model()
+    {
+        return new catalogo_idioma();
+    }
+
+    private function loadIdiomas(): void
+    {
+        $registry = $this->idioma_registry_model();
+        $registry->ensure_defaults();
+        $this->idiomas = $registry->all_activos();
+        $this->codidioma_edit = (string) $registry->get_effective_default_code();
+    }
+
+    /**
+     * Prefill uniforme: el idioma por defecto sale siempre de la columna base;
+     * el resto, de su fila hija.
+     */
+    private function loadIdiomasGrupo(): void
+    {
+        $this->idiomas_grupo = [];
+
+        if (
+            $this->grupo === null
+            || $this->is_new
+            || $this->grupo->codigo === null
+            || $this->grupo->codigo === ''
+        ) {
+            return;
+        }
+
+        foreach ($this->grupo->get_idiomas() as $row) {
+            $this->idiomas_grupo[(string) $row->codidioma] = $row;
+        }
+
+        if ($this->codidioma_edit !== '') {
+            $this->idiomas_grupo[$this->codidioma_edit] = [
+                'codidioma' => $this->codidioma_edit,
+                'nombre' => (string) $this->grupo->nombre,
+            ];
+        }
+    }
+
+    /**
+     * Persiste el nombre de los idiomas NO por defecto (`idioma_nombre[cod]`).
+     * El por defecto ya se reflejó en la columna base antes de save().
+     */
+    private function guardarIdiomas(Request $request): bool
+    {
+        if ($this->grupo === null) {
+            return true;
+        }
+
+        $ok = true;
+        foreach ((array) $request->request->all('idioma_nombre') as $codidioma => $nombre) {
+            $codidioma = trim((string) $codidioma);
+            if ($codidioma === '' || $codidioma === $this->codidioma_edit) {
+                continue;
+            }
+
+            $ok = $this->grupo->set_idioma($codidioma, (string) $nombre) && $ok;
+        }
+
+        return $ok;
+    }
+
     public function privateCore(&$response, $user, $permissions): void
     {
+        $this->loadIdiomas();
         $id = $this->request->query->getInt('id');
         if ($id > 0) {
             $model = new catalogo_opcional_grupo();
@@ -83,6 +160,8 @@ class VentasOpcionalGrupo extends PageController
         if ($this->grupo !== null && !$this->is_new) {
             $this->loadGrupoRelations();
         }
+
+        $this->loadIdiomasGrupo();
     }
 
     private function loadGrupoRelations(): void
@@ -140,7 +219,13 @@ class VentasOpcionalGrupo extends PageController
         }
 
         $this->grupo->codigo = $codigo;
-        $this->grupo->nombre = (string) $request->request->get('snombre', '');
+        // Semántica espejo: el idioma por defecto configurado es la columna base.
+        $idiomaNombres = (array) $request->request->all('idioma_nombre');
+        if ($this->codidioma_edit !== '' && array_key_exists($this->codidioma_edit, $idiomaNombres)) {
+            $this->grupo->nombre = (string) $idiomaNombres[$this->codidioma_edit];
+        } else {
+            $this->grupo->nombre = (string) $request->request->get('snombre', '');
+        }
         $this->grupo->orden = $request->request->getInt('sorden');
         $this->grupo->exclusivo = $request->request->has('sexclusivo');
         $this->grupo->activo = $request->request->has('sactivo');
@@ -148,6 +233,10 @@ class VentasOpcionalGrupo extends PageController
         if (!$this->grupo->save()) {
             $this->new_error_msg('No se pudo guardar el grupo.');
             return;
+        }
+
+        if (!$this->guardarIdiomas($request)) {
+            $this->new_error_msg('No se pudieron guardar los idiomas del grupo.');
         }
 
         $this->new_message('Grupo ' . $this->grupo->codigo . ' guardado correctamente.');

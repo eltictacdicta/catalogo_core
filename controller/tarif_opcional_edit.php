@@ -52,6 +52,22 @@ class tarif_opcional_edit extends fbase_controller
     public $tarifa_opcional_etiqueta;
 
     /**
+     * Idioma por defecto configurado (su nombre/descripción vive en las
+     * columnas base del opcional). Los idiomas activos llegan en `$idiomas`
+     * (TarifarioOpcionalStateTrait).
+     *
+     * @var string
+     */
+    public $codidioma_defecto = '';
+
+    /**
+     * Prefill del editor por codidioma: objetos/arrays con nombre y descripción.
+     *
+     * @var array<string, object|array<string, mixed>>
+     */
+    public $idiomas_opcional = [];
+
+    /**
      * Tarifa activa resuelta para esta página (tarif_tarifa|false).
      *
      * @var \FSFramework\model\tarif_tarifa|false
@@ -104,6 +120,7 @@ class tarif_opcional_edit extends fbase_controller
             }
 
             // Cargar datos
+            $this->load_idiomas_opcional();
             $this->familias_asignadas = $this->opcional->get_familias();
             $this->articulos = $this->opcional->get_articulos();
             
@@ -168,10 +185,42 @@ class tarif_opcional_edit extends fbase_controller
         return (bool) $this->requireCsrf();
     }
 
+    /**
+     * Prefill multiidioma: el idioma por defecto sale de la columna base y el
+     * resto de su fila propia.
+     */
+    private function load_idiomas_opcional(): void
+    {
+        $this->codidioma_defecto = (string) (new \FSFramework\model\catalogo_idioma())->get_effective_default_code();
+        $this->idiomas_opcional = [];
+
+        foreach ($this->opcional->get_idiomas() as $row) {
+            $this->idiomas_opcional[(string) $row->codidioma] = $row;
+        }
+
+        if ($this->codidioma_defecto !== '') {
+            $this->idiomas_opcional[$this->codidioma_defecto] = [
+                'codidioma' => $this->codidioma_defecto,
+                'nombre' => (string) $this->opcional->nombre,
+                'descripcion' => (string) $this->opcional->descripcion,
+            ];
+        }
+    }
+
     private function modificar()
     {
-        $this->opcional->nombre = $_POST['nombre'];
-        $this->opcional->descripcion = isset($_POST['descripcion']) ? $_POST['descripcion'] : '';
+        $defecto = (string) (new \FSFramework\model\catalogo_idioma())->get_effective_default_code();
+        $idiomaNombres = isset($_POST['idioma_nombre']) && is_array($_POST['idioma_nombre']) ? $_POST['idioma_nombre'] : [];
+        $idiomaDescripciones = isset($_POST['idioma_descripcion']) && is_array($_POST['idioma_descripcion']) ? $_POST['idioma_descripcion'] : [];
+
+        // Semántica espejo: el idioma por defecto configurado es la columna base.
+        if ($defecto !== '' && array_key_exists($defecto, $idiomaNombres)) {
+            $this->opcional->nombre = (string) $idiomaNombres[$defecto];
+            $this->opcional->descripcion = (string) ($idiomaDescripciones[$defecto] ?? '');
+        } else {
+            $this->opcional->nombre = $_POST['nombre'] ?? '';
+            $this->opcional->descripcion = isset($_POST['descripcion']) ? $_POST['descripcion'] : '';
+        }
         $this->opcional->ref_sap = isset($_POST['ref_sap']) ? trim($_POST['ref_sap']) : null;
         if ($this->opcional->ref_sap === '') {
             $this->opcional->ref_sap = null;
@@ -179,6 +228,17 @@ class tarif_opcional_edit extends fbase_controller
         $this->opcional->activo = isset($_POST['activo']);
 
         if ($this->opcional->save()) {
+            foreach ($idiomaNombres as $codidioma => $nombre) {
+                $codidioma = trim((string) $codidioma);
+                if ($codidioma === '' || $codidioma === $defecto) {
+                    continue;
+                }
+
+                if (!$this->opcional->set_idioma($codidioma, (string) $nombre, (string) ($idiomaDescripciones[$codidioma] ?? ''))) {
+                    $this->new_error_msg('No se pudo guardar el idioma: ' . $codidioma);
+                }
+            }
+
             $this->new_message('Datos guardados correctamente.');
         } else {
             $this->new_error_msg('Error al guardar los datos.');

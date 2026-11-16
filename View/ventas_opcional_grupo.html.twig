@@ -38,12 +38,14 @@
                             <input class="form-control" type="text" name="scodigo" value="{{ fsc.grupo.codigo }}" maxlength="20" autocomplete="off"/>
                         </div>
                     </div>
+                    {% if fsc.idiomas|length == 0 %}
                     <div class="col-sm-4">
                         <div class="form-group">
                             {{ 'optional-name'|trans }}:
                             <input class="form-control" type="text" name="snombre" value="{{ fsc.grupo.nombre }}" maxlength="100" required autocomplete="off"/>
                         </div>
                     </div>
+                    {% endif %}
                     <div class="col-sm-4">
                         <div class="form-group">
                             {{ 'optional-group-order'|trans }}:
@@ -51,6 +53,50 @@
                         </div>
                     </div>
                 </div>
+                {% if fsc.idiomas|length > 0 %}
+                <div class="row">
+                    <div class="col-sm-12">
+                        <div class="panel panel-info">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'optional-languages'|trans }}</h3>
+                            </div>
+                            <div class="panel-body">
+                                <div class="form-group">
+                                    <label for="grupo_codidioma_selector">{{ 'language'|trans }}</label>
+                                    <select class="form-control" id="grupo_codidioma_selector">
+                                        {% for idioma in fsc.idiomas %}
+                                        <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <p class="help-block">{{ 'optional-group-languages-help'|trans }}</p>
+                                </div>
+                                {% for idioma in fsc.idiomas %}
+                                {% set idioma_row = fsc.idiomas_grupo[idioma.codidioma] ?? null %}
+                                <div class="grupo-idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} style="display:none;"{% endif %}>
+                                    <div class="form-group">
+                                        {{ 'optional-name'|trans }} ({{ idioma.nombre }}):
+                                        <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]"{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %} value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100" autocomplete="off"/>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <script>
+                        (function () {
+                            var selector = document.getElementById('grupo_codidioma_selector');
+                            if (!selector) { return; }
+                            var toggle = function () {
+                                document.querySelectorAll('.grupo-idioma-panel').forEach(function (panel) {
+                                    panel.style.display = panel.getAttribute('data-codidioma') === selector.value ? '' : 'none';
+                                });
+                            };
+                            selector.addEventListener('change', toggle);
+                            toggle();
+                        })();
+                        </script>
+                    </div>
+                </div>
+                {% endif %}
                 <div class="row">
                     <div class="col-sm-12">
                         <div class="checkbox">

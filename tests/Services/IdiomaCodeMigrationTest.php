@@ -99,6 +99,22 @@ final class IdiomaCodeMigrationTest extends TestCase
         ], $db->executed);
     }
 
+    public function testRenamesLegacyCodesInTheOptionalTranslationTables(): void
+    {
+        $db = new IdiomaCodeMigrationFakeDb(
+            ['en'],
+            ['catalogo_idiomas', 'catalogo_opcional_idiomas', 'catalogo_opcional_grupo_idiomas']
+        );
+
+        IdiomaCodeMigration::migrateIfNeeded($db);
+
+        $this->assertSame([
+            "UPDATE catalogo_idiomas SET codidioma = 'en_GB' WHERE codidioma = 'en';",
+            "UPDATE catalogo_opcional_idiomas SET codidioma = 'en_GB' WHERE codidioma = 'en';",
+            "UPDATE catalogo_opcional_grupo_idiomas SET codidioma = 'en_GB' WHERE codidioma = 'en';",
+        ], $db->executed);
+    }
+
     public function testCanonicalRegistryExecutesNothing(): void
     {
         $db = new IdiomaCodeMigrationFakeDb(['es_ES', 'en_GB'], ['catalogo_idiomas', 'articulo_descripciones']);
