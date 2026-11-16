@@ -189,7 +189,7 @@ class catalogo_opcional_grupo extends \fs_model
             return $base;
         }
 
-        $codidioma = (string) $codidioma;
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
         if ($codidioma === $this->effective_default_code()) {
             return $base;
         }
@@ -220,7 +220,7 @@ class catalogo_opcional_grupo extends \fs_model
      */
     public function set_idioma($codidioma, $nombre): bool
     {
-        $codidioma = trim((string) $codidioma);
+        $codidioma = catalogo_idioma::normalize_code($codidioma);
         if ($this->codigo === null || $this->codigo === '' || $codidioma === '') {
             return false;
         }

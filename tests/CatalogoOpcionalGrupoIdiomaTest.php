@@ -31,55 +31,70 @@ final class CatalogoOpcionalGrupoIdiomaTest extends TestCase
 {
     public function test_default_language_reads_the_base_column(): void
     {
-        $store = new FakeGrupoIdiomaStore([['GRP0001', 'es', 'Obsoleto']]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $store = new FakeGrupoIdiomaStore([['GRP0001', 'es_ES', 'Obsoleto']]);
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
-        $this->assertSame('Color', $grupo->get_nombre_idioma('es'), 'the default never reads a stale child row');
+        $this->assertSame('Color', $grupo->get_nombre_idioma('es_ES'), 'the default never reads a stale child row');
         $this->assertSame('Color', $grupo->get_nombre_idioma(), 'no code resolves the base column');
         $this->assertSame('Color', $grupo->get_nombre_idioma(''));
     }
 
     public function test_requested_language_wins_and_falls_back_to_base(): void
     {
-        $store = new FakeGrupoIdiomaStore([['GRP0001', 'en', 'Colour']]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $store = new FakeGrupoIdiomaStore([['GRP0001', 'en_GB', 'Colour']]);
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
-        $this->assertSame('Colour', $grupo->get_nombre_idioma('en'));
-        $this->assertSame('Color', $grupo->get_nombre_idioma('fr'), 'a language without row falls back to the base');
+        $this->assertSame('Colour', $grupo->get_nombre_idioma('en_GB'));
+        $this->assertSame('Color', $grupo->get_nombre_idioma('fr_FR'), 'a language without row falls back to the base');
         $this->assertCount(1, $store->rows, 'reads must never materialise a row');
     }
 
     public function test_set_idioma_upserts_a_non_default_row(): void
     {
         $store = new FakeGrupoIdiomaStore([]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
+
+        $this->assertTrue($grupo->set_idioma('en_GB', 'Colour'));
+        $this->assertSame([['GRP0001', 'en_GB', 'Colour']], $store->rows);
+
+        $this->assertTrue($grupo->set_idioma('en_GB', 'Color (EN)'));
+        $this->assertSame([['GRP0001', 'en_GB', 'Color (EN)']], $store->rows, 'a second write updates, never duplicates');
+        $this->assertSame([], $grupo->baseSaves, 'a non-default language never touches the base column');
+    }
+
+    public function test_legacy_codes_are_normalised_to_the_canonical_locale(): void
+    {
+        $store = new FakeGrupoIdiomaStore([]);
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
         $this->assertTrue($grupo->set_idioma('en', 'Colour'));
-        $this->assertSame([['GRP0001', 'en', 'Colour']], $store->rows);
+        $this->assertSame([['GRP0001', 'en_GB', 'Colour']], $store->rows, 'a bare code is stored in canonical form');
+        $this->assertSame('Colour', $grupo->get_nombre_idioma('en-gb'));
+        $this->assertSame('Color', $grupo->get_nombre_idioma('es'), 'a bare default code still resolves the base column');
 
-        $this->assertTrue($grupo->set_idioma('en', 'Color (EN)'));
-        $this->assertSame([['GRP0001', 'en', 'Color (EN)']], $store->rows, 'a second write updates, never duplicates');
-        $this->assertSame([], $grupo->baseSaves, 'a non-default language never touches the base column');
+        $this->assertTrue($grupo->set_idioma('es', 'Tono'));
+        $this->assertSame('Tono', $grupo->nombre);
+        $this->assertCount(1, $store->rows, 'the default language never reaches the child table');
     }
 
     public function test_set_idioma_with_empty_name_removes_the_row_and_never_creates_one(): void
     {
-        $store = new FakeGrupoIdiomaStore([['GRP0001', 'en', 'Colour']]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $store = new FakeGrupoIdiomaStore([['GRP0001', 'en_GB', 'Colour']]);
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
-        $this->assertTrue($grupo->set_idioma('en', '  '));
+        $this->assertTrue($grupo->set_idioma('en_GB', '  '));
         $this->assertSame([], $store->rows);
 
-        $this->assertTrue($grupo->set_idioma('fr', ''));
+        $this->assertTrue($grupo->set_idioma('fr_FR', ''));
         $this->assertSame([], $store->rows, 'an empty name for an absent language materialises nothing');
     }
 
     public function test_set_idioma_default_mirrors_into_the_base_column(): void
     {
         $store = new FakeGrupoIdiomaStore([]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
-        $this->assertTrue($grupo->set_idioma('es', 'Tono'));
+        $this->assertTrue($grupo->set_idioma('es_ES', 'Tono'));
         $this->assertSame('Tono', $grupo->nombre);
         $this->assertSame(['Tono'], $grupo->baseSaves);
         $this->assertSame([], $store->rows, 'the default language is never stored in the child table');
@@ -88,25 +103,25 @@ final class CatalogoOpcionalGrupoIdiomaTest extends TestCase
     public function test_set_idioma_default_with_empty_name_is_rejected_and_restores_the_base(): void
     {
         $store = new FakeGrupoIdiomaStore([]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
-        $this->assertFalse($grupo->set_idioma('es', ''));
+        $this->assertFalse($grupo->set_idioma('es_ES', ''));
         $this->assertSame('Color', $grupo->nombre, 'a rejected save must not leave the in-memory base ahead');
     }
 
     public function test_set_idioma_is_refused_without_a_codigo(): void
     {
         $store = new FakeGrupoIdiomaStore([]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', '', 'Color');
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', '', 'Color');
 
-        $this->assertFalse($grupo->set_idioma('en', 'Colour'));
+        $this->assertFalse($grupo->set_idioma('en_GB', 'Colour'));
         $this->assertSame([], $grupo->get_idiomas());
     }
 
     public function test_get_idiomas_returns_the_child_rows(): void
     {
-        $store = new FakeGrupoIdiomaStore([['GRP0001', 'en', 'Colour'], ['GRP0002', 'en', 'Other']]);
-        $grupo = new FakeGrupoIdiomaChain($store, 'es', 'GRP0001', 'Color');
+        $store = new FakeGrupoIdiomaStore([['GRP0001', 'en_GB', 'Colour'], ['GRP0002', 'en_GB', 'Other']]);
+        $grupo = new FakeGrupoIdiomaChain($store, 'es_ES', 'GRP0001', 'Color');
 
         $rows = $grupo->get_idiomas();
         $this->assertCount(1, $rows);
@@ -186,7 +201,7 @@ final class FakeGrupoIdiomaModel extends catalogo_opcional_grupo_idioma
         $this->table_name = catalogo_opcional_grupo_idioma::TABLE;
         $this->id = $row === null ? null : 1;
         $this->codigo = $row[0] ?? null;
-        $this->codidioma = $row[1] ?? 'es';
+        $this->codidioma = $row[1] ?? 'es_ES';
         $this->nombre = $row[2] ?? '';
     }
 

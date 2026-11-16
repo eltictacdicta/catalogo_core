@@ -354,14 +354,14 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
                     public function all_activos(): array
                     {
                         return [
-                            (object) ['codidioma' => 'es', 'nombre' => 'Español'],
-                            (object) ['codidioma' => 'en', 'nombre' => 'English'],
+                            (object) ['codidioma' => 'es_ES', 'nombre' => 'Español'],
+                            (object) ['codidioma' => 'en_GB', 'nombre' => 'English'],
                         ];
                     }
 
                     public function get_effective_default_code(): string
                     {
-                        return 'es';
+                        return 'es_ES';
                     }
                 };
             }
@@ -719,8 +719,8 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         $subject = $this->buildSubject(
             $this->request('/index.php?page=ventas_opcionales', 'POST', [
                 'codigo' => 'OPC0002',
-                'idioma_nombre' => ['es' => ' Hola ', 'en' => 'Hello', 'fr' => 'Bonjour'],
-                'idioma_descripcion' => ['es' => 'Desc ES', 'en' => 'Desc EN', 'fr' => 'Desc FR'],
+                'idioma_nombre' => ['es_ES' => ' Hola ', 'en_GB' => 'Hello', 'fr_FR' => 'Bonjour'],
+                'idioma_descripcion' => ['es_ES' => 'Desc ES', 'en_GB' => 'Desc EN', 'fr_FR' => 'Desc FR'],
             ]),
             null,
             $opcional
@@ -733,7 +733,7 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         self::assertSame('Hola', $opcional->nombre, 'the configured default language mirrors into the base name');
         self::assertSame('Desc ES', $opcional->descripcion, 'the configured default language mirrors into the base description');
         self::assertSame(
-            ['en' => ['nombre' => 'Hello', 'descripcion' => 'Desc EN']],
+            ['en_GB' => ['nombre' => 'Hello', 'descripcion' => 'Desc EN']],
             $opcional->idiomas,
             'only active non-default languages go through set_idioma(); unknown (fr) and default (es) are skipped'
         );
@@ -746,8 +746,8 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         $subject = $this->buildSubject(
             $this->request('/index.php?page=ventas_opcionales', 'POST', [
                 'codigo' => 'OPC0002',
-                'idioma_nombre' => ['es' => 'Hola', 'en' => ''],
-                'idioma_descripcion' => ['es' => '', 'en' => ''],
+                'idioma_nombre' => ['es_ES' => 'Hola', 'en_GB' => ''],
+                'idioma_descripcion' => ['es_ES' => '', 'en_GB' => ''],
             ]),
             null,
             $opcional
@@ -766,7 +766,7 @@ final class CatalogoOpcionalesUnifiedControllerTest extends TestCase
         $subject = $this->buildSubject(
             $this->request('/index.php?page=ventas_opcionales', 'POST', [
                 'codigo' => 'OPC0002',
-                'idioma_nombre' => ['es' => '  ', 'en' => 'Hello'],
+                'idioma_nombre' => ['es_ES' => '  ', 'en_GB' => 'Hello'],
             ]),
             null,
             $opcional

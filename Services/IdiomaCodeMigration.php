@@ -23,7 +23,7 @@ use FSFramework\model\catalogo_idioma;
  */
 final class IdiomaCodeMigration
 {
-    private const CHILD_TABLES = ['articulo_descripciones', 'catalogo_opcional_idiomas'];
+    private const CHILD_TABLES = ['articulo_descripciones', 'catalogo_opcional_idiomas', 'catalogo_opcional_grupo_idiomas'];
 
     public static function migrateIfNeeded(\fs_db2 $db): void
     {
