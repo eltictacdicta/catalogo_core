@@ -1,0 +1,69 @@
+{#- Article sheet in a modal, shared by every list that links to an article
+    (ventas_articulos, tarif_catalogo_view). It frames the real ventas_articulo
+    page instead of re-rendering it as a fragment: that page owns a full-form
+    POST, whole-body htmx swaps and its own Alpine components, none of which
+    survive being injected into another document.
+
+    Contract: any <a data-articulo-modal href="<article url>"> opens here; a
+    ctrl/shift/middle click still opens the full page. ventas_articulo hides the
+    theme chrome by itself when framed and flags window.parent
+    .__fichaArticuloCambiada after a save, so the list reloads on close only
+    when something changed. Listeners are delegated: rows arrive via htmx. -#}
+<style>
+    #modal_ficha_articulo .modal-dialog { width: 96% !important; max-width: 1500px !important; margin: 15px auto; }
+    #modal_ficha_articulo .modal-body { padding: 0; }
+    #modal_ficha_articulo iframe { display: block; width: 100%; height: calc(100vh - 110px); border: 0; }
+</style>
+<div class="modal fade" id="modal_ficha_articulo" tabindex="-1" role="dialog" aria-labelledby="modal_ficha_articulo_title">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="{{ 'close'|trans }}"><span aria-hidden="true">&times;</span></button>
+                <h4 class="modal-title" id="modal_ficha_articulo_title"><i class="fa fa-cube" aria-hidden="true"></i>&nbsp; {{ 'article'|trans }}</h4>
+            </div>
+            <div class="modal-body">
+                <iframe title="{{ 'article'|trans }}" src="about:blank"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.__fichaArticuloModalBound === true) { return; }
+    window.__fichaArticuloModalBound = true;
+
+    function marco() {
+        return document.querySelector('#modal_ficha_articulo iframe');
+    }
+
+    document.addEventListener('click', function (evt) {
+        var link = evt.target.closest ? evt.target.closest('a[data-articulo-modal]') : null;
+        var frame = marco();
+        if (!link || !frame || evt.button !== 0 || evt.ctrlKey || evt.metaKey || evt.shiftKey) { return; }
+        evt.preventDefault();
+        window.__fichaArticuloCambiada = false;
+        frame.src = link.href;
+        $('#modal_ficha_articulo').modal('show');
+    });
+
+    // The frame left the article sheet (e.g. the article was deleted and the
+    // controller redirected to the list): close and refresh this page instead
+    // of browsing the application inside the modal.
+    document.addEventListener('load', function (evt) {
+        if (evt.target !== marco()) { return; }
+        var destino = '';
+        try { destino = evt.target.contentWindow.location.href; } catch (e) { return; }
+        if (destino !== 'about:blank' && destino.indexOf('page=ventas_articulo') === -1) {
+            window.location.reload();
+        }
+    }, true);
+
+    $(document).on('hidden.bs.modal', '#modal_ficha_articulo', function () {
+        var frame = marco();
+        if (frame) { frame.src = 'about:blank'; }
+        // shortcut: a full reload loses the list's expanded/scroll state; swap
+        // only the edited row if that becomes annoying.
+        if (window.__fichaArticuloCambiada === true) { window.location.reload(); }
+    });
+})();
+</script>

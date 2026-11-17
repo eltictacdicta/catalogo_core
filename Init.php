@@ -588,6 +588,8 @@ final class Init
                 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_idioma.php';
                 require_once FS_FOLDER . '/plugins/catalogo_core/Services/IdiomaCodeMigration.php';
                 IdiomaCodeMigration::migrateIfNeeded($db);
+                require_once FS_FOLDER . '/plugins/catalogo_core/Services/DescripcionLargaMigration.php';
+                \FSFramework\Plugins\catalogo_core\Services\DescripcionLargaMigration::migrateIfNeeded($db);
             }
         } catch (\Throwable $e) {
             error_log('[catalogo_core] Legacy table migration failed: ' . $e->getMessage());

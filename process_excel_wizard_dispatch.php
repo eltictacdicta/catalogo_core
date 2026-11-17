@@ -571,7 +571,7 @@ function catalogoApplyLocaleFields(
     \FSFramework\Plugins\catalogo_core\Services\ArticuloExcelRowUpdater::applyDescripcionIdioma(
         $targetCodidioma,
         $pair['descripcion'],
-        $pair['descripcion_corta'],
+        $pair['descripcion_larga'],
         $art
     );
 }

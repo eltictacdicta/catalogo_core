@@ -182,7 +182,7 @@
                         {% for articulo in fsc.resultados %}
                         <tr>
                             <td>
-                                <a href="{{ articulo.url() }}">{{ articulo.referencia }}</a>
+                                <a href="{{ articulo.url() }}" data-articulo-modal>{{ articulo.referencia }}</a>
                             </td>
                             <td>{{ articulo.descripcion(120) }}</td>
                             <td>
@@ -250,7 +250,7 @@
                                         </button>
                                     </form>
                                     {% endif %}
-                                    <a class="btn btn-sm btn-primary" href="{{ articulo.url() }}" title="{{ 'show'|trans }}">
+                                    <a class="btn btn-sm btn-primary" href="{{ articulo.url() }}" data-articulo-modal title="{{ 'show'|trans }}">
                                         <span class="glyphicon glyphicon-eye-open"></span>
                                     </a>
                                 </div>
@@ -297,6 +297,7 @@
 {# Create modal — the Alpine `articulosList` component opens the partial form,
    whose <form> submits through hx-post (ALC-04/AD-W3-9). #}
 {% include 'partials/articulos/modal_nuevo_articulo.html.twig' %}
+{% include 'partials/articulos/modal_ficha.html.twig' %}
 
 {% if fsc.can_import_export %}
 {% include 'partials/articulos/modal_exportar_excel.html.twig' %}

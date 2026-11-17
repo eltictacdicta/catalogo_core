@@ -1,0 +1,68 @@
+{#- Shared look and behaviour of the catalogue edit sheets (artículo, opcional,
+    grupo de opcionales): the header card with the name on top and the language
+    selector, and the client-side language switch that needs no page reload.
+
+    Markup contract:
+      - <select data-idioma-selector> picks the visible language;
+      - every per-language block carries data-codidioma="<code>" (+ hidden);
+      - <textarea data-contador> updates the .ficha-contador that follows it.
+    The listeners are delegated on document so they survive htmx body swaps
+    (allowScriptTags:false scrubs this script from swapped fragments). -#}
+<style>
+    .ficha-cabecera { display: flex; gap: 15px; align-items: stretch; background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 12px 15px; margin-bottom: 15px; }
+    .ficha-cabecera-img { flex: 0 0 96px; height: 96px; display: flex; align-items: center; justify-content: center; background: #f4f4f4; border-radius: 3px; color: #bbb; font-size: 36px; overflow: hidden; }
+    .ficha-cabecera-img img { max-width: 100%; max-height: 100%; }
+    .ficha-cabecera-main { flex: 1 1 auto; min-width: 0; }
+    .ficha-cabecera-main > label { font-weight: normal; color: #666; }
+    .ficha-cabecera-nombre { display: flex; gap: 8px; }
+    .ficha-cabecera-nombre .form-control { height: 40px; font-size: 16px; }
+    .ficha-cabecera-nombre select.form-control { flex: 0 0 auto; width: auto; font-size: 14px; }
+    .ficha-cabecera-flags { margin-top: 8px; }
+    .ficha-cabecera-meta { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; text-align: right; }
+    .ficha-cabecera-meta .label { font-size: 12px; }
+    .ficha-contador { text-align: right; font-style: italic; margin: 3px 0 0; }
+    .ficha-idioma-tag { font-weight: normal; color: #999; }
+    /* .form-control sets display:block and would beat the bare [hidden] rule. */
+    [data-codidioma][hidden] { display: none !important; }
+    @media (max-width: 767px) {
+        .ficha-cabecera { flex-wrap: wrap; }
+        .ficha-cabecera-nombre { flex-wrap: wrap; }
+        .ficha-cabecera-meta { flex-basis: 100%; flex-direction: row; align-items: center; }
+    }
+</style>
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.__fichaIdiomasBound === true) { return; }
+    window.__fichaIdiomasBound = true;
+
+    function mostrarIdioma(selector) {
+        var scope = selector.closest('form') || document;
+        Array.prototype.forEach.call(scope.querySelectorAll('[data-codidioma]'), function (bloque) {
+            bloque.hidden = bloque.getAttribute('data-codidioma') !== selector.value;
+        });
+    }
+
+    document.addEventListener('change', function (evt) {
+        if (evt.target.matches && evt.target.matches('[data-idioma-selector]')) {
+            mostrarIdioma(evt.target);
+        }
+    });
+
+    // A required field in a hidden language cannot be focused, so the browser
+    // would refuse the submit silently: show that language instead.
+    document.addEventListener('invalid', function (evt) {
+        var bloque = evt.target.closest ? evt.target.closest('[data-codidioma][hidden]') : null;
+        var scope = bloque ? (bloque.closest('form') || document) : null;
+        var selector = scope ? scope.querySelector('[data-idioma-selector]') : null;
+        if (!selector) { return; }
+        selector.value = bloque.getAttribute('data-codidioma');
+        mostrarIdioma(selector);
+    }, true);
+
+    document.addEventListener('input', function (evt) {
+        if (!evt.target.matches || !evt.target.matches('[data-contador]')) { return; }
+        var contador = evt.target.parentNode.querySelector('.ficha-contador span');
+        if (contador) { contador.textContent = evt.target.value.length; }
+    });
+})();
+</script>

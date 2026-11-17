@@ -116,7 +116,7 @@ final class ArticuloMultiidiomaTest extends TestCase
         $this->assertSame('aaaaaaaaaa...', $art->descripcion_idioma(null, 10));
     }
 
-    public function test_get_descripcion_corta_idioma_is_same_language_only(): void
+    public function test_get_descripcion_larga_idioma_is_same_language_only(): void
     {
         // LOCAL DECISION (D-08, R2): the short-description accessor does NOT
         // inherit the description fallback chain. It returns the requested
@@ -127,14 +127,14 @@ final class ArticuloMultiidiomaTest extends TestCase
                 ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Hola', 'descripcion_corta' => 'Corta ES'],
-                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Hello', 'descripcion_corta' => 'Short EN'],
+                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Hola', 'descripcion_larga' => 'Corta ES'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Hello', 'descripcion_larga' => 'Short EN'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', 'Base');
 
-        $this->assertSame('Short EN', $art->get_descripcion_corta_idioma('en_GB'));
-        $this->assertSame('Corta ES', $art->get_descripcion_corta_idioma(), 'a null code resolves the configured default');
-        $this->assertSame('', $art->get_descripcion_corta_idioma('fr_FR'), 'no cross-language fallback for the short text');
+        $this->assertSame('Short EN', $art->get_descripcion_larga_idioma('en_GB'));
+        $this->assertSame('Corta ES', $art->get_descripcion_larga_idioma(), 'a null code resolves the configured default');
+        $this->assertSame('', $art->get_descripcion_larga_idioma('fr_FR'), 'no cross-language fallback for the short text');
     }
 }

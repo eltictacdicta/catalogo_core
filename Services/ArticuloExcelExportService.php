@@ -169,7 +169,7 @@ class ArticuloExcelExportService
     /**
      * The additive locale header list (D-07): for every supplied (active)
      * language, one `descripcion_<codidioma>` then one
-     * `descripcion_corta_<codidioma>`, ordered default language first, then the
+     * `descripcion_larga_<codidioma>`, ordered default language first, then the
      * remaining languages by `codidioma` (deterministic).
      *
      * @param array<int, object|array<string, mixed>> $idiomas
@@ -180,7 +180,7 @@ class ArticuloExcelExportService
         $headers = [];
         foreach (self::orderedCodes($idiomas, $codidioma_defecto) as $codigo) {
             $headers[] = 'descripcion_' . $codigo;
-            $headers[] = 'descripcion_corta_' . $codigo;
+            $headers[] = 'descripcion_larga_' . $codigo;
         }
 
         return $headers;
@@ -235,10 +235,10 @@ class ArticuloExcelExportService
         foreach ($localeCodes as $codigo) {
             if ($art instanceof \FSFramework\model\articulo) {
                 $descripcion = (string) $art->get_descripcion_idioma($codigo);
-                $descripcionCorta = (string) $art->get_descripcion_corta_idioma($codigo);
+                $descripcionLarga = (string) $art->get_descripcion_larga_idioma($codigo);
             } else {
                 $descripcion = (string) ($art['descripcion_' . $codigo] ?? '');
-                $descripcionCorta = (string) ($art['descripcion_corta_' . $codigo] ?? '');
+                $descripcionLarga = (string) ($art['descripcion_larga_' . $codigo] ?? '');
             }
 
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + $index + 1) . $row;
@@ -246,7 +246,7 @@ class ArticuloExcelExportService
             $index++;
 
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + $index + 1) . $row;
-            $sheet->setCellValue($cell, $descripcionCorta);
+            $sheet->setCellValue($cell, $descripcionLarga);
             $index++;
         }
     }

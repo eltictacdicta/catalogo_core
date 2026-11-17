@@ -21,7 +21,7 @@ class articulo_descripcion extends \fs_model
     public $referencia;
     public $codidioma;
     public $descripcion;
-    public $descripcion_corta;
+    public $descripcion_larga;
 
     public function __construct($data = false)
     {
@@ -32,13 +32,13 @@ class articulo_descripcion extends \fs_model
             $this->referencia = $data['referencia'];
             $this->codidioma = $data['codidioma'];
             $this->descripcion = $data['descripcion'];
-            $this->descripcion_corta = $data['descripcion_corta'];
+            $this->descripcion_larga = $data['descripcion_larga'] ?? null;
         } else {
             $this->id = null;
             $this->referencia = null;
             $this->codidioma = catalogo_idioma::DEFAULT_CODE;
             $this->descripcion = '';
-            $this->descripcion_corta = null;
+            $this->descripcion_larga = null;
         }
     }
 
@@ -96,7 +96,7 @@ class articulo_descripcion extends \fs_model
     public function test()
     {
         $this->descripcion = $this->no_html($this->descripcion);
-        $this->descripcion_corta = $this->no_html($this->descripcion_corta);
+        $this->descripcion_larga = $this->no_html($this->descripcion_larga);
 
         if (is_null($this->referencia) || strlen($this->referencia) < 1) {
             $this->new_error_msg('Referencia de artículo no válida.');
@@ -115,9 +115,9 @@ class articulo_descripcion extends \fs_model
     }
 
     /**
-     * An empty description AND an empty short description mean "absent".
+     * An empty description AND an empty long description mean "absent".
      *
-     * A row whose `descripcion` is empty but whose `descripcion_corta` is set is
+     * A row whose `descripcion` is empty but whose `descripcion_larga` is set is
      * preserved: keeping it is a LOCAL DECISION with no external evidence
      * (PrestaShop updates the `_lang` row in place and Odoo drops the language
      * key). The maintainer owns this choice.
@@ -125,7 +125,7 @@ class articulo_descripcion extends \fs_model
     private function isEmptyPair(): bool
     {
         return mb_strlen((string) $this->descripcion) < 1
-            && mb_strlen((string) $this->descripcion_corta) < 1;
+            && mb_strlen((string) $this->descripcion_larga) < 1;
     }
 
     public function save()
@@ -150,14 +150,14 @@ class articulo_descripcion extends \fs_model
                 . 'referencia = ' . $this->var2str($this->referencia)
                 . ', codidioma = ' . $this->var2str($this->codidioma)
                 . ', descripcion = ' . $this->var2str($this->descripcion)
-                . ', descripcion_corta = ' . $this->var2str($this->descripcion_corta)
+                . ', descripcion_larga = ' . $this->var2str($this->descripcion_larga)
                 . ' WHERE id = ' . $this->intval($this->id) . ';';
         } else {
-            $sql = 'INSERT INTO ' . $this->table_name . ' (referencia, codidioma, descripcion, descripcion_corta) VALUES ('
+            $sql = 'INSERT INTO ' . $this->table_name . ' (referencia, codidioma, descripcion, descripcion_larga) VALUES ('
                 . $this->var2str($this->referencia) . ','
                 . $this->var2str($this->codidioma) . ','
                 . $this->var2str($this->descripcion) . ','
-                . $this->var2str($this->descripcion_corta) . ');';
+                . $this->var2str($this->descripcion_larga) . ');';
         }
 
         if ($this->db->exec($sql)) {

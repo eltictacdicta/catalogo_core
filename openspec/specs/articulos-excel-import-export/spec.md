@@ -98,7 +98,7 @@ workbook MUST be byte-identical to the pre-change workbook. The base `Descripci√
 cell MUST resolve the configured default language (`gestion-idiomas` `GDI-10`).
 After `Bloqueado` and after any exportable feature columns, the export MUST
 append, for every **active** language, one `descripcion_<codidioma>` column
-followed by one `descripcion_corta_<codidioma>` column, ordered **default language
+followed by one `descripcion_larga_<codidioma>` column, ordered **default language
 first, then the remaining active languages by `codidioma`** (deterministic). A
 **deactivated** language MUST be omitted from new exports. When no extra active
 language exists beyond the default, the appended set is the default language's
@@ -133,8 +133,8 @@ exportable feature columns.)
 
 - GIVEN active languages `es` (default) and `en`, and a deactivated `fr`
 - WHEN the export is generated
-- THEN `descripcion_es`, `descripcion_corta_es`, `descripcion_en`, `descripcion_corta_en` appear after `Bloqueado` and the feature columns in that order
-- AND no `descripcion_fr` / `descripcion_corta_fr` column is emitted
+- THEN `descripcion_es`, `descripcion_larga_es`, `descripcion_en`, `descripcion_larga_en` appear after `Bloqueado` and the feature columns in that order
+- AND no `descripcion_fr` / `descripcion_larga_fr` column is emitted
 - Test: `plugins/catalogo_core/tests/Services/ArticuloExcelIdiomasTest.php`
 
 #### Scenario: A non-default language's text is exported under its suffix
@@ -160,7 +160,7 @@ match key or the persistence of the base fields, and an unmapped or empty featur
 column MUST be a no-op. The wizard MUST also accept an explicit **target language**
 for description writes (R5), defaulting to the configured default language
 (`gestion-idiomas` `GDI-02`). Every active language's `descripcion_<codidioma>` /
-`descripcion_corta_<codidioma>` columns MUST be mappable per column. A header whose
+`descripcion_larga_<codidioma>` columns MUST be mappable per column. A header whose
 locale suffix does not correspond to a language row, or corresponds to a
 **deactivated** language, MUST be **ignored**: it MUST NOT raise an error, MUST NOT
 create a language row, and MUST NOT mutate the language registry in any way. The

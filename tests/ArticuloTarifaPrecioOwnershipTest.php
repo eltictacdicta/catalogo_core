@@ -108,7 +108,6 @@ final class ArticuloTarifaPrecioOwnershipTest extends TestCase
         // The physical table name is hardcoded by catalogo_core, so it must stay byte-stable.
         foreach ([
             'plugins/catalogo_core/model/tarif_tarifa.php',
-            'plugins/tarifario/controller/tarif_configurador_opcionales.php',
         ] as $consumer) {
             $this->assertStringContainsString(
                 self::TABLE_NAME,

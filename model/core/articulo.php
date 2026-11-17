@@ -1521,7 +1521,7 @@ class articulo extends \fs_model
     }
 
     /**
-     * Devuelve la descripción corta en un idioma específico.
+     * Devuelve la descripción (corta/título) de un idioma, truncada a $len.
      */
     public function descripcion_idioma($codidioma = null, $len = 120)
     {
@@ -1534,7 +1534,7 @@ class articulo extends \fs_model
     }
 
     /**
-     * Devuelve la descripción corta (columna `descripcion_corta`) de un idioma.
+     * Devuelve la descripción larga (columna `descripcion_larga`) de un idioma.
      *
      * LOCAL DECISION (D-08, R2): unlike `get_descripcion_idioma()`, this accessor
      * is same-language only and does NOT inherit the fallback chain. Showing
@@ -1542,7 +1542,7 @@ class articulo extends \fs_model
      * a fallback at display time and mislead the editor. The language is resolved
      * through the configured default when no code is given.
      */
-    public function get_descripcion_corta_idioma($codidioma = null)
+    public function get_descripcion_larga_idioma($codidioma = null)
     {
         if (is_null($this->referencia)) {
             return '';
@@ -1555,7 +1555,7 @@ class articulo extends \fs_model
 
         foreach ($this->get_descripciones() as $d) {
             if ((string) $d->codidioma === (string) $codidioma) {
-                return (string) ($d->descripcion_corta ?? '');
+                return (string) ($d->descripcion_larga ?? '');
             }
         }
 
@@ -1570,7 +1570,7 @@ class articulo extends \fs_model
      * language slot. Clearing and cache ownership live in
      * `articulo_descripcion::save()`.
      */
-    public function set_descripcion_idioma($codidioma, $descripcion, $descripcion_corta = null)
+    public function set_descripcion_idioma($codidioma, $descripcion, $descripcion_larga = null)
     {
         // Callers that still pass a bare legacy code ('es', 'en') keep working.
         $codidioma = catalogo_idioma::normalize_code($codidioma);
@@ -1583,7 +1583,7 @@ class articulo extends \fs_model
         }
 
         $d->descripcion = $descripcion;
-        $d->descripcion_corta = $descripcion_corta;
+        $d->descripcion_larga = $descripcion_larga;
 
         $this->descripciones_catalogo = null;
 

@@ -29,7 +29,7 @@ final class SearchCatalogFake
     /** @var list<array<string, mixed>> */
     public array $articulos = [];
 
-    /** @var list<array{referencia: string, codidioma: string, descripcion: string, descripcion_corta: ?string}> */
+    /** @var list<array{referencia: string, codidioma: string, descripcion: string, descripcion_larga: ?string}> */
     public array $descripciones = [];
 
     /** @var list<string> */
@@ -57,13 +57,13 @@ final class SearchCatalogFake
         string $referencia,
         string $codidioma,
         string $descripcion,
-        ?string $descripcionCorta = null
+        ?string $descripcionLarga = null
     ): void {
         $this->descripciones[] = [
             'referencia' => $referencia,
             'codidioma' => $codidioma,
             'descripcion' => $descripcion,
-            'descripcion_corta' => $descripcionCorta,
+            'descripcion_larga' => $descripcionLarga,
         ];
     }
 

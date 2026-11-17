@@ -67,7 +67,7 @@ final class ArticuloSearchCacheInvalidationTest extends TestCase
             'referencia' => 'ART1',
             'codidioma' => 'en',
             'descripcion' => 'English text',
-            'descripcion_corta' => null,
+            'descripcion_larga' => null,
         ]);
         $row->useFakeDb($db);
 
@@ -89,11 +89,11 @@ final class ArticuloSearchCacheInvalidationTest extends TestCase
             'referencia' => 'ART1',
             'codidioma' => 'en',
             'descripcion' => 'English text',
-            'descripcion_corta' => null,
+            'descripcion_larga' => null,
         ]]);
         $row = (new FakeArticuloDescripcion())->useFakeDb($db)->get_by_articulo_idioma('ART1', 'en');
         $row->descripcion = '';
-        $row->descripcion_corta = null;
+        $row->descripcion_larga = null;
 
         $this->assertTrue($row->save(), 'the clearing path must succeed');
 
@@ -114,7 +114,7 @@ final class ArticuloSearchCacheInvalidationTest extends TestCase
             'referencia' => 'ART1',
             'codidioma' => 'en',
             'descripcion' => 'English text',
-            'descripcion_corta' => null,
+            'descripcion_larga' => null,
         ]]);
         $row = (new FakeArticuloDescripcion())->useFakeDb($db)->get_by_articulo_idioma('ART1', 'en');
 

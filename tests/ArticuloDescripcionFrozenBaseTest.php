@@ -48,7 +48,7 @@ final class ArticuloDescripcionFrozenBaseTest extends TestCase
 
         $row = $db->descripciones[0];
         $this->assertSame('New row', $row['descripcion'], 'the language row carries the new text');
-        $this->assertSame('New short', $row['descripcion_corta']);
+        $this->assertSame('New short', $row['descripcion_larga']);
 
         $this->assertSame('Base original', $art->descripcion, 'the frozen base column must not be mirrored');
 

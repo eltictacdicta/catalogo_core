@@ -24,8 +24,8 @@
         <nulo>NO</nulo>
     </columna>
     <columna>
-        <nombre>descripcion_corta</nombre>
-        <tipo>character varying(150)</tipo>
+        <nombre>descripcion_larga</nombre>
+        <tipo>text</tipo>
         <nulo>YES</nulo>
     </columna>
     <restriccion>

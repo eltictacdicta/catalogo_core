@@ -1,4 +1,34 @@
 {{ include('header.html.twig') }}
+{#- Framed mode (partials/articulos/modal_ficha): when this page runs inside the
+    shared article modal it hides the theme chrome, tells the opener that
+    something was saved, and sends links to other pages to the top window. The
+    class sits on <html> and the listeners on document, so both survive the
+    whole-body htmx swaps of this page. -#}
+<style>
+    html.ficha-embebida .main-header, html.ficha-embebida .main-sidebar, html.ficha-embebida .main-footer,
+    html.ficha-embebida .panel.hidden-print, html.ficha-embebida .phpdebugbar { display: none !important; }
+    html.ficha-embebida .content-wrapper { margin-left: 0 !important; min-height: 0 !important; }
+</style>
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.self === window.top || window.__fichaEmbebidaBound === true) { return; }
+    window.__fichaEmbebidaBound = true;
+    document.documentElement.classList.add('ficha-embebida');
+
+    function cambiada() {
+        try { window.parent.__fichaArticuloCambiada = true; } catch (e) { /* cross-origin opener: nothing to notify */ }
+    }
+    document.addEventListener('submit', cambiada, true);
+    document.addEventListener('htmx:after:request', cambiada);
+
+    document.addEventListener('click', function (evt) {
+        var link = evt.target.closest ? evt.target.closest('a[href]') : null;
+        if (!link) { return; }
+        var href = link.getAttribute('href');
+        if (href.charAt(0) !== '#' && href.indexOf('page=ventas_articulo') === -1) { link.target = '_top'; }
+    }, true);
+})();
+</script>
 {% import 'Macro/Htmx.html.twig' as htmx %}
 {% import 'Macro/Alpine.html.twig' as alpine %}
 
@@ -8,6 +38,7 @@
     mirroring tarif_opcional_edit, so the document-level bootstrap is installed
     before most of the body is parsed. -#}
 {{ htmx.boot({'allowScriptTags': false}) }}
+{% include 'partials/ficha_assets.html.twig' %}
 
 <div class="container-fluid" x-data="articuloDetalle"
      x-on:tarifarioMessage.window="notify($event.detail.ok, $event.detail.message)">
@@ -79,6 +110,75 @@
                 {{ csrf_field() }}
                 <input type="hidden" name="sreferencia" value="{{ fsc.articulo.referencia }}"/>
 
+                {#- Header card: the short description (the article's title) on top
+                    with the language selector. Every active language is rendered
+                    and switched client-side (partials/ficha_assets), so changing
+                    language never reloads the page; the selector posts `codidioma`
+                    so the editor reopens on the same language after saving. -#}
+                {% set imagen_principal = fsc.imagenes is iterable ? fsc.imagenes|first : null %}
+                <div class="ficha-cabecera">
+                    <div class="ficha-cabecera-img">
+                        {% if imagen_principal %}
+                        <img src="{{ imagen_principal.url_imagen() }}" alt="{{ fsc.articulo.referencia }}"/>
+                        {% else %}
+                        <i class="fa fa-cube" aria-hidden="true"></i>
+                        {% endif %}
+                    </div>
+                    <div class="ficha-cabecera-main">
+                        <label for="descripcion_{{ fsc.codidioma }}">{{ 'short-description'|trans }}</label>
+                        {% if fsc.idiomas|length > 0 %}
+                        <div class="ficha-cabecera-nombre">
+                            {% for idioma in fsc.idiomas %}
+                            <input class="form-control" type="text"
+                                   id="descripcion_{{ idioma.codidioma }}"
+                                   name="descripcion_{{ idioma.codidioma }}"
+                                   data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma %} hidden{% endif %}
+                                   value="{{ fsc.descripciones_idioma[idioma.codidioma].descripcion ?? '' }}"
+                                   placeholder="{{ fsc.articulo.get_descripcion_idioma(idioma.codidioma) }}"
+                                   aria-label="{{ 'short-description'|trans }} ({{ idioma.nombre }})"
+                                   {% if idioma.por_defecto %}required{% endif %} autocomplete="off"/>
+                            {% endfor %}
+                            <select class="form-control" name="codidioma" data-idioma-selector
+                                    aria-label="{{ 'language'|trans }}" title="{{ 'language'|trans }}">
+                                {% for idioma in fsc.idiomas %}
+                                <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma %} selected{% endif %}>{{ idioma.nombre }}{% if idioma.por_defecto %} ★{% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info" style="margin-bottom: 0;">{{ 'no-languages-configured'|trans }}</div>
+                        {% endif %}
+                        <div class="ficha-cabecera-flags">
+                            <label class="checkbox-inline">
+                                <input type="checkbox" name="ssevende" value="TRUE" {% if fsc.articulo.sevende %}checked{% endif %}/>
+                                {{ 'can-sell'|trans }}
+                            </label>
+                            <label class="checkbox-inline">
+                                <input type="checkbox" name="ssecompra" value="TRUE" {% if fsc.articulo.secompra %}checked{% endif %}/>
+                                {{ 'can-buy'|trans }}
+                            </label>
+                            <label class="checkbox-inline">
+                                <input type="checkbox" name="spublico" value="TRUE" {% if fsc.articulo.publico %}checked{% endif %}/>
+                                {{ 'public'|trans }}
+                            </label>
+                            <label class="checkbox-inline">
+                                <input type="checkbox" name="sbloqueado" value="TRUE" {% if fsc.articulo.bloqueado %}checked{% endif %}/>
+                                {{ 'article-blocked'|trans }}
+                            </label>
+                        </div>
+                    </div>
+                    <div class="ficha-cabecera-meta">
+                        <div>
+                            {% if fsc.tarifas|length == 0 %}
+                            <span class="label label-default">{{ fsc.articulo.pvp|number_format(2, ',', '.') }}</span> {{ 'without-tax'|trans }}
+                            &nbsp;
+                            {% endif %}
+                            <span class="label {% if fsc.articulo.stockfis > 0 %}label-success{% else %}label-default{% endif %}">{{ fsc.articulo.stockfis|number_format(0, ',', '.') }}</span> {{ 'stock'|trans }}
+                        </div>
+                        <div>{{ 'reference'|trans }}: <strong>{{ fsc.articulo.referencia }}</strong></div>
+                    </div>
+                </div>
+
                 <ul class="nav nav-tabs" id="tab_articulo" role="tablist"
                     x-data="articuloTabs" x-init="activarDesdeHash()">
                     <li role="presentation" class="active">
@@ -100,131 +200,47 @@
                            tabs. #}
                         <div class="articulo-secciones-nav" style="margin-bottom: 10px;">
                             <div class="btn-group btn-group-xs">
-                                <a class="btn btn-default" href="#datos-ficha">{{ 'data'|trans }}</a>
-                                <a class="btn btn-default" href="#precios-tarifa">{{ 'prices'|trans }}</a>
-                                <a class="btn btn-default" href="#stock-articulo">{{ 'stock'|trans }}</a>
-                                <a class="btn btn-default" href="#multiidioma">{{ 'languages'|trans }}</a>
                                 <a class="btn btn-default" href="#imagenes">{{ 'images'|trans }}</a>
+                                <a class="btn btn-default" href="#precios-tarifa">{{ 'prices'|trans }}</a>
+                                <a class="btn btn-default" href="#datos-ficha">{{ 'data'|trans }}</a>
+                                <a class="btn btn-default" href="#multiidioma">{{ 'long-description'|trans }}</a>
+                                <a class="btn btn-default" href="#stock-articulo">{{ 'stock'|trans }}</a>
                             </div>
                         </div>
 
-                        {# Section: Datos #}
-                        <div class="panel panel-default" id="datos-ficha">
+                        {# Section: Imágenes del artículo (absorbido de tarif_articulo_edit, AD-W2-7) #}
+                        <div class="panel panel-default" id="imagenes" x-data="articuloImagenes">
                             <div class="panel-heading">
-                                <h3 class="panel-title">{{ 'reference'|trans }}: {{ fsc.articulo.referencia }}</h3>
+                                <h3 class="panel-title">{{ 'images'|trans }}</h3>
                             </div>
-                            <div class="panel-body">
-                                <div class="row">
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'reference'|trans }}:
-                                            <input class="form-control" type="text" name="snueva_referencia" value="{{ fsc.articulo.referencia }}" autocomplete="off"/>
+                            <div class="panel-body" id="articulo-imagenes">
+                                {% if fsc.imagenes is iterable %}
+                                    {% for imagen in fsc.imagenes %}
+                                        <div class="thumbnail" style="display: inline-block; margin-right: 10px;">
+                                            <img src="{{ imagen.url_imagen() }}" alt="{{ imagen.nombre_archivo }}" style="max-height: 90px;"/>
+                                            <div class="caption text-center">
+                                                <button type="button" class="btn btn-xs btn-default"
+                                                        hx-post="{{ fsc.url() }}"
+                                                        hx-vals='{"destacar_imagen": "{{ imagen.id }}", "_csrf_token": "{{ csrf_token() }}"}'
+                                                        hx-target="#articulo-imagenes" hx-swap="outerHTML"
+                                                        x-on:click="destacar()">{{ 'feature'|trans }}</button>
+                                                <button type="button" class="btn btn-xs btn-danger"
+                                                        hx-post="{{ fsc.url() }}"
+                                                        hx-vals='{"delete_imagen": "{{ imagen.id }}", "_csrf_token": "{{ csrf_token() }}"}'
+                                                        hx-target="#articulo-imagenes" hx-swap="outerHTML"
+                                                        hx-confirm="{{ 'delete'|trans }}"
+                                                        x-on:click="eliminar()">{{ 'delete'|trans }}</button>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'family'|trans }}:
-                                            <select class="form-control" name="scodfamilia">
-                                                <option value="">{{ 'none'|trans }}</option>
-                                                {% for familia in fsc.familias %}
-                                                    <option value="{{ familia.codfamilia }}" {% if fsc.articulo.codfamilia == familia.codfamilia %}selected{% endif %}>
-                                                        {{ familia.descripcion }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'manufacturer'|trans }}:
-                                            <select class="form-control" name="scodfabricante">
-                                                <option value="">{{ 'none'|trans }}</option>
-                                                {% for fabricante in fsc.fabricantes %}
-                                                    <option value="{{ fabricante.codfabricante }}" {% if fsc.articulo.codfabricante == fabricante.codfabricante %}selected{% endif %}>
-                                                        {{ fabricante.nombre }}
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="form-group">
-                                            {{ 'tax'|trans }}:
-                                            <select class="form-control" name="scodimpuesto" id="codimpuesto">
-                                                <option value="">{{ 'none'|trans }}</option>
-                                                {% for impuesto in fsc.impuestos %}
-                                                    <option value="{{ impuesto.codimpuesto }}" {% if fsc.articulo.codimpuesto == impuesto.codimpuesto %}selected{% endif %} data-iva="{{ impuesto.iva }}">
-                                                        {{ impuesto.descripcion }} ({{ impuesto.iva }}%)
-                                                    </option>
-                                                {% endfor %}
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-sm-6">
-                                        <div class="form-group">
-                                            {{ 'barcode'|trans }}:
-                                            <input class="form-control" type="text" name="scodbarras" value="{{ fsc.articulo.codbarras }}" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-6">
-                                        <div class="form-group">
-                                            {{ 'equivalence-code'|trans }}:
-                                            <input class="form-control" type="text" name="sequivalencia" value="{{ fsc.articulo.equivalencia }}" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-sm-6">
-                                        <div class="form-group">
-                                            {{ 'part-number'|trans }}:
-                                            <input class="form-control" type="text" name="spartnumber" value="{{ fsc.articulo.partnumber }}" autocomplete="off"/>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-sm-12">
-                                        <div class="form-group">
-                                            {{ 'observations'|trans }}:
-                                            <textarea class="form-control" name="sobservaciones" rows="2" autocomplete="off">{{ fsc.articulo.observaciones }}</textarea>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-sm-3">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="ssevende" value="TRUE" {% if fsc.articulo.sevende %}checked{% endif %}/>
-                                                {{ 'can-sell'|trans }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="ssecompra" value="TRUE" {% if fsc.articulo.secompra %}checked{% endif %}/>
-                                                {{ 'can-buy'|trans }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="spublico" value="TRUE" {% if fsc.articulo.publico %}checked{% endif %}/>
-                                                {{ 'public'|trans }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="sbloqueado" value="TRUE" {% if fsc.articulo.bloqueado %}checked{% endif %}/>
-                                                {{ 'blocked'|trans }}
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
+                                    {% endfor %}
+                                {% endif %}
+                                {% if fsc.allow_delete is defined and fsc.allow_delete %}
+                                {# Subida de imagen: el <form id="form_upload_imagen"> vive fuera del
+                                   formulario principal (HTML no admite formularios anidados); estos
+                                   controles se asocian a él con form="form_upload_imagen". #}
+                                <input type="file" name="imagen" form="form_upload_imagen"/>
+                                <button class="btn btn-xs btn-primary" type="submit" form="form_upload_imagen">{{ 'upload'|trans }}</button>
+                                {% endif %}
                             </div>
                         </div>
 
@@ -261,25 +277,25 @@
                                 <div class="row">
                                     <div class="col-sm-3">
                                         <div class="form-group">
-                                            {{ 'cost-price'|trans }}:
+                                            <label class="control-label" for="coste">{{ 'cost-price'|trans }}</label>
                                             <input class="form-control" type="text" id="coste" value="{{ fsc.articulo.preciocoste()|number_format(2, ',', '.') }}" readonly="readonly" x-ref="coste"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-3">
                                         <div class="form-group">
-                                            {{ 'sale-price'|trans }} ({{ 'without-tax'|trans }}):
+                                            <label class="control-label" for="pvp">{{ 'sale-price'|trans }} ({{ 'without-tax'|trans }})</label>
                                             <input class="form-control" type="text" id="pvp" name="spvp" value="{{ fsc.articulo.pvp|number_format(2, ',', '.') }}" x-model="pvp" x-on:input="recalcularPvp()" autocomplete="off"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-3">
                                         <div class="form-group">
-                                            {{ 'sale-price'|trans }} ({{ 'with-tax'|trans }}):
+                                            <label class="control-label" for="pvpi">{{ 'sale-price'|trans }} ({{ 'with-tax'|trans }})</label>
                                             <input class="form-control" type="text" id="pvpi" x-model="pvpi" x-on:input="recalcularPvpi()" autocomplete="off"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-3">
                                         <div class="form-group">
-                                            {{ 'margin'|trans }} (%):
+                                            <label class="control-label" for="margen">{{ 'margin'|trans }} (%)</label>
                                             <input class="form-control" type="text" id="margen" x-model="margen" x-on:input="recalcularMargen()" autocomplete="off"/>
                                         </div>
                                     </div>
@@ -409,6 +425,95 @@
                         </div>
                         {% endif %}
 
+                        {# Section: Datos #}
+                        <div class="panel panel-default" id="datos-ficha">
+                            <div class="panel-heading">
+                                <h3 class="panel-title">{{ 'data'|trans }}</h3>
+                            </div>
+                            <div class="panel-body">
+                                <div class="row">
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            <label class="control-label" for="nueva_referencia">{{ 'reference'|trans }}</label>
+                                            <input class="form-control" type="text" id="nueva_referencia" name="snueva_referencia" value="{{ fsc.articulo.referencia }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            <label class="control-label" for="codfamilia">{{ 'family'|trans }}</label>
+                                            <select class="form-control" id="codfamilia" name="scodfamilia">
+                                                <option value="">{{ 'none'|trans }}</option>
+                                                {% for familia in fsc.familias %}
+                                                    <option value="{{ familia.codfamilia }}" {% if fsc.articulo.codfamilia == familia.codfamilia %}selected{% endif %}>
+                                                        {{ familia.descripcion }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            <label class="control-label" for="codfabricante">{{ 'manufacturer'|trans }}</label>
+                                            <select class="form-control" id="codfabricante" name="scodfabricante">
+                                                <option value="">{{ 'none'|trans }}</option>
+                                                {% for fabricante in fsc.fabricantes %}
+                                                    <option value="{{ fabricante.codfabricante }}" {% if fsc.articulo.codfabricante == fabricante.codfabricante %}selected{% endif %}>
+                                                        {{ fabricante.nombre }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <div class="form-group">
+                                            <label class="control-label" for="codimpuesto">{{ 'tax'|trans }}</label>
+                                            <select class="form-control" id="codimpuesto" name="scodimpuesto">
+                                                <option value="">{{ 'none'|trans }}</option>
+                                                {% for impuesto in fsc.impuestos %}
+                                                    <option value="{{ impuesto.codimpuesto }}" {% if fsc.articulo.codimpuesto == impuesto.codimpuesto %}selected{% endif %} data-iva="{{ impuesto.iva }}">
+                                                        {{ impuesto.descripcion }} ({{ impuesto.iva }}%)
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-sm-6">
+                                        <div class="form-group">
+                                            <label class="control-label" for="codbarras">{{ 'barcode'|trans }}</label>
+                                            <input class="form-control" type="text" id="codbarras" name="scodbarras" value="{{ fsc.articulo.codbarras }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <div class="form-group">
+                                            <label class="control-label" for="equivalencia">{{ 'equivalence-code'|trans }}</label>
+                                            <input class="form-control" type="text" id="equivalencia" name="sequivalencia" value="{{ fsc.articulo.equivalencia }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-sm-6">
+                                        <div class="form-group">
+                                            <label class="control-label" for="partnumber">{{ 'part-number'|trans }}</label>
+                                            <input class="form-control" type="text" id="partnumber" name="spartnumber" value="{{ fsc.articulo.partnumber }}" autocomplete="off"/>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-sm-12">
+                                        <div class="form-group">
+                                            <label class="control-label" for="observaciones">{{ 'observations'|trans }}</label>
+                                            <textarea class="form-control" id="observaciones" name="sobservaciones" rows="2" autocomplete="off">{{ fsc.articulo.observaciones }}</textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {# Section: Descripción larga por idioma (in-pane panel, not a tab) #}
+                        {% include 'partials/articulos/tab_multiidioma.html.twig' %}
+
                         {# Section: Stock #}
                         <div class="panel panel-default" id="stock-articulo">
                             <div class="panel-heading">
@@ -418,20 +523,20 @@
                                 <div class="row">
                                     <div class="col-sm-4">
                                         <div class="form-group">
-                                            {{ 'physical-stock'|trans }}:
-                                            <input class="form-control" type="text" name="sstockfis" value="{{ fsc.articulo.stockfis|number_format(2, ',', '.') }}" autocomplete="off"/>
+                                            <label class="control-label" for="stockfis">{{ 'physical-stock'|trans }}</label>
+                                            <input class="form-control" type="text" id="stockfis" name="sstockfis" value="{{ fsc.articulo.stockfis|number_format(2, ',', '.') }}" autocomplete="off"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-4">
                                         <div class="form-group">
-                                            {{ 'minimum-stock'|trans }}:
-                                            <input class="form-control" type="text" name="sstockmin" value="{{ fsc.articulo.stockmin|number_format(2, ',', '.') }}" autocomplete="off"/>
+                                            <label class="control-label" for="stockmin">{{ 'minimum-stock'|trans }}</label>
+                                            <input class="form-control" type="text" id="stockmin" name="sstockmin" value="{{ fsc.articulo.stockmin|number_format(2, ',', '.') }}" autocomplete="off"/>
                                         </div>
                                     </div>
                                     <div class="col-sm-4">
                                         <div class="form-group">
-                                            {{ 'maximum-stock'|trans }}:
-                                            <input class="form-control" type="text" name="sstockmax" value="{{ fsc.articulo.stockmax|number_format(2, ',', '.') }}" autocomplete="off"/>
+                                            <label class="control-label" for="stockmax">{{ 'maximum-stock'|trans }}</label>
+                                            <input class="form-control" type="text" id="stockmax" name="sstockmax" value="{{ fsc.articulo.stockmax|number_format(2, ',', '.') }}" autocomplete="off"/>
                                         </div>
                                     </div>
                                 </div>
@@ -445,45 +550,6 @@
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-
-                        {# Section: Idiomas (visible in-pane panel, no longer a tab) #}
-                        {% include 'partials/articulos/tab_multiidioma.html.twig' %}
-
-                        {# Section: Imágenes del artículo (absorbido de tarif_articulo_edit, AD-W2-7) #}
-                        <div class="panel panel-default" id="imagenes" x-data="articuloImagenes">
-                            <div class="panel-heading">
-                                <h3 class="panel-title">{{ 'images'|trans }}</h3>
-                            </div>
-                            <div class="panel-body" id="articulo-imagenes">
-                                {% if fsc.imagenes is iterable %}
-                                    {% for imagen in fsc.imagenes %}
-                                        <div class="thumbnail" style="display: inline-block; margin-right: 10px;">
-                                            <img src="{{ imagen.url_imagen() }}" alt="{{ imagen.nombre_archivo }}" style="max-height: 90px;"/>
-                                            <div class="caption text-center">
-                                                <button type="button" class="btn btn-xs btn-default"
-                                                        hx-post="{{ fsc.url() }}"
-                                                        hx-vals='{"destacar_imagen": "{{ imagen.id }}", "_csrf_token": "{{ csrf_token() }}"}'
-                                                        hx-target="#articulo-imagenes" hx-swap="outerHTML"
-                                                        x-on:click="destacar()">{{ 'feature'|trans }}</button>
-                                                <button type="button" class="btn btn-xs btn-danger"
-                                                        hx-post="{{ fsc.url() }}"
-                                                        hx-vals='{"delete_imagen": "{{ imagen.id }}", "_csrf_token": "{{ csrf_token() }}"}'
-                                                        hx-target="#articulo-imagenes" hx-swap="outerHTML"
-                                                        hx-confirm="{{ 'delete'|trans }}"
-                                                        x-on:click="eliminar()">{{ 'delete'|trans }}</button>
-                                            </div>
-                                        </div>
-                                    {% endfor %}
-                                {% endif %}
-                                {% if fsc.allow_delete is defined and fsc.allow_delete %}
-                                {# Subida de imagen: el <form id="form_upload_imagen"> vive fuera del
-                                   formulario principal (HTML no admite formularios anidados); estos
-                                   controles se asocian a él con form="form_upload_imagen". #}
-                                <input type="file" name="imagen" form="form_upload_imagen"/>
-                                <button class="btn btn-xs btn-primary" type="submit" form="form_upload_imagen">{{ 'upload'|trans }}</button>
-                                {% endif %}
                             </div>
                         </div>
                     </div>

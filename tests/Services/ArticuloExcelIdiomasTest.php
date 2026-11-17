@@ -69,9 +69,9 @@ final class ArticuloExcelIdiomasTest extends TestCase
             ->getActiveSheet();
 
         $this->assertSame('descripcion_es_ES', $sheet->getCell('H1')->getValue());
-        $this->assertSame('descripcion_corta_es_ES', $sheet->getCell('I1')->getValue());
+        $this->assertSame('descripcion_larga_es_ES', $sheet->getCell('I1')->getValue());
         $this->assertSame('descripcion_en_GB', $sheet->getCell('J1')->getValue());
-        $this->assertSame('descripcion_corta_en_GB', $sheet->getCell('K1')->getValue());
+        $this->assertSame('descripcion_larga_en_GB', $sheet->getCell('K1')->getValue());
         $this->assertSame('K', $sheet->getHighestColumn());
 
         $headers = [];
@@ -79,7 +79,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
             $headers[] = $sheet->getCell(Coordinate::stringFromColumnIndex($index) . '1')->getValue();
         }
         $this->assertNotContains('descripcion_fr_FR', $headers, 'a deactivated language must be omitted');
-        $this->assertNotContains('descripcion_corta_fr_FR', $headers, 'a deactivated language must be omitted');
+        $this->assertNotContains('descripcion_larga_fr_FR', $headers, 'a deactivated language must be omitted');
     }
 
     public function test_export_orders_the_default_language_first(): void
@@ -95,9 +95,9 @@ final class ArticuloExcelIdiomasTest extends TestCase
             ->getActiveSheet();
 
         $this->assertSame('descripcion_en_GB', $sheet->getCell('H1')->getValue());
-        $this->assertSame('descripcion_corta_en_GB', $sheet->getCell('I1')->getValue());
+        $this->assertSame('descripcion_larga_en_GB', $sheet->getCell('I1')->getValue());
         $this->assertSame('descripcion_es_ES', $sheet->getCell('J1')->getValue());
-        $this->assertSame('descripcion_corta_es_ES', $sheet->getCell('K1')->getValue());
+        $this->assertSame('descripcion_larga_es_ES', $sheet->getCell('K1')->getValue());
     }
 
     public function test_export_writes_each_language_text_under_its_suffix(): void
@@ -108,8 +108,8 @@ final class ArticuloExcelIdiomasTest extends TestCase
                 ['codidioma' => 'en_GB'],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Texto ES', 'descripcion_corta' => 'Corta ES'],
-                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Text EN', 'descripcion_corta' => 'Short EN'],
+                ['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Texto ES', 'descripcion_larga' => 'Corta ES'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Text EN', 'descripcion_larga' => 'Short EN'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', 'legacy base text');
@@ -165,15 +165,15 @@ final class ArticuloExcelIdiomasTest extends TestCase
         $catalog = ArticuloExcelImportWizardService::languageFieldCatalog(self::ACTIVE);
 
         $this->assertArrayHasKey('descripcion_es_ES', $catalog);
-        $this->assertArrayHasKey('descripcion_corta_es_ES', $catalog);
+        $this->assertArrayHasKey('descripcion_larga_es_ES', $catalog);
         $this->assertArrayHasKey('descripcion_en_GB', $catalog);
-        $this->assertArrayHasKey('descripcion_corta_en_GB', $catalog);
-        $this->assertSame('Descripción (Español)', $catalog['descripcion_es_ES']['label']);
+        $this->assertArrayHasKey('descripcion_larga_en_GB', $catalog);
+        $this->assertSame('Descripción corta (Español)', $catalog['descripcion_es_ES']['label']);
         $this->assertSame('descripcion_en_GB', $catalog['descripcion_en_GB']['column']);
 
         $options = (new ArticuloExcelImportWizardService([]))->fieldOptions([], self::ACTIVE);
         $this->assertContains('descripcion_es_ES', array_column($options, 'value'));
-        $this->assertContains('descripcion_corta_en_GB', array_column($options, 'value'));
+        $this->assertContains('descripcion_larga_en_GB', array_column($options, 'value'));
     }
 
     public function test_language_field_aliases_feed_the_suggested_mapping(): void
@@ -184,13 +184,13 @@ final class ArticuloExcelIdiomasTest extends TestCase
         }
 
         $mapping = ArticuloExcelImportWizardService::suggestMapping(
-            ['Referencia', 'descripcion_en_GB', 'descripcion_corta_es_ES'],
+            ['Referencia', 'descripcion_en_GB', 'descripcion_larga_es_ES'],
             $extra
         );
 
         $this->assertSame('referencia', $mapping[0]);
         $this->assertSame('descripcion_en_GB', $mapping[1]);
-        $this->assertSame('descripcion_corta_es_ES', $mapping[2]);
+        $this->assertSame('descripcion_larga_es_ES', $mapping[2]);
     }
 
     public function test_unknown_locale_column_is_ignored_without_touching_the_registry(): void
@@ -242,7 +242,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
             self::ACTIVE,
             'en_GB'
         );
-        $this->assertSame(['descripcion' => 'EN', 'descripcion_corta' => null], $pair);
+        $this->assertSame(['descripcion' => 'EN', 'descripcion_larga' => null], $pair);
 
         // Without the target's own column, the first mapped locale in
         // default-first-then-`codidioma` order wins.
@@ -251,7 +251,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
             self::ACTIVE,
             'es_ES'
         );
-        $this->assertSame(['descripcion' => 'EN', 'descripcion_corta' => null], $pair);
+        $this->assertSame(['descripcion' => 'EN', 'descripcion_larga' => null], $pair);
     }
 
     public function test_mapped_but_empty_locale_pair_resolves_to_the_clearing_values(): void
@@ -259,12 +259,12 @@ final class ArticuloExcelIdiomasTest extends TestCase
         // `apply()` drops empty cells, so the caller re-adds a mapped-but-empty
         // locale field as ''. That presence is what drives the clearing path.
         $pair = ArticuloExcelImportWizardService::resolveLocalePair(
-            ['descripcion_en_GB' => '', 'descripcion_corta_en_GB' => ''],
+            ['descripcion_en_GB' => '', 'descripcion_larga_en_GB' => ''],
             self::ACTIVE,
             'en_GB'
         );
 
-        $this->assertSame(['descripcion' => '', 'descripcion_corta' => ''], $pair);
+        $this->assertSame(['descripcion' => '', 'descripcion_larga' => ''], $pair);
     }
 
     // =====================================================================
@@ -279,7 +279,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
                 ['codidioma' => 'en_GB'],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Old EN', 'descripcion_corta' => 'Old short'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Old EN', 'descripcion_larga' => 'Old short'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', '');
@@ -290,7 +290,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
         $this->assertCount(1, $db->descripciones);
         $this->assertSame('en_GB', $db->descripciones[0]['codidioma']);
         $this->assertSame('Text EN', $db->descripciones[0]['descripcion']);
-        $this->assertSame('Short EN', $db->descripciones[0]['descripcion_corta']);
+        $this->assertSame('Short EN', $db->descripciones[0]['descripcion_larga']);
     }
 
     public function test_empty_mapped_pair_deletes_the_language_row(): void
@@ -301,7 +301,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
                 ['codidioma' => 'en_GB'],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Text EN', 'descripcion_corta' => 'Short EN'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Text EN', 'descripcion_larga' => 'Short EN'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', '');
@@ -320,7 +320,7 @@ final class ArticuloExcelIdiomasTest extends TestCase
                 ['codidioma' => 'en_GB'],
             ],
             [
-                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Old EN', 'descripcion_corta' => 'Old short'],
+                ['referencia' => 'ART1', 'codidioma' => 'en_GB', 'descripcion' => 'Old EN', 'descripcion_larga' => 'Old short'],
             ]
         );
         $art = new FakeArticulo($db, 'ART1', '');
@@ -330,14 +330,14 @@ final class ArticuloExcelIdiomasTest extends TestCase
 
         $this->assertTrue($changed);
         $this->assertSame('Old EN', $db->descripciones[0]['descripcion']);
-        $this->assertSame('New short', $db->descripciones[0]['descripcion_corta']);
+        $this->assertSame('New short', $db->descripciones[0]['descripcion_larga']);
     }
 
     public function test_the_base_column_is_never_written_by_the_language_path(): void
     {
         $db = new IdiomaRegistryFake(
             [['codidioma' => 'es_ES', 'por_defecto' => true]],
-            [['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Old ES', 'descripcion_corta' => null]]
+            [['referencia' => 'ART1', 'codidioma' => 'es_ES', 'descripcion' => 'Old ES', 'descripcion_larga' => null]]
         );
         $art = new FakeArticulo($db, 'ART1', 'legacy base text');
 
@@ -394,9 +394,9 @@ final class ArticuloExcelIdiomasTest extends TestCase
             'referencia' => 'ART1',
             'descripcion' => 'Base text',
             'descripcion_es_ES' => 'Texto ES',
-            'descripcion_corta_es_ES' => 'Corta ES',
+            'descripcion_larga_es_ES' => 'Corta ES',
             'descripcion_en_GB' => 'Text EN',
-            'descripcion_corta_en_GB' => 'Short EN',
+            'descripcion_larga_en_GB' => 'Short EN',
             'pvp' => 10.0,
             'codfamilia' => 'F1',
             'codfabricante' => '',

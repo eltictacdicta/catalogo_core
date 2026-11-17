@@ -569,8 +569,8 @@ final class CatalogLegacyTableMigrationTest extends TestCase
     {
         $tables = $this->baseTables();
         $tables['articulo_descripciones'] = [
-            ['id' => 1, 'referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola', 'descripcion_corta' => null],
-            ['id' => 2, 'referencia' => 'ART1', 'codidioma' => 'zz', 'descripcion' => 'Orphan', 'descripcion_corta' => null],
+            ['id' => 1, 'referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola', 'descripcion_larga' => null],
+            ['id' => 2, 'referencia' => 'ART1', 'codidioma' => 'zz', 'descripcion' => 'Orphan', 'descripcion_larga' => null],
         ];
         $tables['catalogo_idiomas'] = [
             ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => 1, 'por_defecto' => 1],

@@ -210,25 +210,25 @@ only as the third leg of the read chain for pre-existing articles (defect **e**)
 
 A language's description is present or absent. `articulo_descripcion::test()`
 (`:96-117`) MUST accept an empty `descripcion`. When a save submits an empty
-`descripcion` **and** an empty `descripcion_corta` for a language, the save path
+`descripcion` **and** an empty `descripcion_larga` for a language, the save path
 MUST delete that language's row. A row whose `descripcion` is empty but whose
-`descripcion_corta` is set MUST be preserved. **Keeping the row when only
-`descripcion_corta` is set is a local decision with no external evidence — the
+`descripcion_larga` is set MUST be preserved. **Keeping the row when only
+`descripcion_larga` is set is a local decision with no external evidence — the
 maintainer owns it** (R3; PrestaShop updates the `_lang` row in place and Odoo
 drops the language key, S1/S5).
 
 #### Scenario: Both fields empty deletes the row
 
 - GIVEN an existing description row for a language
-- WHEN a save submits an empty `descripcion` and an empty `descripcion_corta`
+- WHEN a save submits an empty `descripcion` and an empty `descripcion_larga`
 - THEN the row is deleted for that language
 - Test: `plugins/catalogo_core/tests/ArticuloDescripcionClearingTest.php`
 
 #### Scenario: Short-description-only row is preserved
 
-- GIVEN a row with an empty `descripcion` and a non-empty `descripcion_corta`
+- GIVEN a row with an empty `descripcion` and a non-empty `descripcion_larga`
 - WHEN the pair is saved
-- THEN the row is kept with its `descripcion_corta`
+- THEN the row is kept with its `descripcion_larga`
 - Test: `plugins/catalogo_core/tests/ArticuloDescripcionClearingTest.php`
 
 #### Scenario: Empty description is accepted by validation
@@ -342,24 +342,26 @@ language API or removed. **"Silence means default" is a local simplification**
 
 ### Requirement: GDI-11 — Article editor language selector
 
-The article editor MUST render **exactly one** description / short-description
-pair for the currently selected language, driven by a language selector over the
-active languages (D2). The duplicated default-language field MUST be removed: the
-base textarea at `View/ventas_articulo.html.twig:121` and the per-language loop at
-`View/partials/articulos/tab_multiidioma.html.twig:11` are replaced. The default
-language MUST NOT be rendered twice. `VentasArticulo::saveMultiidiomaDescriptions()`
-(`Controller/VentasArticulo.php:824-859`) MUST persist the posted pair for the
-selected language, MUST NOT discard the posted default-language value (remove the
-`continue` branch at `:833-836`, defect **g**), and MUST NOT skip empty input
-(`:847-849`, defect **b** — see GDI-07). A posted value MUST never be written into
-a different language's slot.
+The article editor MUST render the short description (`descripcion`, the article's
+title) and the long description (`descripcion_larga`, formerly `descripcion_corta`)
+of **every active language**, and MUST show only the selected language's pair. The
+language selector lives in the header card next to the short description and MUST
+switch languages client-side, **without reloading the page**. The default language
+MUST NOT be rendered twice and there is no base `sdescripcion` field. Each field
+MUST prefill the language's OWN text (no read fallback chain), so saving never
+materialises another language's text; the default language without a row prefills
+the frozen `articulos.descripcion`. `VentasArticulo::saveMultiidiomaDescriptions()`
+MUST persist the pair of every active language whose `descripcion_<cod>` field was
+posted, each into its own slot, MUST leave a language that was not posted untouched,
+MUST NOT write a language outside the active set and MUST NOT skip empty input
+(defect **b** — see GDI-07).
 
-#### Scenario: One pair per selected language
+#### Scenario: Every language rendered, one visible, no reload
 
 - GIVEN an article with several active languages
 - WHEN the editor renders
-- THEN exactly one description / short-description pair is shown for the selected language
-- AND the default language is not rendered twice
+- THEN one short / long description pair exists per active language and only the selected one is visible
+- AND the selector posts `codidioma` and carries no navigation link
 - Test: `plugins/catalogo_core/tests/VentasArticuloControllerTest.php`
 
 #### Scenario: The posted default-language value is never discarded
@@ -369,11 +371,12 @@ a different language's slot.
 - THEN the posted value is persisted for the default language
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
 
-#### Scenario: No cross-language write
+#### Scenario: Each posted language lands in its own slot
 
-- GIVEN a POST that sets language X's pair
+- GIVEN a POST carrying the pairs of languages X and Y but not Z
 - WHEN the save runs
-- THEN language Y's row is unchanged
+- THEN X and Y are written to their own rows, Z's row is unchanged
+- AND a posted field for an inactive language is ignored
 - Test: `plugins/catalogo_core/tests/Controller/VentasArticuloArticleEditAbsorptionTest.php`
 
 ### Requirement: GDI-12 — Locked anchors, markers and re-expressed ART contracts

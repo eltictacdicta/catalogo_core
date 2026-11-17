@@ -7,6 +7,7 @@
    scrubs the scripts of the incoming body before a swap (AD-5), because this
    page swaps its own <body> on selector change. #}
 {{ htmx.boot({'allowScriptTags': false}) }}
+{% include 'partials/ficha_assets.html.twig' %}
 
 {% if fsc.opcional %}
 <style>
@@ -118,57 +119,89 @@
          <form action="{{ fsc.opcional.url() }}&codtarifa={{ fsc.codtarifa|url_encode }}" method="post" class="form">
             <input type="hidden" name="codtarifa" value="{{ fsc.codtarifa }}"/>
             <div class="container-fluid" style="margin-top: 15px;">
-               <div class="row">
-                  <div class="col-sm-6">
-                     <div class="panel panel-primary">
-                        <div class="panel-heading"><h3 class="panel-title">Información del opcional</h3></div>
-                        <div class="panel-body">
-                           <div class="form-group"><label>Código</label><input class="form-control" type="text" name="codigo" value="{{ fsc.opcional.codigo }}" maxlength="30"/></div>
-                           <div class="form-group"><label>REF</label><input class="form-control" type="text" name="ref_sap" value="{{ fsc.opcional.ref_sap }}" maxlength="50" placeholder="SKU / Referencia SAP"/></div>
-                           {% if fsc.idiomas|length > 0 %}
-                           <div class="form-group">
-                              <label for="opcional_codidioma_selector">{{ 'language'|trans }}</label>
-                              <select class="form-control" id="opcional_codidioma_selector">
-                                 {% for idioma in fsc.idiomas %}
-                                 <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_defecto %} selected{% endif %}>{{ idioma.nombre }}</option>
-                                 {% endfor %}
-                              </select>
-                              <p class="help-block">{{ 'optional-languages-help'|trans }}</p>
-                           </div>
+               {#- Header card shared with the other catalogue sheets
+                   (partials/ficha_assets): name on top + language selector,
+                   switched client-side. The default language is stored in the
+                   base name/description; the others keep their own rows. -#}
+               <div class="ficha-cabecera">
+                  <div class="ficha-cabecera-img"><i class="fa fa-puzzle-piece" aria-hidden="true"></i></div>
+                  <div class="ficha-cabecera-main">
+                     <label for="opcional_codidioma_selector">{{ 'optional-name'|trans }}</label>
+                     <div class="ficha-cabecera-nombre">
+                        {% if fsc.idiomas|length > 0 %}
+                        {% for idioma in fsc.idiomas %}
+                        {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
+                        <input class="form-control opcional-idioma-panel" type="text" name="idioma_nombre[{{ idioma.codidioma }}]" value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100"{% if idioma.codidioma == fsc.codidioma_defecto %} required{% endif %}
+                               data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_defecto %} hidden{% endif %}
+                               aria-label="{{ 'optional-name'|trans }} ({{ idioma.nombre }})" autocomplete="off"/>
+                        {% endfor %}
+                        <select class="form-control" id="opcional_codidioma_selector" data-idioma-selector
+                                aria-label="{{ 'language'|trans }}" title="{{ 'language'|trans }}">
                            {% for idioma in fsc.idiomas %}
-                           {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
-                           <div class="opcional-idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_defecto %} style="display:none;"{% endif %}>
-                              <div class="form-group"><label>{{ 'optional-name'|trans }} ({{ idioma.nombre }})</label><input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]" value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100"{% if idioma.codidioma == fsc.codidioma_defecto %} required{% endif %}/></div>
-                              <div class="form-group"><label>{{ 'optional-description'|trans }} ({{ idioma.nombre }})</label><textarea class="form-control" name="idioma_descripcion[{{ idioma.codidioma }}]" rows="3">{{ idioma_row ? idioma_row.descripcion : '' }}</textarea></div>
-                           </div>
+                           <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_defecto %} selected{% endif %}>{{ idioma.nombre }}{% if idioma.codidioma == fsc.codidioma_defecto %} ★{% endif %}</option>
                            {% endfor %}
-                           <script>
-                           (function () {
-                              var selector = document.getElementById('opcional_codidioma_selector');
-                              if (!selector) { return; }
-                              var toggle = function () {
-                                 document.querySelectorAll('.opcional-idioma-panel').forEach(function (panel) {
-                                    panel.style.display = panel.getAttribute('data-codidioma') === selector.value ? '' : 'none';
-                                 });
-                              };
-                              selector.addEventListener('change', toggle);
-                              toggle();
-                           })();
-                           </script>
-                           {% else %}
-                           <div class="form-group"><label>Nombre</label><input class="form-control" type="text" name="nombre" value="{{ fsc.opcional.nombre }}" maxlength="100" required/></div>
-                           <div class="form-group"><label>Descripción</label><textarea class="form-control" name="descripcion" rows="3">{{ fsc.opcional.descripcion }}</textarea></div>
-                           {% endif %}
-                           <div class="form-group"><label class="checkbox-inline"><input type="checkbox" name="activo" value="TRUE" {% if fsc.opcional.activo %}checked{% endif %}/> Opcional activo</label></div>
-                        </div>
+                        </select>
+                        {% else %}
+                        <input class="form-control" type="text" name="nombre" value="{{ fsc.opcional.nombre }}" maxlength="100" required
+                               aria-label="{{ 'optional-name'|trans }}"/>
+                        {% endif %}
+                     </div>
+                     <div class="ficha-cabecera-flags">
+                        <label class="checkbox-inline"><input type="checkbox" name="activo" value="TRUE" {% if fsc.opcional.activo %}checked{% endif %}/> {{ 'optional-active'|trans }}</label>
                      </div>
                   </div>
-                  <div class="col-sm-6">
-                     <div class="panel panel-info">
-                        <div class="panel-heading"><h3 class="panel-title">Resumen</h3></div>
-                        <div class="panel-body">
-                           <p><b>Familias asociadas:</b> {{ fsc.familias_asignadas|length }}</p>
-                           <p><b>Artículos asociados:</b> {{ fsc.articulos|length }}</p>
+                  <div class="ficha-cabecera-meta">
+                     <div>
+                        <span class="label label-default">{{ fsc.familias_asignadas|length }}</span> {{ 'optional-families'|trans }}
+                        &nbsp;
+                        <span class="label label-default">{{ fsc.articulos|length }}</span> {{ 'optional-articles'|trans }}
+                     </div>
+                     <div>{{ 'optional-code'|trans }}: <strong>{{ fsc.opcional.codigo }}</strong></div>
+                  </div>
+               </div>
+
+               <div class="panel panel-default">
+                  <div class="panel-heading"><h3 class="panel-title">{{ 'optional-description'|trans }}</h3></div>
+                  <div class="panel-body">
+                     {% if fsc.idiomas|length > 0 %}
+                     {% for idioma in fsc.idiomas %}
+                     {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
+                     {% set descripcion = idioma_row ? idioma_row.descripcion : '' %}
+                     <div class="form-group opcional-idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_defecto %} hidden{% endif %} style="margin-bottom: 0;">
+                        <label class="control-label" for="idioma_descripcion_{{ idioma.codidioma }}">
+                           {{ 'optional-description'|trans }} <span class="ficha-idioma-tag">({{ idioma.nombre }})</span>
+                        </label>
+                        <textarea class="form-control" rows="4" data-contador
+                                  id="idioma_descripcion_{{ idioma.codidioma }}"
+                                  name="idioma_descripcion[{{ idioma.codidioma }}]">{{ descripcion }}</textarea>
+                        <p class="help-block ficha-contador"><span>{{ descripcion|length }}</span> {{ 'characters'|trans }}</p>
+                     </div>
+                     {% endfor %}
+                     <p class="help-block" style="margin-bottom: 0;">{{ 'optional-languages-help'|trans }}</p>
+                     {% else %}
+                     <div class="form-group" style="margin-bottom: 0;">
+                        <label class="control-label" for="descripcion_opcional">{{ 'optional-description'|trans }}</label>
+                        <textarea class="form-control" id="descripcion_opcional" name="descripcion" rows="4">{{ fsc.opcional.descripcion }}</textarea>
+                     </div>
+                     {% endif %}
+                  </div>
+               </div>
+
+               <div class="panel panel-default">
+                  <div class="panel-heading"><h3 class="panel-title">{{ 'optional-data'|trans }}</h3></div>
+                  <div class="panel-body">
+                     <div class="row">
+                        <div class="col-sm-4">
+                           <div class="form-group">
+                              <label class="control-label" for="codigo_opcional">{{ 'optional-code'|trans }}</label>
+                              <input class="form-control" type="text" id="codigo_opcional" name="codigo" value="{{ fsc.opcional.codigo }}" maxlength="30"/>
+                           </div>
+                        </div>
+                        <div class="col-sm-4">
+                           <div class="form-group">
+                              <label class="control-label" for="ref_sap_opcional">REF</label>
+                              <input class="form-control" type="text" id="ref_sap_opcional" name="ref_sap" value="{{ fsc.opcional.ref_sap }}" maxlength="50" placeholder="SKU / Referencia SAP"/>
+                           </div>
                         </div>
                      </div>
                   </div>

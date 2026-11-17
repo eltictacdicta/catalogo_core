@@ -1,50 +1,31 @@
-{#- Idiomas section of the unified article detail pane (AD-7, GDI-11). No longer a
-    tab: a nested .tab-pane would be hidden by Bootstrap CSS inside #datos, so
-    the section renders as a plain visible panel and keeps the #multiidioma
-    anchor target. The selector is a server-rendered link group; the selected
-    language travels in the `codidioma` query parameter and is re-posted through
-    the hidden field, so exactly one description / short-description pair is
-    rendered for the selected language. -#}
+{#- Long-description section of the unified article detail pane (AD-7, GDI-11).
+    Not a tab: a nested .tab-pane would be hidden by Bootstrap CSS inside #datos,
+    so it renders as a plain visible panel and keeps the #multiidioma anchor.
+
+    One textarea per active language, all rendered; the header selector
+    (data-idioma-selector, see partials/ficha_assets) shows the selected one
+    without reloading. The value is each language's OWN text
+    (fsc.descripciones_idioma): rendering a fallback here would materialise it
+    into that language on save. The short description lives in the header. -#}
 <div class="panel panel-default" id="multiidioma">
     <div class="panel-heading">
-        <h3 class="panel-title">{{ 'article-multi-language'|trans }}</h3>
+        <h3 class="panel-title">{{ 'long-description'|trans }}</h3>
     </div>
     <div class="panel-body">
-        {% if fsc.idiomas|length > 0 %}
-            <div class="btn-group btn-group-xs" style="margin-bottom: 10px;">
-                {% for idioma in fsc.idiomas %}
-                    <a class="btn btn-default {% if idioma.codidioma == fsc.codidioma %}active{% endif %}"
-                       href="{{ fsc.url() }}&codidioma={{ idioma.codidioma }}#multiidioma">
-                        {{ idioma.nombre }}
-                        {% if idioma.por_defecto %}
-                            <span class="label label-primary">{{ 'default-language'|trans }}</span>
-                        {% endif %}
-                    </a>
-                {% endfor %}
-            </div>
-            <input type="hidden" name="codidioma" value="{{ fsc.codidioma }}"/>
-            <div class="form-group">
-                <label for="descripcion_{{ fsc.codidioma }}">{{ 'description'|trans }}</label>
-                <textarea
-                    class="form-control"
-                    id="descripcion_{{ fsc.codidioma }}"
-                    name="descripcion_{{ fsc.codidioma }}"
-                    rows="3"
-                    autocomplete="off"
-                >{{ fsc.articulo.get_descripcion_idioma(fsc.codidioma) }}</textarea>
-                <p class="help-block">{{ 'short-description'|trans }}</p>
-                <input
-                    class="form-control"
-                    type="text"
-                    id="descripcion_corta_{{ fsc.codidioma }}"
-                    name="descripcion_corta_{{ fsc.codidioma }}"
-                    value="{{ fsc.articulo.get_descripcion_corta_idioma(fsc.codidioma) }}"
-                    maxlength="150"
-                    autocomplete="off"
-                />
-            </div>
+        {% for idioma in fsc.idiomas %}
+        {% set larga = fsc.descripciones_idioma[idioma.codidioma].descripcion_larga ?? '' %}
+        <div class="form-group" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma %} hidden{% endif %} style="margin-bottom: 0;">
+            <label class="control-label" for="descripcion_larga_{{ idioma.codidioma }}">
+                {{ 'long-description'|trans }} <span class="ficha-idioma-tag">({{ idioma.nombre }})</span>
+            </label>
+            <textarea class="form-control" rows="6" data-contador
+                      id="descripcion_larga_{{ idioma.codidioma }}"
+                      name="descripcion_larga_{{ idioma.codidioma }}"
+                      autocomplete="off">{{ larga }}</textarea>
+            <p class="help-block ficha-contador"><span>{{ larga|length }}</span> {{ 'characters'|trans }}</p>
+        </div>
         {% else %}
-            <div class="alert alert-info">{{ 'no-languages-configured'|trans }}</div>
-        {% endif %}
+        <div class="alert alert-info">{{ 'no-languages-configured'|trans }}</div>
+        {% endfor %}
     </div>
 </div>

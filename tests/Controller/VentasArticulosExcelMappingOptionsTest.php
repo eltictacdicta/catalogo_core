@@ -28,7 +28,7 @@ require_once FS_FOLDER . '/plugins/catalogo_core/Services/ArticuloExcelImportWiz
 /**
  * Slice 4b mapping (D-07): the wizard's per-column dropdown must offer the
  * field options the server already returns in the `get_preview` payload, so the
- * locale columns (`descripcion_<cod>` / `descripcion_corta_<cod>`) become
+ * locale columns (`descripcion_<cod>` / `descripcion_larga_<cod>`) become
  * selectable. Rendering only from the JS `FIELD_OPTIONS` constant leaves them
  * unmappable and makes per-language import unreachable through the UI.
  *
@@ -128,11 +128,11 @@ final class VentasArticulosExcelMappingOptionsTest extends TestCase
             'the ignore option must lead the list, as today'
         );
         $this->assertContains('descripcion_es', $values, 'the locale column must be selectable');
-        $this->assertContains('descripcion_corta_es', $values, 'the short locale column must be selectable');
+        $this->assertContains('descripcion_larga_es', $values, 'the short locale column must be selectable');
         $this->assertContains('descripcion_en', $values, 'every active language must be offered');
-        $this->assertContains('descripcion_corta_en', $values, 'every active language must be offered');
-        $this->assertSame('Descripción (Español)', $labels['descripcion_es']);
-        $this->assertSame('Descripción corta (English)', $labels['descripcion_corta_en']);
+        $this->assertContains('descripcion_larga_en', $values, 'every active language must be offered');
+        $this->assertSame('Descripción corta (Español)', $labels['descripcion_es']);
+        $this->assertSame('Descripción larga (English)', $labels['descripcion_larga_en']);
     }
 
     public function test_server_field_options_keep_the_base_catalog_intact(): void

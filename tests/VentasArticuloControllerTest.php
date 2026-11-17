@@ -183,42 +183,42 @@ class VentasArticuloControllerTest extends TestCase
         );
     }
 
-    public function testTwigViewRendersTheLanguageSelectorForTheSelectedLanguage(): void
+    public function testTwigViewRendersEveryLanguageAndSwitchesWithoutReload(): void
     {
-        $content = file_get_contents(
+        $header = file_get_contents(
+            FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulo.html.twig'
+        );
+        $panel = file_get_contents(
             FS_FOLDER . '/plugins/catalogo_core/View/partials/articulos/tab_multiidioma.html.twig'
         );
 
         $this->assertStringContainsString(
-            '{% for idioma in fsc.idiomas %}',
-            $content,
-            'The selector must iterate the active languages (GDI-11)'
+            'name="descripcion_{{ idioma.codidioma }}"',
+            $header,
+            'The header must render one short-description field per active language (GDI-11)'
         );
         $this->assertStringContainsString(
-            '&codidioma=',
-            $content,
-            'Each language option must carry codidioma in the query string (GDI-11)'
+            'name="codidioma" data-idioma-selector',
+            $header,
+            'The selector must post codidioma and drive the client-side switch (GDI-11)'
         );
         $this->assertStringContainsString(
-            'get_descripcion_idioma(fsc.codidioma)',
-            $content,
-            'The pair must prefill the selected language description (GDI-11)'
+            'name="descripcion_larga_{{ idioma.codidioma }}"',
+            $panel,
+            'The panel must render one long-description field per active language (GDI-11)'
         );
         $this->assertStringContainsString(
-            'get_descripcion_corta_idioma(fsc.codidioma)',
-            $content,
-            'The pair must prefill the selected language short description (GDI-11)'
+            'fsc.descripciones_idioma[idioma.codidioma].descripcion_larga',
+            $panel,
+            'Each language must prefill its OWN text, never a fallback (R2)'
         );
-        $this->assertSame(
-            1,
-            substr_count($content, 'name="descripcion_{{ fsc.codidioma }}"'),
-            'Exactly one description field must be rendered for the selected language'
-        );
-        $this->assertSame(
-            1,
-            substr_count($content, 'name="descripcion_corta_{{ fsc.codidioma }}"'),
-            'Exactly one short-description field must be rendered for the selected language'
-        );
+        foreach ([$header, $panel] as $content) {
+            $this->assertStringNotContainsString(
+                '&codidioma=',
+                $content,
+                'Changing language must not navigate (no reload)'
+            );
+        }
     }
 
     public function testTwigViewNoLongerRendersTheDuplicatedBaseDescription(): void

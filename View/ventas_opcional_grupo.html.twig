@@ -1,4 +1,5 @@
 {{ include('header.html.twig') }}
+{% include 'partials/ficha_assets.html.twig' %}
 
 {% if fsc.grupo %}
 <div class="container-fluid">
@@ -26,6 +27,54 @@
     <form class="form" role="form" action="{{ fsc.url() }}{% if not fsc.is_new %}&id={{ fsc.grupo.id }}{% endif %}" method="post">
         {{ csrf_field() }}
         <input type="hidden" name="save_grupo" value="1"/>
+
+        {#- Header card shared with the article and optional sheets: the name on
+            top with the language selector, switched client-side
+            (partials/ficha_assets). The default language is the base name. -#}
+        <div class="ficha-cabecera">
+            <div class="ficha-cabecera-img"><i class="fa fa-object-group" aria-hidden="true"></i></div>
+            <div class="ficha-cabecera-main">
+                <label for="grupo_codidioma_selector">{{ 'optional-name'|trans }}</label>
+                <div class="ficha-cabecera-nombre">
+                    {% if fsc.idiomas|length == 0 %}
+                    <input class="form-control" type="text" name="snombre" value="{{ fsc.grupo.nombre }}" maxlength="100" required autocomplete="off"
+                           aria-label="{{ 'optional-name'|trans }}"/>
+                    {% else %}
+                    {% for idioma in fsc.idiomas %}
+                    {% set idioma_row = fsc.idiomas_grupo[idioma.codidioma] ?? null %}
+                    <input class="form-control grupo-idioma-panel" type="text" name="idioma_nombre[{{ idioma.codidioma }}]"{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %}
+                           data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} hidden{% endif %}
+                           value="{{ idioma_row ? idioma_row.nombre : '' }}"
+                           aria-label="{{ 'optional-name'|trans }} ({{ idioma.nombre }})"
+                           maxlength="100" autocomplete="off"/>
+                    {% endfor %}
+                    <select class="form-control" id="grupo_codidioma_selector" data-idioma-selector
+                            aria-label="{{ 'language'|trans }}" title="{{ 'language'|trans }}">
+                        {% for idioma in fsc.idiomas %}
+                        <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}{% if idioma.codidioma == fsc.codidioma_edit %} ★{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                </div>
+                <div class="ficha-cabecera-flags">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="sactivo" value="1"{% if fsc.grupo.activo %} checked{% endif %}/>
+                        {{ 'active'|trans|default('Activo') }}
+                    </label>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="sexclusivo" value="1"{% if fsc.grupo.exclusivo %} checked{% endif %}/>
+                        {{ 'optional-group-exclusive'|trans }}
+                    </label>
+                </div>
+            </div>
+            {% if not fsc.is_new %}
+            <div class="ficha-cabecera-meta">
+                <div><span class="label label-default">{{ fsc.opcionales|length }}</span> {{ 'optional-group-variants'|trans }}</div>
+                <div>{{ 'optional-code'|trans }}: <strong>{{ fsc.grupo.codigo }}</strong></div>
+            </div>
+            {% endif %}
+        </div>
+
         <div class="panel panel-default">
             <div class="panel-heading">
                 <h3 class="panel-title">{{ 'optional-group-data'|trans }}</h3>
@@ -34,86 +83,21 @@
                 <div class="row">
                     <div class="col-sm-4">
                         <div class="form-group">
-                            {{ 'optional-code'|trans }}:
-                            <input class="form-control" type="text" name="scodigo" value="{{ fsc.grupo.codigo }}" maxlength="20" autocomplete="off"/>
+                            <label class="control-label" for="codigo_grupo">{{ 'optional-code'|trans }}</label>
+                            <input class="form-control" type="text" id="codigo_grupo" name="scodigo" value="{{ fsc.grupo.codigo }}" maxlength="20" autocomplete="off"/>
                         </div>
                     </div>
-                    {% if fsc.idiomas|length == 0 %}
                     <div class="col-sm-4">
                         <div class="form-group">
-                            {{ 'optional-name'|trans }}:
-                            <input class="form-control" type="text" name="snombre" value="{{ fsc.grupo.nombre }}" maxlength="100" required autocomplete="off"/>
-                        </div>
-                    </div>
-                    {% endif %}
-                    <div class="col-sm-4">
-                        <div class="form-group">
-                            {{ 'optional-group-order'|trans }}:
-                            <input class="form-control" type="number" name="sorden" value="{{ fsc.grupo.orden }}" autocomplete="off"/>
+                            <label class="control-label" for="orden_grupo">{{ 'optional-group-order'|trans }}</label>
+                            <input class="form-control" type="number" id="orden_grupo" name="sorden" value="{{ fsc.grupo.orden }}" autocomplete="off"/>
                         </div>
                     </div>
                 </div>
+                <p class="help-block">{{ 'optional-group-exclusive-help'|trans }}</p>
                 {% if fsc.idiomas|length > 0 %}
-                <div class="row">
-                    <div class="col-sm-12">
-                        <div class="panel panel-info">
-                            <div class="panel-heading">
-                                <h3 class="panel-title">{{ 'optional-languages'|trans }}</h3>
-                            </div>
-                            <div class="panel-body">
-                                <div class="form-group">
-                                    <label for="grupo_codidioma_selector">{{ 'language'|trans }}</label>
-                                    <select class="form-control" id="grupo_codidioma_selector">
-                                        {% for idioma in fsc.idiomas %}
-                                        <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <p class="help-block">{{ 'optional-group-languages-help'|trans }}</p>
-                                </div>
-                                {% for idioma in fsc.idiomas %}
-                                {% set idioma_row = fsc.idiomas_grupo[idioma.codidioma] ?? null %}
-                                <div class="grupo-idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} style="display:none;"{% endif %}>
-                                    <div class="form-group">
-                                        {{ 'optional-name'|trans }} ({{ idioma.nombre }}):
-                                        <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]"{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %} value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100" autocomplete="off"/>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                        <script>
-                        (function () {
-                            var selector = document.getElementById('grupo_codidioma_selector');
-                            if (!selector) { return; }
-                            var toggle = function () {
-                                document.querySelectorAll('.grupo-idioma-panel').forEach(function (panel) {
-                                    panel.style.display = panel.getAttribute('data-codidioma') === selector.value ? '' : 'none';
-                                });
-                            };
-                            selector.addEventListener('change', toggle);
-                            toggle();
-                        })();
-                        </script>
-                    </div>
-                </div>
+                <p class="help-block" style="margin-bottom: 0;">{{ 'optional-group-languages-help'|trans }}</p>
                 {% endif %}
-                <div class="row">
-                    <div class="col-sm-12">
-                        <div class="checkbox">
-                            <label>
-                                <input type="checkbox" name="sexclusivo" value="1"{% if fsc.grupo.exclusivo %} checked{% endif %}/>
-                                {{ 'optional-group-exclusive'|trans }}
-                            </label>
-                            <p class="help-block">{{ 'optional-group-exclusive-help'|trans }}</p>
-                        </div>
-                        <div class="checkbox">
-                            <label>
-                                <input type="checkbox" name="sactivo" value="1"{% if fsc.grupo.activo %} checked{% endif %}/>
-                                {{ 'active'|trans|default('Activo') }}
-                            </label>
-                        </div>
-                    </div>
-                </div>
             </div>
             <div class="panel-footer text-right">
                 <button class="btn btn-primary" type="submit">

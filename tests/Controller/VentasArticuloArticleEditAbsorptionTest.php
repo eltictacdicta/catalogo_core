@@ -705,14 +705,14 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
     }
 
     // =====================================================================
-    // GDI-11 — the selector-driven single description / short-description pair
+    // GDI-11 — the all-languages short / long description editor
     // =====================================================================
 
     public function test_selector_save_persists_the_posted_default_language_value(): void
     {
         $this->idiomaDb = new IdiomaRegistryFake(
             [['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
-            [['referencia' => 'REF-1', 'codidioma' => 'es_ES', 'descripcion' => 'BASE COLUMN', 'descripcion_corta' => null]]
+            [['referencia' => 'REF-1', 'codidioma' => 'es_ES', 'descripcion' => 'BASE COLUMN', 'descripcion_larga' => null]]
         );
         $this->trackedArticulo = $this->buildTrackedArticulo();
         $this->controller->idiomas = [(object) ['codidioma' => 'es_ES', 'por_defecto' => true]];
@@ -721,7 +721,7 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
             'sreferencia' => 'REF-1',
             'codidioma' => 'es_ES',
             'descripcion_es_ES' => 'POSTED DEFAULT',
-            'descripcion_corta_es_ES' => '',
+            'descripcion_larga_es_ES' => '',
             // The legacy base field is still posted by old clients; it must be
             // ignored for the language slot (defect g).
             'sdescripcion' => 'BASE COLUMN',
@@ -735,40 +735,48 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
         );
     }
 
-    public function test_selector_save_never_writes_another_language_slot(): void
+    public function test_save_writes_every_posted_language_into_its_own_slot(): void
     {
+        // The editor renders all languages at once (no reload on switch), so a
+        // single save carries them all; each pair lands in its own slot and a
+        // language that was not posted is left untouched.
         $this->idiomaDb = new IdiomaRegistryFake(
             [
                 ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
                 ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+                ['codidioma' => 'fr_FR', 'nombre' => 'Français', 'activo' => true, 'por_defecto' => false],
             ],
             [
-                ['referencia' => 'REF-1', 'codidioma' => 'es_ES', 'descripcion' => 'ES ORIGINAL', 'descripcion_corta' => null],
-                ['referencia' => 'REF-1', 'codidioma' => 'en_GB', 'descripcion' => 'EN ORIGINAL', 'descripcion_corta' => null],
+                ['referencia' => 'REF-1', 'codidioma' => 'es_ES', 'descripcion' => 'ES ORIGINAL', 'descripcion_larga' => null],
+                ['referencia' => 'REF-1', 'codidioma' => 'en_GB', 'descripcion' => 'EN ORIGINAL', 'descripcion_larga' => null],
+                ['referencia' => 'REF-1', 'codidioma' => 'fr_FR', 'descripcion' => 'FR ORIGINAL', 'descripcion_larga' => 'FR LONG'],
             ]
         );
         $this->trackedArticulo = $this->buildTrackedArticulo();
         $this->controller->idiomas = [
             (object) ['codidioma' => 'es_ES', 'por_defecto' => true],
             (object) ['codidioma' => 'en_GB', 'por_defecto' => false],
+            (object) ['codidioma' => 'fr_FR', 'por_defecto' => false],
         ];
 
         $this->runEditar([
             'sreferencia' => 'REF-1',
             'codidioma' => 'en_GB',
+            'descripcion_es_ES' => 'ES UPDATED',
+            'descripcion_larga_es_ES' => 'ES LONG',
             'descripcion_en_GB' => 'EN UPDATED',
-            'descripcion_corta_en_GB' => '',
-            // A stale payload for another language must be ignored entirely.
-            'descripcion_es_ES' => 'ES INJECTED',
+            'descripcion_larga_en_GB' => '',
+            // An inactive / unknown language can never be written.
+            'descripcion_xx_XX' => 'INJECTED',
         ]);
 
         $rows = $this->idiomaRowsByCode();
-        $this->assertSame('EN UPDATED', $rows['en_GB']['descripcion'], 'The selected language pair must persist');
-        $this->assertSame(
-            'ES ORIGINAL',
-            $rows['es_ES']['descripcion'],
-            'A posted value must never be written into a different language slot (GDI-11)'
-        );
+        $this->assertSame('ES UPDATED', $rows['es_ES']['descripcion']);
+        $this->assertSame('ES LONG', $rows['es_ES']['descripcion_larga']);
+        $this->assertSame('EN UPDATED', $rows['en_GB']['descripcion']);
+        $this->assertSame('FR ORIGINAL', $rows['fr_FR']['descripcion'], 'A language that was not posted must stay untouched');
+        $this->assertSame('FR LONG', $rows['fr_FR']['descripcion_larga']);
+        $this->assertArrayNotHasKey('xx_XX', $rows, 'Only active languages may be written');
     }
 
     public function test_selector_save_clears_the_language_row_on_an_empty_pair(): void
@@ -780,7 +788,7 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
                 ['codidioma' => 'es_ES', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
                 ['codidioma' => 'en_GB', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
             ],
-            [['referencia' => 'REF-1', 'codidioma' => 'en_GB', 'descripcion' => 'TO CLEAR', 'descripcion_corta' => null]]
+            [['referencia' => 'REF-1', 'codidioma' => 'en_GB', 'descripcion' => 'TO CLEAR', 'descripcion_larga' => null]]
         );
         $this->trackedArticulo = $this->buildTrackedArticulo();
         $this->controller->idiomas = [
@@ -792,14 +800,14 @@ final class VentasArticuloArticleEditAbsorptionTest extends TestCase
             'sreferencia' => 'REF-1',
             'codidioma' => 'en_GB',
             'descripcion_en_GB' => '',
-            'descripcion_corta_en_GB' => '',
+            'descripcion_larga_en_GB' => '',
         ]);
 
         $this->assertSame([], $this->idiomaDb->descripciones, 'An empty pair must delete the language row (GDI-07)');
     }
 
     /**
-     * @return array<string, array{referencia: string, codidioma: string, descripcion: string, descripcion_corta: ?string}>
+     * @return array<string, array{referencia: string, codidioma: string, descripcion: string, descripcion_larga: ?string}>
      */
     private function idiomaRowsByCode(): array
     {

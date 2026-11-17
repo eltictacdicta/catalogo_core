@@ -23,7 +23,7 @@ final class IdiomaRegistryFake
     /** @var array<string, array{codidioma: string, nombre: string, activo: bool, por_defecto: bool}> */
     public array $idiomas = [];
 
-    /** @var list<array{id: int, referencia: string, codidioma: string, descripcion: string, descripcion_corta: ?string}> */
+    /** @var list<array{id: int, referencia: string, codidioma: string, descripcion: string, descripcion_larga: ?string}> */
     public array $descripciones = [];
 
     /** @var list<string> */
@@ -39,7 +39,7 @@ final class IdiomaRegistryFake
 
     /**
      * @param list<array{codidioma: string, nombre?: string, activo?: bool, por_defecto?: bool}> $idiomas
-     * @param list<array{id?: int, referencia: string, codidioma: string, descripcion?: string, descripcion_corta?: ?string}> $descripciones
+     * @param list<array{id?: int, referencia: string, codidioma: string, descripcion?: string, descripcion_larga?: ?string}> $descripciones
      */
     public function __construct(array $idiomas = [], array $descripciones = [])
     {
@@ -52,7 +52,7 @@ final class IdiomaRegistryFake
                 'referencia' => $row['referencia'],
                 'codidioma' => $row['codidioma'],
                 'descripcion' => $row['descripcion'] ?? '',
-                'descripcion_corta' => $row['descripcion_corta'] ?? null,
+                'descripcion_larga' => $row['descripcion_larga'] ?? null,
             ];
         }
     }
@@ -352,11 +352,11 @@ final class IdiomaRegistryFake
             return true;
         }
 
-        if (preg_match('/^UPDATE articulo_descripciones SET referencia = \'([^\']*)\', codidioma = \'([^\']*)\', descripcion = \'([^\']*)\', descripcion_corta = (NULL|\'([^\']*)\') WHERE id = (\d+);?$/i', $sql, $m)) {
+        if (preg_match('/^UPDATE articulo_descripciones SET referencia = \'([^\']*)\', codidioma = \'([^\']*)\', descripcion = \'([^\']*)\', descripcion_larga = (NULL|\'([^\']*)\') WHERE id = (\d+);?$/i', $sql, $m)) {
             foreach ($this->descripciones as $i => $row) {
                 if ((int) $row['id'] === (int) $m[6]) {
                     $this->descripciones[$i]['descripcion'] = $m[3];
-                    $this->descripciones[$i]['descripcion_corta'] = ($m[4] === 'NULL') ? null : $m[5];
+                    $this->descripciones[$i]['descripcion_larga'] = ($m[4] === 'NULL') ? null : $m[5];
                 }
             }
 

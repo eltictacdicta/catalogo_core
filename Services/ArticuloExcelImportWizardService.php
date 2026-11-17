@@ -228,7 +228,7 @@ class ArticuloExcelImportWizardService
 
     /**
      * The additive locale field catalog (D-07): one `descripcion_<codidioma>`
-     * and one `descripcion_corta_<codidioma>` entry per supplied (active)
+     * and one `descripcion_larga_<codidioma>` entry per supplied (active)
      * language. With no languages it returns an empty catalog, so the wizard
      * behaves exactly as before (legacy workbook scenario).
      *
@@ -243,18 +243,19 @@ class ArticuloExcelImportWizardService
             $nombre = $language['nombre'];
 
             $catalog['descripcion_' . $codigo] = [
-                'label' => 'Descripción (' . $nombre . ')',
+                'label' => 'Descripción corta (' . $nombre . ')',
                 'column' => 'descripcion_' . $codigo,
                 'type' => 'text',
                 'req_create' => false,
                 'aliases' => ['descripcion_' . $codigo],
             ];
-            $catalog['descripcion_corta_' . $codigo] = [
-                'label' => 'Descripción corta (' . $nombre . ')',
-                'column' => 'descripcion_corta_' . $codigo,
+            $catalog['descripcion_larga_' . $codigo] = [
+                'label' => 'Descripción larga (' . $nombre . ')',
+                'column' => 'descripcion_larga_' . $codigo,
                 'type' => 'text',
                 'req_create' => false,
-                'aliases' => ['descripcion_corta_' . $codigo],
+                // Pre-rename workbooks still carry the old header.
+                'aliases' => ['descripcion_larga_' . $codigo, 'descripcion_corta_' . $codigo],
             ];
         }
 
@@ -304,12 +305,12 @@ class ArticuloExcelImportWizardService
      * @param array<string,string> $mappedRow a locale field mapped but empty is
      *        present with an empty value
      * @param array<int, object|array<string, mixed>> $idiomas active languages
-     * @return array{descripcion: ?string, descripcion_corta: ?string}|null
+     * @return array{descripcion: ?string, descripcion_larga: ?string}|null
      */
     public static function resolveLocalePair(array $mappedRow, array $idiomas, string $targetCodidioma): ?array
     {
         $descripcion = null;
-        $descripcionCorta = null;
+        $descripcionLarga = null;
 
         foreach (self::orderedLanguages($idiomas, $targetCodidioma) as $language) {
             $codigo = $language['codidioma'];
@@ -319,17 +320,17 @@ class ArticuloExcelImportWizardService
                 $descripcion = (string) $mappedRow[$field];
             }
 
-            $shortField = 'descripcion_corta_' . $codigo;
-            if ($descripcionCorta === null && array_key_exists($shortField, $mappedRow)) {
-                $descripcionCorta = (string) $mappedRow[$shortField];
+            $longField = 'descripcion_larga_' . $codigo;
+            if ($descripcionLarga === null && array_key_exists($longField, $mappedRow)) {
+                $descripcionLarga = (string) $mappedRow[$longField];
             }
         }
 
-        if ($descripcion === null && $descripcionCorta === null) {
+        if ($descripcion === null && $descripcionLarga === null) {
             return null;
         }
 
-        return ['descripcion' => $descripcion, 'descripcion_corta' => $descripcionCorta];
+        return ['descripcion' => $descripcion, 'descripcion_larga' => $descripcionLarga];
     }
 
     /**

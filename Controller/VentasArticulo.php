@@ -82,11 +82,19 @@ class VentasArticulo extends PageController
     public array $idiomas = [];
 
     /**
-     * Language selected in the editor's multi-language selector (GDI-11). It
-     * drives the single description / short-description pair the view renders
-     * and the single slot `saveMultiidiomaDescriptions()` writes.
+     * Language shown first in the editor's selector (GDI-11). Every active
+     * language is rendered and switched client-side; this only picks the
+     * visible one, so the editor reopens on the language that was being edited.
      */
     public string $codidioma = '';
+
+    /**
+     * Each language's OWN texts, keyed by codidioma, without the read fallback
+     * chain: saving the editor must never materialise another language's text.
+     *
+     * @var array<string, array{descripcion: string, descripcion_larga: string}>
+     */
+    public array $descripciones_idioma = [];
     public array $articulo_opcionales = [];
     public array $articulo_grupos = [];
     public array $opcionales_disponibles = [];
@@ -929,15 +937,15 @@ class VentasArticulo extends PageController
     }
 
     /**
-     * Persists the editor's single description / short-description pair for the
-     * selected language (GDI-11 / D-05).
+     * Persists the short / long description pair of every active language the
+     * editor posted (GDI-11): all languages are rendered at once and switched
+     * client-side, so one save carries them all.
      *
-     * Only the selected language's fields are read, so a posted value can never
-     * land in a different language's slot. The empty-pair clearing decision and
-     * the mirror removal live in `articulo::set_descripcion_idioma()` /
-     * `articulo_descripcion::save()` (GDI-06, GDI-07); this method does not
-     * reimplement them. The default-language copy of `$art->descripcion` and the
-     * empty-input skip are deliberately gone (defects g and b).
+     * Each pair is read from its own `descripcion_<cod>` fields and written to
+     * its own slot; a language whose field was not posted is left untouched.
+     * The empty-pair clearing decision and the search-cache invalidation live in
+     * `articulo::set_descripcion_idioma()` / `articulo_descripcion::save()`
+     * (GDI-06, GDI-07); this method does not reimplement them.
      */
     private function saveMultiidiomaDescriptions(\articulo $art, Request $request): void
     {
@@ -945,15 +953,47 @@ class VentasArticulo extends PageController
             return;
         }
 
-        $codidioma = $this->resolve_codidioma($request);
-        $descripcion = (string) $request->request->get('descripcion_' . $codidioma, '');
-        $descripcionCorta = (string) $request->request->get('descripcion_corta_' . $codidioma, '');
+        foreach ($this->idiomas as $idioma) {
+            $codidioma = (string) $idioma->codidioma;
+            if (!$request->request->has('descripcion_' . $codidioma)) {
+                continue;
+            }
 
-        $art->set_descripcion_idioma(
-            $codidioma,
-            $descripcion,
-            $descripcionCorta !== '' ? $descripcionCorta : null
-        );
+            $descripcionLarga = (string) $request->request->get('descripcion_larga_' . $codidioma, '');
+            $art->set_descripcion_idioma(
+                $codidioma,
+                (string) $request->request->get('descripcion_' . $codidioma, ''),
+                $descripcionLarga !== '' ? $descripcionLarga : null
+            );
+        }
+    }
+
+    /**
+     * Editor prefill. The default language without a row of its own shows the
+     * frozen legacy `articulos.descripcion`, exactly what every reader falls
+     * back to; any other language without a row stays empty.
+     */
+    private function loadDescripcionesIdioma(): void
+    {
+        $this->descripciones_idioma = [];
+        if ($this->articulo === null || $this->articulo->referencia === null || $this->articulo->referencia === '') {
+            return;
+        }
+
+        foreach ($this->articulo->get_descripciones() as $row) {
+            $this->descripciones_idioma[(string) $row->codidioma] = [
+                'descripcion' => (string) $row->descripcion,
+                'descripcion_larga' => (string) ($row->descripcion_larga ?? ''),
+            ];
+        }
+
+        $defaultCode = (string) $this->idioma_model()->get_effective_default_code();
+        if ($defaultCode !== '' && !isset($this->descripciones_idioma[$defaultCode])) {
+            $this->descripciones_idioma[$defaultCode] = [
+                'descripcion' => (string) $this->articulo->descripcion,
+                'descripcion_larga' => '',
+            ];
+        }
     }
 
     private function loadCatalogData(): void
@@ -962,6 +1002,7 @@ class VentasArticulo extends PageController
         $idioma->ensure_defaults();
         $this->idiomas = $idioma->all_activos();
         $this->codidioma = $this->resolve_codidioma($this->request);
+        $this->loadDescripcionesIdioma();
 
         $lista = new catalogo_lista_precio();
         $lista->ensure_defaults();

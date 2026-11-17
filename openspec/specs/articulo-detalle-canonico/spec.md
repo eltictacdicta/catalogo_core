@@ -29,10 +29,9 @@ article save. With a tarifa selected, `editarArticulo()` MUST NOT write
 `articulos.pvp`; it MUST write `articulos.pvp` from the form ONLY when no active
 tarifa is selected, keeping the base-price edit path reachable. The multi-language
 description surface MUST be selector-driven (`gestion-idiomas` `GDI-11`): the view
-renders one description / short-description pair for the selected language, and
-`saveMultiidiomaDescriptions()` (`Controller/VentasArticulo.php:824-859`) persists
-that pair for the selected language and clears the language's row when both fields
-are empty — it MUST NOT overwrite the posted default-language value with
+renders the short / long description pair of every active language and switches
+them client-side, and `saveMultiidiomaDescriptions()` persists every posted pair
+into its own language and clears a language's row when both fields are empty — it MUST NOT overwrite the posted default-language value with
 `$art->descripcion` and MUST NOT skip empty input. The current
 `VentasArticuloControllerTest` contracts (public `idiomas` /
 `articulo_opcionales` arrays, `saveMultiidiomaDescriptions`,
@@ -171,8 +170,8 @@ current names, call shape and positions, rendering empty with no registrant (D4)
 The locked literals `#multiidioma`, `#opcionales`, `tab_multiidioma.html.twig`,
 `tab_opcionales.html.twig` and `fsc.articulo.pvp` MUST survive so ART-08's
 `VentasArticuloControllerTest` stays green with no test edits. The Idiomas section
-inside the unified pane MUST host the selector-driven single description /
-short-description pair (`gestion-idiomas` `GDI-11`), keeping the `#multiidioma`
+inside the unified pane MUST host the selector-driven long description
+(`gestion-idiomas` `GDI-11`; the short description lives in the header card), keeping the `#multiidioma`
 in-pane anchor (`View/ventas_articulo.html.twig:106`) and the
 `partials/articulos/tab_multiidioma.html.twig` include (`:342`); the selector work
 MUST NOT add, rename, move or remove any hook marker.

@@ -36,13 +36,13 @@ final class FakeArticuloDescripcion extends \FSFramework\model\articulo_descripc
             $this->referencia = $data['referencia'] ?? null;
             $this->codidioma = $data['codidioma'] ?? \FSFramework\model\catalogo_idioma::DEFAULT_CODE;
             $this->descripcion = $data['descripcion'] ?? '';
-            $this->descripcion_corta = $data['descripcion_corta'] ?? null;
+            $this->descripcion_larga = $data['descripcion_larga'] ?? null;
         } else {
             $this->id = null;
             $this->referencia = null;
             $this->codidioma = \FSFramework\model\catalogo_idioma::DEFAULT_CODE;
             $this->descripcion = '';
-            $this->descripcion_corta = null;
+            $this->descripcion_larga = null;
         }
     }
 

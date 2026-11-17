@@ -92,7 +92,7 @@ final class ArticuloExcelRowUpdater
     public static function applyDescripcionIdioma(
         string $codidioma,
         ?string $descripcion,
-        ?string $descripcionCorta,
+        ?string $descripcionLarga,
         \FSFramework\model\articulo $art
     ): bool {
         $codidioma = trim($codidioma);
@@ -100,15 +100,15 @@ final class ArticuloExcelRowUpdater
             return false;
         }
 
-        [$currentDescripcion, $currentCorta] = self::currentLanguagePair($art, $codidioma);
+        [$currentDescripcion, $currentLarga] = self::currentLanguagePair($art, $codidioma);
         $nextDescripcion = $descripcion === null ? $currentDescripcion : trim($descripcion);
-        $nextCorta = $descripcionCorta === null ? $currentCorta : trim($descripcionCorta);
+        $nextLarga = $descripcionLarga === null ? $currentLarga : trim($descripcionLarga);
 
-        if ($nextDescripcion === $currentDescripcion && $nextCorta === $currentCorta) {
+        if ($nextDescripcion === $currentDescripcion && $nextLarga === $currentLarga) {
             return false;
         }
 
-        return (bool) $art->set_descripcion_idioma($codidioma, $nextDescripcion, $nextCorta);
+        return (bool) $art->set_descripcion_idioma($codidioma, $nextDescripcion, $nextLarga);
     }
 
     /**
@@ -124,7 +124,7 @@ final class ArticuloExcelRowUpdater
             if ((string) $description->codidioma === $codidioma) {
                 return [
                     (string) ($description->descripcion ?? ''),
-                    (string) ($description->descripcion_corta ?? ''),
+                    (string) ($description->descripcion_larga ?? ''),
                 ];
             }
         }

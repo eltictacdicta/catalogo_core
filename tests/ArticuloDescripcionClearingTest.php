@@ -42,12 +42,12 @@ final class ArticuloDescripcionClearingTest extends TestCase
     {
         $db = new IdiomaRegistryFake(
             [],
-            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola ES', 'descripcion_corta' => 'Corta']]
+            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola ES', 'descripcion_larga' => 'Corta']]
         );
         $row = (new FakeArticuloDescripcion())->useFakeDb($db)->get_by_articulo_idioma('ART1', 'es');
 
         $row->descripcion = '';
-        $row->descripcion_corta = null;
+        $row->descripcion_larga = null;
 
         $this->assertTrue($row->save(), 'clearing a language must succeed');
 
@@ -62,23 +62,23 @@ final class ArticuloDescripcionClearingTest extends TestCase
     public function test_short_description_only_row_is_preserved(): void
     {
         // LOCAL DECISION (GDI-07, R3): keeping a row when only
-        // `descripcion_corta` is set has no external evidence — PrestaShop
+        // `descripcion_larga` is set has no external evidence — PrestaShop
         // updates the `_lang` row in place and Odoo drops the language key. The
         // maintainer owns this choice.
         $db = new IdiomaRegistryFake(
             [],
-            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola ES', 'descripcion_corta' => null]]
+            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola ES', 'descripcion_larga' => null]]
         );
         $row = (new FakeArticuloDescripcion())->useFakeDb($db)->get_by_articulo_idioma('ART1', 'es');
 
         $row->descripcion = '';
-        $row->descripcion_corta = 'Solo corta';
+        $row->descripcion_larga = 'Solo corta';
 
         $this->assertTrue($row->save());
 
         $this->assertCount(1, $db->descripciones, 'a short-description-only row must survive');
         $this->assertSame('', $db->descripciones[0]['descripcion']);
-        $this->assertSame('Solo corta', $db->descripciones[0]['descripcion_corta']);
+        $this->assertSame('Solo corta', $db->descripciones[0]['descripcion_larga']);
     }
 
     public function test_empty_description_is_accepted_by_validation(): void
@@ -87,7 +87,7 @@ final class ArticuloDescripcionClearingTest extends TestCase
             'referencia' => 'ART1',
             'codidioma' => 'es',
             'descripcion' => '',
-            'descripcion_corta' => null,
+            'descripcion_larga' => null,
         ]);
 
         $this->assertTrue($row->test(), 'an empty description must be accepted so the clearing path can proceed');
@@ -101,7 +101,7 @@ final class ArticuloDescripcionClearingTest extends TestCase
             'referencia' => 'ART1',
             'codidioma' => 'es',
             'descripcion' => '',
-            'descripcion_corta' => null,
+            'descripcion_larga' => null,
         ]))->useFakeDb($db);
 
         $this->assertTrue($row->save(), 'nothing to clear is not an error');
@@ -112,13 +112,13 @@ final class ArticuloDescripcionClearingTest extends TestCase
     {
         $db = new IdiomaRegistryFake(
             [['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true]],
-            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola ES', 'descripcion_corta' => null]]
+            [['referencia' => 'ART1', 'codidioma' => 'es', 'descripcion' => 'Hola ES', 'descripcion_larga' => null]]
         );
         $art = new FakeArticulo($db, 'ART1', 'Base');
 
         $row = (new FakeArticuloDescripcion())->useFakeDb($db)->get_by_articulo_idioma('ART1', 'es');
         $row->descripcion = '';
-        $row->descripcion_corta = null;
+        $row->descripcion_larga = null;
         $this->assertTrue($row->save());
 
         $this->assertSame('Base', $art->get_descripcion_idioma('es'), 'the fallback supplies the text');

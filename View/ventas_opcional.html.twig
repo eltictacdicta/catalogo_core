@@ -4,6 +4,7 @@
 {#- htmx 4 boot (OVE-04): inherited CSRF headers and a script-free swap posture
     for the image upload/replace/remove flow. -#}
 {{ htmx.boot({'allowScriptTags': false}) }}
+{% include 'partials/ficha_assets.html.twig' %}
 
 {% if fsc.opcional %}
 <script type="text/javascript">
@@ -78,16 +79,6 @@ $(document).ready(function () {
 
     $('input[name="stipo_precio"]').on('change', toggleTipoPrecio);
     toggleTipoPrecio();
-
-    function toggleIdiomaPanels() {
-        var selected = $('#codidioma_selector').val();
-        $('.idioma-panel').each(function () {
-            $(this).toggle($(this).data('codidioma') === selected);
-        });
-    }
-
-    $('#codidioma_selector').on('change', toggleIdiomaPanels);
-    toggleIdiomaPanels();
 });
 </script>
 
@@ -147,23 +138,96 @@ $(document).ready(function () {
                 <form class="form" role="form" action="{{ fsc.url() }}{% if not fsc.is_new %}&id={{ fsc.opcional.id }}{% endif %}" method="post">
                     {{ csrf_field() }}
                     <input type="hidden" name="save_opcional" value="1"/>
+
+                    {#- Header card (same layout as the article sheet): the name on
+                        top with the language selector. Every active language is
+                        rendered and switched client-side (partials/ficha_assets).
+                        The default language is stored in the base name and
+                        description; the others keep their own rows. -#}
+                    <div class="ficha-cabecera">
+                        <div class="ficha-cabecera-img">
+                            {% if not fsc.is_new and fsc.opcional.imagen_url() %}
+                            <img src="{{ fsc.opcional.imagen_url() }}" alt="{{ fsc.opcional.nombre }}"/>
+                            {% else %}
+                            <i class="fa fa-puzzle-piece" aria-hidden="true"></i>
+                            {% endif %}
+                        </div>
+                        <div class="ficha-cabecera-main">
+                            <label for="codidioma_selector">{{ 'optional-name'|trans }}</label>
+                            {% if fsc.idiomas|length > 0 %}
+                            <div class="ficha-cabecera-nombre">
+                                {% for idioma in fsc.idiomas %}
+                                {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
+                                <input class="form-control idioma-panel" type="text" name="idioma_nombre[{{ idioma.codidioma }}]"{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %}
+                                       data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} hidden{% endif %}
+                                       value="{{ idioma_row ? idioma_row.nombre : '' }}"
+                                       aria-label="{{ 'optional-name'|trans }} ({{ idioma.nombre }})"
+                                       maxlength="100" autocomplete="off"/>
+                                {% endfor %}
+                                <select class="form-control" id="codidioma_selector" name="codidioma_selector" data-idioma-selector
+                                        aria-label="{{ 'language'|trans }}" title="{{ 'language'|trans }}">
+                                    {% for idioma in fsc.idiomas %}
+                                    <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}{% if idioma.codidioma == fsc.codidioma_edit %} ★{% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-info" style="margin-bottom: 0;">{{ 'no-languages-configured'|trans }}</div>
+                            {% endif %}
+                            <div class="ficha-cabecera-flags">
+                                <label class="checkbox-inline">
+                                    <input type="checkbox" name="sactivo" value="1"{% if fsc.opcional.activo %} checked{% endif %}/>
+                                    {{ 'optional-active'|trans }}
+                                </label>
+                            </div>
+                        </div>
+                        {% if not fsc.is_new %}
+                        <div class="ficha-cabecera-meta">
+                            <div><span class="label label-default">{{ fsc.opcional.etiqueta_precio_base() }}</span></div>
+                            <div>{{ 'optional-code'|trans }}: <strong>{{ fsc.opcional.codigo }}</strong></div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if fsc.idiomas|length > 0 %}
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title">{{ 'optional-description'|trans }}</h3>
+                        </div>
+                        <div class="panel-body">
+                            {% for idioma in fsc.idiomas %}
+                            {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
+                            {% set descripcion = idioma_row ? idioma_row.descripcion : '' %}
+                            <div class="form-group idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} hidden{% endif %} style="margin-bottom: 0;">
+                                <label class="control-label" for="idioma_descripcion_{{ idioma.codidioma }}">
+                                    {{ 'optional-description'|trans }} <span class="ficha-idioma-tag">({{ idioma.nombre }})</span>
+                                </label>
+                                <textarea class="form-control" rows="4" data-contador
+                                          id="idioma_descripcion_{{ idioma.codidioma }}"
+                                          name="idioma_descripcion[{{ idioma.codidioma }}]">{{ descripcion }}</textarea>
+                                <p class="help-block ficha-contador"><span>{{ descripcion|length }}</span> {{ 'characters'|trans }}</p>
+                            </div>
+                            {% endfor %}
+                            <p class="help-block" style="margin-bottom: 0;">{{ 'optional-languages-help'|trans|default('El idioma por defecto se guarda en el nombre y la descripción base; los demás idiomas tienen sus propios valores.') }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <div class="panel panel-default">
                         <div class="panel-heading">
                             <h3 class="panel-title">{{ 'optional-data'|trans }}</h3>
                         </div>
                         <div class="panel-body">
                             <div class="row">
-                                <div class="col-sm-6">
+                                <div class="col-sm-4">
                                     <div class="form-group">
-                                        {{ 'optional-code'|trans }}:
-                                        <input class="form-control" type="text" name="scodigo" value="{{ fsc.opcional.codigo }}" maxlength="20" autocomplete="off"/>
+                                        <label class="control-label" for="codigo_opcional">{{ 'optional-code'|trans }}</label>
+                                        <input class="form-control" type="text" id="codigo_opcional" name="scodigo" value="{{ fsc.opcional.codigo }}" maxlength="20" autocomplete="off"/>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-sm-12">
+                                <div class="col-sm-4">
                                     <div class="form-group">
-                                        {{ 'optional-price-type'|trans }}:
+                                        <label class="control-label">{{ 'optional-price-type'|trans }}</label>
                                         <div>
                                             <label class="radio-inline">
                                                 <input type="radio" name="stipo_precio" value="{{ constant('FSFramework\\model\\catalogo_opcional::TIPO_PRECIO_FIJO') }}"{% if not fsc.opcional.es_precio_porcentaje() %} checked{% endif %}/>
@@ -174,84 +238,36 @@ $(document).ready(function () {
                                                 {{ 'optional-price-type-percent'|trans }}
                                             </label>
                                         </div>
-                                        <p class="help-block">{{ 'optional-price-type-help'|trans }}</p>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-sm-6">
+                                <div class="col-sm-4">
                                     <div class="form-group" id="grupo_precio_fijo">
-                                        {{ 'price'|trans }}:
-                                        <input class="form-control" type="text" name="sprecio" value="{{ fsc.opcional.precio }}" autocomplete="off"/>
+                                        <label class="control-label" for="precio_opcional">{{ 'price'|trans }}</label>
+                                        <input class="form-control" type="text" id="precio_opcional" name="sprecio" value="{{ fsc.opcional.precio }}" autocomplete="off"/>
                                     </div>
                                     <div class="form-group" id="grupo_precio_porcentaje" style="display:none;">
-                                        {{ 'optional-price-type-percent'|trans }}:
+                                        <label class="control-label" for="porcentaje_opcional">{{ 'optional-price-type-percent'|trans }}</label>
                                         <div class="input-group">
-                                            <input class="form-control" type="text" name="sporcentaje" value="{{ fsc.opcional.porcentaje }}" autocomplete="off"/>
+                                            <input class="form-control" type="text" id="porcentaje_opcional" name="sporcentaje" value="{{ fsc.opcional.porcentaje }}" autocomplete="off"/>
                                             <span class="input-group-addon">%</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="row">
-                                <div class="col-sm-12">
-                                    <div class="form-group">
-                                        {{ 'optional-group'|trans }}:
-                                        <div>
-                                            {% for grupo in fsc.grupos_opcional %}
-                                            <label class="checkbox-inline">
-                                                <input type="checkbox" name="grupos[]" value="{{ grupo.id }}"{% if grupo.id in fsc.grupos_asignados_ids %} checked{% endif %}/>
-                                                {{ grupo.nombre }}{% if grupo.exclusivo %} ({{ 'optional-group-exclusive-short'|trans }}){% endif %}
-                                            </label>
-                                            {% endfor %}
-                                        </div>
-                                        <p class="help-block">
-                                            <a href="index.php?page=ventas_opcional_grupos">{{ 'optional-groups-manage'|trans }}</a>
-                                        </p>
-                                    </div>
+                            <p class="help-block">{{ 'optional-price-type-help'|trans }}</p>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="control-label">{{ 'optional-group'|trans }}</label>
+                                <div>
+                                    {% for grupo in fsc.grupos_opcional %}
+                                    <label class="checkbox-inline">
+                                        <input type="checkbox" name="grupos[]" value="{{ grupo.id }}"{% if grupo.id in fsc.grupos_asignados_ids %} checked{% endif %}/>
+                                        {{ grupo.nombre }}{% if grupo.exclusivo %} ({{ 'optional-group-exclusive-short'|trans }}){% endif %}
+                                    </label>
+                                    {% endfor %}
                                 </div>
-                            </div>
-                            {% if fsc.idiomas|length > 0 %}
-                            <div class="row">
-                                <div class="col-sm-12">
-                                    <div class="panel panel-info">
-                                        <div class="panel-heading">
-                                            <h3 class="panel-title">{{ 'optional-languages'|trans|default('Idiomas') }}</h3>
-                                        </div>
-                                        <div class="panel-body">
-                                            <div class="form-group">
-                                                <label for="codidioma_selector">{{ 'language'|trans|default('Idioma') }}</label>
-                                                <select class="form-control" id="codidioma_selector" name="codidioma_selector">
-                                                    {% for idioma in fsc.idiomas %}
-                                                    <option value="{{ idioma.codidioma }}"{% if idioma.codidioma == fsc.codidioma_edit %} selected{% endif %}>{{ idioma.nombre }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                                <p class="help-block">{{ 'optional-languages-help'|trans|default('El idioma por defecto se guarda en el nombre y la descripción base; los demás idiomas tienen sus propios valores.') }}</p>
-                                            </div>
-                                            {% for idioma in fsc.idiomas %}
-                                            {% set idioma_row = fsc.idiomas_opcional[idioma.codidioma] ?? null %}
-                                            <div class="idioma-panel" data-codidioma="{{ idioma.codidioma }}"{% if idioma.codidioma != fsc.codidioma_edit %} style="display:none;"{% endif %}>
-                                                <div class="form-group">
-                                                    {{ 'optional-name'|trans }} ({{ idioma.nombre }}):
-                                                    <input class="form-control" type="text" name="idioma_nombre[{{ idioma.codidioma }}]"{% if idioma.codidioma == fsc.codidioma_edit %} required{% endif %} value="{{ idioma_row ? idioma_row.nombre : '' }}" maxlength="100" autocomplete="off"/>
-                                                </div>
-                                                <div class="form-group">
-                                                    {{ 'optional-description'|trans }} ({{ idioma.nombre }}):
-                                                    <textarea class="form-control" name="idioma_descripcion[{{ idioma.codidioma }}]" rows="3">{{ idioma_row ? idioma_row.descripcion : '' }}</textarea>
-                                                </div>
-                                            </div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-                            <div class="row">
-                                <div class="col-sm-12">
-                                    <div class="checkbox">
-                                        <label><input type="checkbox" name="sactivo" value="1"{% if fsc.opcional.activo %} checked{% endif %}/> {{ 'optional-active'|trans }}</label>
-                                    </div>
-                                </div>
+                                <p class="help-block">
+                                    <a href="index.php?page=ventas_opcional_grupos">{{ 'optional-groups-manage'|trans }}</a>
+                                </p>
                             </div>
                         </div>
                         <div class="panel-footer text-right">
