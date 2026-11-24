@@ -415,6 +415,7 @@ final class CatalogoCoreHookMarkersTest extends TestCase
             'header.html.twig' => '',
             'footer.html.twig' => '',
             'partials/ficha_assets.html.twig' => '',
+            'partials/ficha_embebida.html.twig' => '',
             'partials/articulos/tab_multiidioma.html.twig' => '',
             'partials/articulos/tab_opcionales.html.twig' => '',
             'Macro/Htmx.html.twig' => (string) @file_get_contents($macroDir . '/Htmx.html.twig'),

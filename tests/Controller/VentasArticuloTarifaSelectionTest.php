@@ -391,6 +391,7 @@ final class VentasArticuloTarifaSelectionTest extends TestCase
             'header.html.twig' => '',
             'footer.html.twig' => '',
             'partials/ficha_assets.html.twig' => '',
+            'partials/ficha_embebida.html.twig' => '',
             'partials/articulos/tab_multiidioma.html.twig' => '',
             'partials/articulos/tab_opcionales.html.twig' => '',
             // AD-6: the host view includes the per-tarifa save wiring inside the

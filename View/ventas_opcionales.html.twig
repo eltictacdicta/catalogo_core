@@ -430,7 +430,7 @@
             {% for value in fsc.resultados %}
             <tr class="{% if not fsc.opcional_activo_en_tarifa(value.id) %}warning{% endif %}">
                <td>
-                  <a href="{{ value.url() }}">{{ value.codigo }}</a>
+                  <a href="{{ value.url() }}" data-opcional-modal>{{ value.codigo }}</a>
                </td>
                <td>
                   {% if value.ref_sap %}
@@ -466,7 +466,7 @@
                 <td class="text-right">
                    {% set precio_tarifa = fsc.get_precio_opcional_tarifa(value.id) %}
                    {% if fsc.es_opcional_porcentaje(value.id) or precio_tarifa is not null %}
-                   <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" class="cancel_clickable" title="Ver/editar precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">
+                   <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" data-opcional-modal class="cancel_clickable" title="Ver/editar precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">
                       {{ fsc.show_precio_opcional(value.id) }}
                    </a>
                    {% else %}
@@ -515,10 +515,10 @@
                {% endif %}
                <td class="text-right">
                   <div class="btn-group btn-group-xs">
-                      <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" class="btn btn-info cancel_clickable" title="Precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">
+                      <a href="{{ value.url() }}&codtarifa={{ fsc.b_codtarifa }}" data-opcional-modal class="btn btn-info cancel_clickable" title="Precios en {{ fsc.tarifa_seleccionada ? fsc.tarifa_seleccionada.nombre : '' }}">
                         <span class="glyphicon glyphicon-tags"></span>
                      </a>
-                     <a href="{{ value.url() }}" class="btn btn-default cancel_clickable" title="Editar datos generales">
+                     <a href="{{ value.url() }}" data-opcional-modal class="btn btn-default cancel_clickable" title="Editar datos generales">
                         <span class="glyphicon glyphicon-edit"></span>
                      </a>
                      {% if fsc.allow_delete %}
@@ -702,5 +702,7 @@
 </script>
 
 {{ alpine.boot() }}
+
+{% include 'partials/articulos/modal_ficha.html.twig' %}
 
 {% include 'footer.html.twig' %}

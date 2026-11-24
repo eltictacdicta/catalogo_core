@@ -1,34 +1,5 @@
 {{ include('header.html.twig') }}
-{#- Framed mode (partials/articulos/modal_ficha): when this page runs inside the
-    shared article modal it hides the theme chrome, tells the opener that
-    something was saved, and sends links to other pages to the top window. The
-    class sits on <html> and the listeners on document, so both survive the
-    whole-body htmx swaps of this page. -#}
-<style>
-    html.ficha-embebida .main-header, html.ficha-embebida .main-sidebar, html.ficha-embebida .main-footer,
-    html.ficha-embebida .panel.hidden-print, html.ficha-embebida .phpdebugbar { display: none !important; }
-    html.ficha-embebida .content-wrapper { margin-left: 0 !important; min-height: 0 !important; }
-</style>
-<script {{ csp_nonce_attr() }}>
-(function () {
-    if (window.self === window.top || window.__fichaEmbebidaBound === true) { return; }
-    window.__fichaEmbebidaBound = true;
-    document.documentElement.classList.add('ficha-embebida');
-
-    function cambiada() {
-        try { window.parent.__fichaArticuloCambiada = true; } catch (e) { /* cross-origin opener: nothing to notify */ }
-    }
-    document.addEventListener('submit', cambiada, true);
-    document.addEventListener('htmx:after:request', cambiada);
-
-    document.addEventListener('click', function (evt) {
-        var link = evt.target.closest ? evt.target.closest('a[href]') : null;
-        if (!link) { return; }
-        var href = link.getAttribute('href');
-        if (href.charAt(0) !== '#' && href.indexOf('page=ventas_articulo') === -1) { link.target = '_top'; }
-    }, true);
-})();
-</script>
+{% include 'partials/ficha_embebida.html.twig' %}
 {% import 'Macro/Htmx.html.twig' as htmx %}
 {% import 'Macro/Alpine.html.twig' as alpine %}
 

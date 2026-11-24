@@ -1,0 +1,40 @@
+{#- Framed mode (partials/articulos/modal_ficha), shared by ventas_articulo and
+    tarif_opcional_edit: when the page runs inside the shared modal it hides
+    the theme chrome, tells the opener that something was saved, and sends
+    links to other pages to the top window. The
+    class sits on <html> and the listeners on document, so both survive the
+    whole-body htmx swaps of this page. -#}
+<style>
+    html.ficha-embebida .main-header, html.ficha-embebida .main-sidebar, html.ficha-embebida .main-footer,
+    html.ficha-embebida .panel.hidden-print, html.ficha-embebida .phpdebugbar { display: none !important; }
+    html.ficha-embebida .content-wrapper { margin-left: 0 !important; min-height: 0 !important; }
+</style>
+<script {{ csp_nonce_attr() }}>
+(function () {
+    if (window.self === window.top || window.__fichaEmbebidaBound === true) { return; }
+    window.__fichaEmbebidaBound = true;
+    document.documentElement.classList.add('ficha-embebida');
+    // Links to this same page stay framed; anything else leaves the modal.
+    var pagina = new URLSearchParams(window.location.search).get('page') || '';
+    var mismaPagina = new RegExp('[?&]page=' + pagina + '(&|#|$)');
+
+    function cambiada() {
+        try { window.parent.__fichaArticuloCambiada = true; } catch (e) { /* cross-origin opener: nothing to notify */ }
+    }
+    document.addEventListener('submit', cambiada, true);
+    // Only writes count: the sheet fires lazy GETs (hx-trigger="load") on open,
+    // which used to flag every close as a change and reload the opener. Flagged
+    // when the write starts, so closing the modal mid-request still refreshes.
+    document.addEventListener('htmx:before:request', function (evt) {
+        var req = evt.detail && evt.detail.ctx && evt.detail.ctx.request;
+        if (!req || String(req.method || 'GET').toUpperCase() !== 'GET') { cambiada(); }
+    });
+
+    document.addEventListener('click', function (evt) {
+        var link = evt.target.closest ? evt.target.closest('a[href]') : null;
+        if (!link) { return; }
+        var href = link.getAttribute('href');
+        if (href.charAt(0) !== '#' && !mismaPagina.test(href)) { link.target = '_top'; }
+    }, true);
+})();
+</script>
