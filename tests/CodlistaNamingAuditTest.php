@@ -63,7 +63,6 @@ final class CodlistaNamingAuditTest extends TestCase
         'controller/ventas_listas_precio.php',
         'controller/opciones_catalogo.php',
         'controller/catalogo_actualizar_precios.php',
-        'view/ventas_listas_precio.html.twig',
         'view/opciones_catalogo.html.twig',
         'view/catalogo_actualizar_precios.html.twig',
         // Controller/VentasArticulo(s).php and View/ventas_articulo(s).html.twig are

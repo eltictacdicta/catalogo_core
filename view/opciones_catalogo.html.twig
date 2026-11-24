@@ -2,7 +2,7 @@
 /**
  * Plugin: catalogo_core
  * Admin-only general options page (multitarifa, R-CO-004). Edits all
- * CatalogoOptions-managed options in one form: multi-tariff flag, role-groups
+ * CatalogoOptions-managed options in one form: role-groups
  * master flag and the Excel granted roles.
  *
  * Twig nativo con autoescape (sin filtros que salteen el escape con datos de
@@ -18,31 +18,13 @@
          <div class="page-header">
             <h1><i class="fa fa-cogs" aria-hidden="true"></i>&nbsp; Opciones de catálogo</h1>
             <p class="help-block">
-               Opciones generales del catálogo de artículos: multi-tarifa, grupos
-               de acceso a precios y autorizaciones del Excel.
+               Opciones generales del catálogo de artículos: grupos de acceso a
+               precios, autorizaciones del Excel e idiomas.
             </p>
          </div>
 
          <form action="{{ fsc.url() }}" method="post" class="form" role="form">
             {{ csrf_field() }}
-            <div class="panel panel-default">
-               <div class="panel-heading">
-                  <h3 class="panel-title">Multi-tarifa</h3>
-               </div>
-               <div class="panel-body">
-                  <div class="checkbox">
-                     <label>
-                        <input type="hidden" name="multi_tariff" value="FALSE" />
-                        <input type="checkbox" name="multi_tariff" value="TRUE" {% if fsc.multi_tariff %}checked{% endif %} />
-                        Activar precios por lista de precio (multi-tarifa)
-                     </label>
-                  </div>
-                  <p class="help-block">
-                     Desactivada, las listas de precio y los precios por artículo quedan ocultos.
-                  </p>
-               </div>
-            </div>
-
             <div class="panel panel-default">
                <div class="panel-heading">
                   <h3 class="panel-title">Grupos de acceso a precios</h3>

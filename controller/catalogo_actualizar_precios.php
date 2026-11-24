@@ -20,8 +20,6 @@ declare(strict_types=1);
 
 require_once FS_FOLDER . '/base/fs_controller.php';
 require_once FS_FOLDER . '/base/fs_settings.php';
-require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
-require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceListAvailability.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoPriceUpdateService.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/Services/PriceUpdateFilterRegistry.php';
 require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
@@ -59,12 +57,6 @@ use FSFramework\Plugins\catalogo_core\Services\PriceUpdateTargetRegistry;
 #[\FSFramework\Attribute\AdminOnly]
 class catalogo_actualizar_precios extends fs_controller
 {
-    /** Multi-tariff master flag: explains an inert page (R-CO-003). */
-    public bool $multi_tariff = false;
-
-    /** Active tariffs take over price editing: only informs the operator. */
-    public bool $tariffs_active = false;
-
     /** @var array<string, string> available targets, code => label */
     public array $targets = [];
 
@@ -140,11 +132,6 @@ class catalogo_actualizar_precios extends fs_controller
 
     protected function private_core()
     {
-        $options = new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions();
-        // multiTariffEnabled() gated by the active tariffs (PriceListAvailability).
-        $availability = new \FSFramework\Plugins\catalogo_core\Services\PriceListAvailability($options);
-        $this->tariffs_active = $availability->tariffsActive();
-        $this->multi_tariff = $availability->listUiEnabled();
         $this->loadFormData();
         $this->prepareNotice();
         $this->prepareSelection();

@@ -85,6 +85,43 @@ final class CatalogoIdiomaDeleteCleanupTest extends TestCase
         $this->assertSame(['es'], $db->activeDefaults(), 'the default invariant must survive the delete');
     }
 
+    public function test_deleting_a_language_removes_it_from_every_tarifa(): void
+    {
+        $db = new IdiomaRegistryFake([
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+        ]);
+        $db->tarifaIdiomas = [
+            ['codtarifa' => 'T1', 'codidioma' => 'es'],
+            ['codtarifa' => 'T1', 'codidioma' => 'en'],
+            ['codtarifa' => 'T2', 'codidioma' => 'en'],
+        ];
+        $model = $this->registry($db);
+        $model->codidioma = 'en';
+        $model->por_defecto = false;
+
+        $this->assertTrue($model->delete());
+        $this->assertSame(
+            [['codtarifa' => 'T1', 'codidioma' => 'es']],
+            $db->tarifaIdiomas,
+            'a deleted language must not stay configured in any tarifa (R-TAR-IDI-005)'
+        );
+    }
+
+    public function test_deleting_a_language_without_the_tarifa_table_still_works(): void
+    {
+        $db = new IdiomaRegistryFake([
+            ['codidioma' => 'es', 'nombre' => 'Español', 'activo' => true, 'por_defecto' => true],
+            ['codidioma' => 'en', 'nombre' => 'English', 'activo' => true, 'por_defecto' => false],
+        ]);
+        $model = $this->registry($db);
+        $model->codidioma = 'en';
+        $model->por_defecto = false;
+
+        $this->assertTrue($model->delete());
+        $this->assertSame([], preg_grep('/tarif_tarifa_idiomas/', $db->executed));
+    }
+
     private function registry(IdiomaRegistryFake $db): catalogo_idioma
     {
         return (new FakeCatalogoIdioma())->useFakeDb($db);

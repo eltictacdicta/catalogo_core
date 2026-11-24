@@ -23,14 +23,12 @@ namespace Tests\CatalogoCore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Price-list CRUD page (multitarifa task 3.2, R-MT-004).
+ * Retired price-list page (R-MT-004 modified by `fusionar-paginas-tarifas-listas`).
  *
- * Legacy fs_controller page (catalogo_excel_settings precedent): the
- * constructor args gate the page to admins at the framework level, POST is
- * CSRF-checked before persistence and action-whitelisted. The save pipeline
- * is exercised against a mock fs_db2 through the real catalogo_lista_precio
- * model; controller wiring is pinned with structural source assertions
- * (CatalogoExcelSettingsPageTest precedent — no Kernel/DB available).
+ * Only tariffs exist as a concept (R-MT-009): price lists are tariff mirrors;
+ * `ventas_listas_precio` only keeps old links alive by redirecting there. It
+ * renders nothing, writes nothing and is not on the menu. The list model's own
+ * save/delete contract is still pinned here because it predates the page move.
  */
 final class VentasListaPrecioControllerTest extends TestCase
 {
@@ -44,111 +42,75 @@ final class VentasListaPrecioControllerTest extends TestCase
         $plugins = [];
         require_once FS_FOLDER . '/base/fs_functions.php';
         require_once FS_FOLDER . '/base/fs_model.php';
+        require_once FS_FOLDER . '/base/fs_controller.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
-    }
-
-    // ---- Page shape (R-MT-004: admin-gated CRUD page) ----
-
-    public function test_controller_file_and_view_exist(): void
-    {
-        $this->assertFileExists(FS_FOLDER . self::CONTROLLER_FILE);
-        $this->assertFileExists(FS_FOLDER . self::VIEW_FILE);
-    }
-
-    public function test_controller_extends_legacy_fs_controller(): void
-    {
         require_once FS_FOLDER . self::CONTROLLER_FILE;
-
-        $reflection = new \ReflectionClass('ventas_listas_precio');
-        $this->assertTrue(
-            $reflection->isSubclassOf(\fs_controller::class),
-            'ventas_listas_precio must be a legacy fs_controller page'
-        );
     }
 
-    /** Non-admin denial is enforced at the framework level (admin=TRUE). */
-    public function test_controller_is_admin_gated_in_ventas_folder(): void
+    // ---- Redirect shim ----
+
+    public function test_controller_stays_and_its_view_is_gone(): void
+    {
+        $this->assertFileExists(FS_FOLDER . self::CONTROLLER_FILE, 'old bookmarks must keep resolving');
+        $this->assertFileDoesNotExist(FS_FOLDER . self::VIEW_FILE, 'the shim renders nothing');
+    }
+
+    public function test_shim_is_a_legacy_page_off_the_menu_without_template(): void
     {
         $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
 
-        $this->assertMatchesRegularExpression(
-            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'ventas',\s*TRUE,\s*TRUE\)/",
-            $source,
-            'Constructor must gate the page to admins (admin=TRUE) inside the ventas folder'
-        );
-    }
-
-    // ---- POST pipeline: action whitelist + CSRF before writes ----
-
-    public function test_post_actions_are_whitelisted(): void
-    {
-        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
-
-        foreach (['create', 'edit', 'activate', 'deactivate', 'set_default', 'delete'] as $action) {
-            $this->assertStringContainsString(
-                "'" . $action . "'",
-                $source,
-                "Action '$action' must be part of the whitelisted CRUD actions"
-            );
-        }
-    }
-
-    public function test_post_checks_csrf_before_persistence(): void
-    {
-        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
-
-        $csrfPos = strpos($source, 'isCsrfValid()');
-        $this->assertNotFalse($csrfPos, 'POST branch must call isCsrfValid()');
-        $savePos = strpos($source, '->save()');
-        $deletePos = strpos($source, '->delete()');
-        $this->assertNotFalse($savePos, 'The pipeline must persist via the model save()');
-        $this->assertLessThan($savePos, $csrfPos, 'CSRF check must run before model save()');
-        if ($deletePos !== false) {
-            $this->assertLessThan($deletePos, $csrfPos, 'CSRF check must run before model delete()');
-        }
-    }
-
-    public function test_controller_never_touches_article_pvp(): void
-    {
-        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
-
-        $this->assertStringNotContainsString(
-            '->pvp',
-            $source,
-            'The list CRUD page must never rewrite articulos.pvp (R-MT-003)'
-        );
-    }
-
-    // ---- Inactive lists remain editable only here (R-MT-001) ----
-
-    public function test_view_lists_all_lists_including_inactive(): void
-    {
-        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
-
+        $this->assertTrue((new \ReflectionClass('ventas_listas_precio'))->isSubclassOf(\fs_controller::class));
         $this->assertStringContainsString(
-            'fsc.listas',
-            $content,
-            'The view must iterate ALL lists (inactive included; admin CRUD is the only reactivation point)'
+            "parent::__construct(__CLASS__, 'Listas de precio', 'catalogo', FALSE, FALSE)",
+            $source,
+            'the shim must leave the menu'
         );
+        $this->assertStringContainsString('$this->template = FALSE;', $source);
     }
 
-    // ---- View hardening ----
-
-    public function test_view_includes_csrf_field_on_forms(): void
+    public function test_shim_redirects_to_the_tariffs_page(): void
     {
-        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+        $this->assertSame(
+            'index.php?page=tarif_tarifas',
+            \ventas_listas_precio::TARGET
+        );
 
-        $this->assertStringContainsString('{{ csrf_field() }}', $content);
+        $shim = new class() extends \ventas_listas_precio {
+            public ?string $location = null;
+
+            public function __construct()
+            {
+                // Skip fs_controller: no DB, no request bootstrap.
+            }
+
+            public function run(): void
+            {
+                $this->private_core();
+            }
+
+            protected function send_location(string $url): void
+            {
+                $this->location = $url;
+            }
+        };
+
+        $_POST = ['action' => 'delete', 'codlista' => 'DEF'];
+        $shim->run();
+        $_POST = [];
+
+        $this->assertSame(\ventas_listas_precio::TARGET, $shim->location, 'POSTs are redirected too, never processed');
     }
 
-    public function test_view_has_no_raw_output(): void
+    public function test_shim_never_persists(): void
     {
-        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
+        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
 
-        $this->assertStringNotContainsString('|raw', $content, 'Views must escape all output');
+        foreach (['->save(', '->delete(', '->exec(', 'catalogo_lista_precio', '$_POST'] as $needle) {
+            $this->assertStringNotContainsString($needle, $source, 'the shim must not handle ' . $needle);
+        }
     }
 
-    // ---- Save pipeline through the real model (mock db) ----
+    // ---- List model contract (kept from the original page tests) ----
 
     public function test_list_model_save_pipeline_roundtrip(): void
     {
@@ -160,10 +122,7 @@ final class VentasListaPrecioControllerTest extends TestCase
             'por_defecto' => false,
             'coddivisa' => 'EUR',
         ]);
-        $ref = new \ReflectionClass(\fs_model::class);
-        $prop = $ref->getProperty('db');
-        $prop->setAccessible(true);
-        $prop->setValue($lista, $db);
+        (new \ReflectionProperty(\fs_model::class, 'db'))->setValue($lista, $db);
 
         $this->assertTrue($lista->save(), 'The list save pipeline must persist through the model');
         $this->assertStringContainsString('INSERT INTO catalogo_listas_precio', $db->lastSql);
@@ -175,109 +134,15 @@ final class VentasListaPrecioControllerTest extends TestCase
         $lista = new \FSFramework\model\catalogo_lista_precio([]);
         $lista->codlista = \FSFramework\model\catalogo_lista_precio::DEFAULT_CODE;
         $lista->por_defecto = true;
-        $ref = new \ReflectionClass(\fs_model::class);
-        $prop = $ref->getProperty('db');
-        $prop->setAccessible(true);
-        $prop->setValue($lista, $db);
+        (new \ReflectionProperty(\fs_model::class, 'db'))->setValue($lista, $db);
 
         $this->assertFalse($lista->delete(), 'The default list must not be deletable');
         $this->assertNotEmpty($lista->get_errors());
     }
-
-    // ---- Form flag decoding (regression: fatal on undefined method) ----
-
-    public function test_form_flags_use_the_posted_true_false_contract(): void
-    {
-        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
-
-        $this->assertStringNotContainsString(
-            '$this->str2bool(',
-            $source,
-            'str2bool() belongs to fs_model: fs_controller has no such method and it cannot decode form values'
-        );
-        $this->assertStringContainsString(
-            "=== 'TRUE'",
-            $source,
-            'Checkbox flags are posted as TRUE/FALSE by the view; compare against TRUE explicitly'
-        );
-    }
-
-    // ---- Currency selection comes from admin_divisas, never free text ----
-
-    public function test_view_renders_currency_selects_from_configured_divisas(): void
-    {
-        $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
-
-        $this->assertStringContainsString('{% for divisa in fsc.divisas %}', $content);
-        $this->assertStringContainsString('<select name="coddivisa"', $content);
-        $this->assertStringNotContainsString(
-            '<input type="text" name="coddivisa"',
-            $content,
-            'The currency must be chosen from admin_divisas, not typed'
-        );
-    }
-
-    public function test_controller_loads_divisas_and_its_default(): void
-    {
-        $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
-
-        $this->assertStringContainsString("require_once FS_FOLDER . '/plugins/catalogo_core/model/core/divisa.php';", $source);
-        $this->assertStringContainsString('(new \divisa())->all()', $source, 'Configured currencies must be read from the divisa model');
-        $this->assertStringContainsString('$this->coddivisa_defecto = $this->resolveDefaultDivisa();', $source);
-    }
-
-    public function test_only_configured_currencies_are_selectable(): void
-    {
-        require_once FS_FOLDER . self::CONTROLLER_FILE;
-
-        $controller = (new \ReflectionClass('ventas_listas_precio'))->newInstanceWithoutConstructor();
-        $this->setControllerProperty($controller, 'divisas', [
-            (object) ['coddivisa' => 'EUR'],
-            (object) ['coddivisa' => 'USD'],
-        ]);
-        $this->setControllerProperty($controller, 'coddivisas', ['EUR', 'USD']);
-
-        $method = new \ReflectionMethod('ventas_listas_precio', 'isSelectableDivisa');
-        $method->setAccessible(true);
-
-        $this->assertTrue($method->invoke($controller, 'EUR'));
-        $this->assertTrue($method->invoke($controller, 'USD'));
-        $this->assertFalse(
-            $method->invoke($controller, 'XYZ'),
-            'A currency missing from admin_divisas must be rejected on save'
-        );
-        $this->assertTrue(
-            $method->invoke($controller, 'XYZ', 'XYZ'),
-            'The value already stored stays selectable when editing an existing list'
-        );
-        $this->assertFalse($method->invoke($controller, ''), 'An empty currency is never selectable');
-    }
-
-    public function test_currency_validation_degrades_to_length_check_without_catalog(): void
-    {
-        require_once FS_FOLDER . self::CONTROLLER_FILE;
-
-        $controller = (new \ReflectionClass('ventas_listas_precio'))->newInstanceWithoutConstructor();
-        $this->setControllerProperty($controller, 'divisas', []);
-        $this->setControllerProperty($controller, 'coddivisas', []);
-
-        $method = new \ReflectionMethod('ventas_listas_precio', 'isSelectableDivisa');
-        $method->setAccessible(true);
-
-        $this->assertTrue($method->invoke($controller, 'EUR'), 'Without a catalog the model 3-char rule remains the gate');
-        $this->assertFalse($method->invoke($controller, 'EURO'));
-    }
-
-    private function setControllerProperty(object $controller, string $property, $value): void
-    {
-        $prop = new \ReflectionProperty('ventas_listas_precio', $property);
-        $prop->setAccessible(true);
-        $prop->setValue($controller, $value);
-    }
 }
 
 /**
- * Minimal fs_db2 stand-in for list-CRUD flows.
+ * Minimal fs_db2 stand-in for list-model flows.
  */
 class VentasListaPrecioMockDb
 {

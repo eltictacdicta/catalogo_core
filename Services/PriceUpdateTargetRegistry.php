@@ -80,7 +80,8 @@ interface PriceUpdateTargetInterface
  */
 final class PriceUpdateTargetRegistry
 {
-    private const BASE_CODE = 'lista';
+    /** Only tariffs exist as a concept (R-MT-011): the tariff is the base target. */
+    private const BASE_CODE = 'tarifa';
 
     /** @var array<string, PriceUpdateTargetInterface> code => target, in registration order */
     private static array $targets = [];
@@ -103,8 +104,8 @@ final class PriceUpdateTargetRegistry
     /** Registers the base target. Idempotent (duplicates keep the first). */
     public static function registerDefaults(): void
     {
-        require_once FS_FOLDER . '/plugins/catalogo_core/Services/ListaPriceUpdateTarget.php';
-        self::register(new ListaPriceUpdateTarget());
+        require_once FS_FOLDER . '/plugins/catalogo_core/Services/TarifaPriceUpdateTarget.php';
+        self::register(new TarifaPriceUpdateTarget());
     }
 
     public static function resolve(string $code): ?PriceUpdateTargetInterface

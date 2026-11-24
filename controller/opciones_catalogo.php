@@ -28,15 +28,17 @@ require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoRoleListNormal
 /**
  * Admin-only general options page for catalogo_core (multitarifa task 3.4,
  * R-CO-004, design D6). Replaces the removed catalogo_excel_settings page:
- * edits ALL CatalogoOptions-managed options in one form (multi-tariff flag,
- * role-groups master flag, Excel granted roles). Also hosts the catalogue
+ * edits ALL CatalogoOptions-managed options in one form (role-groups master
+ * flag, Excel granted roles; the multi-tariff flag is retired, R-MT-009).
+ * Also hosts the catalogue
  * language registry (`#idiomas`, GDI-01/GDI-04), posted as a separate form
  * carrying `idioma_action`.
  *
  * Legacy fs_controller page; POST is CSRF-checked before persistence and
- * input-whitelisted to the three option fields; writes go exclusively
+ * input-whitelisted to the two option fields; writes go exclusively
  * through CatalogoOptions (sole writer of the catalogo_core.* keys).
  */
+#[\FSFramework\Attribute\AdminOnly]
 class opciones_catalogo extends fs_controller
 {
     /** @var list<array{codrol:string,descripcion:string}> all roles for the checkbox list */
@@ -45,7 +47,6 @@ class opciones_catalogo extends fs_controller
     /** @var list<string> currently granted codrols (checked state) */
     public array $granted_codes = [];
 
-    public bool $multi_tariff = false;
     public bool $groups_enabled = false;
 
     /**
@@ -58,7 +59,8 @@ class opciones_catalogo extends fs_controller
 
     public function __construct()
     {
-        parent::__construct(__CLASS__, 'Opciones de catálogo', 'admin', TRUE, TRUE);
+        // The 4th argument is OBSOLETE and ignored: #[AdminOnly] is the gate.
+        parent::__construct(__CLASS__, 'Opciones de catálogo', 'catalogo', FALSE, TRUE);
     }
 
     protected function private_core()
@@ -66,7 +68,6 @@ class opciones_catalogo extends fs_controller
         $options = new \FSFramework\Plugins\catalogo_core\Services\CatalogoOptions();
 
         $this->roles = $this->loadRoles();
-        $this->multi_tariff = $options->multiTariffEnabled();
         $this->groups_enabled = $options->groupsEnabled();
         $raw = $options->excelRoles();
         $this->granted_codes = is_string($raw) && $raw !== '' ? explode(',', $raw) : [];
@@ -89,7 +90,6 @@ class opciones_catalogo extends fs_controller
 
             // Form checkboxes post 'TRUE'/'FALSE'; fs_model::str2bool() only
             // understands DB truthy values ('t'/'1') and is not available here.
-            $multiTariff = ($_POST['multi_tariff'] ?? 'FALSE') === 'TRUE';
             $groupsEnabled = ($_POST['groups_enabled'] ?? 'FALSE') === 'TRUE';
 
             $posted = $_POST['catalogo_excel_roles'] ?? [];
@@ -101,10 +101,9 @@ class opciones_catalogo extends fs_controller
                 array_column($this->roles, 'codrol')
             );
 
-            $saved = $options->saveAll($multiTariff, $groupsEnabled, $normalized);
+            $saved = $options->saveAll($groupsEnabled, $normalized);
 
             if ($saved) {
-                $this->multi_tariff = $multiTariff;
                 $this->groups_enabled = $groupsEnabled;
                 $this->granted_codes = $normalized === '' ? [] : explode(',', $normalized);
 

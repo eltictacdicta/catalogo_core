@@ -34,7 +34,12 @@ namespace FSFramework\Plugins\catalogo_core\Services;
  */
 final class CatalogoOptions
 {
-    public const KEY_MULTI_TARIFF = 'catalogo_core.multi_tariff';
+    /**
+     * Retired multi-tariff flag (R-MT-009): it only gated the price-list UI,
+     * which no longer exists. saveAll() drops the stale value.
+     */
+    private const RETIRED_KEY_MULTI_TARIFF = 'catalogo_core.multi_tariff';
+
     public const KEY_GROUPS_ENABLED = 'catalogo_core.groups_enabled';
     public const KEY_FAMILY_STRUCTURE = 'catalogo_core.family_structure';
     public const KEY_EXCEL_ROLES = 'catalogo_core.excel_roles';
@@ -52,17 +57,6 @@ final class CatalogoOptions
     {
         $this->rawOverride = $rawOverride;
         $this->persister = $persister;
-    }
-
-    /** Multi-tariff pricing flag. Safe default: false (R-CO-003). */
-    public function multiTariffEnabled(): bool
-    {
-        return $this->readBool(self::KEY_MULTI_TARIFF);
-    }
-
-    public function setMultiTariff(bool $enabled): bool
-    {
-        return $this->write(self::KEY_MULTI_TARIFF, $enabled ? 'true' : 'false');
     }
 
     /** Role-groups master setting. Safe default: false ⇒ listener inert. */
@@ -114,15 +108,16 @@ final class CatalogoOptions
     }
 
     /**
-     * Persists the three general options of the options page in one save.
+     * Persists the general options of the options page in one save, and drops
+     * the retired multi-tariff key so it does not linger in config2.ini.
      *
      * All keys are set in memory first and the settings store is written once,
      * so a failure cannot leave the page half-persisted.
      */
-    public function saveAll(bool $multiTariff, bool $groupsEnabled, string $excelRoles): bool
+    public function saveAll(bool $groupsEnabled, string $excelRoles): bool
     {
-        return $this->commit(static function (\fs_settings $settings) use ($multiTariff, $groupsEnabled, $excelRoles): void {
-            $settings->set(self::KEY_MULTI_TARIFF, $multiTariff ? 'true' : 'false');
+        return $this->commit(static function (\fs_settings $settings) use ($groupsEnabled, $excelRoles): void {
+            $settings->remove(self::RETIRED_KEY_MULTI_TARIFF);
             $settings->set(self::KEY_GROUPS_ENABLED, $groupsEnabled ? 'true' : 'false');
             $settings->set(self::KEY_EXCEL_ROLES, $excelRoles);
         });

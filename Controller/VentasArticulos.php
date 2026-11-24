@@ -63,8 +63,6 @@ class VentasArticulos extends PageController
     public bool $can_import_export = false;
     public string $permissionDenialReason = '';
     public int $price_decimals = 2;
-    /** Multi-tariff master flag: gates the price-list page entry (R-CO-003). */
-    public bool $multi_tariff = false;
     /** @var array<int, \FSFramework\model\impuesto> */
     public array $impuestos = [];
     public string $default_codimpuesto = 'IVA21';
@@ -82,8 +80,6 @@ class VentasArticulos extends PageController
         $this->allow_delete = $this->user->admin || $this->user->allow_delete_on($this->getPageData()['name']);
         $this->price_decimals = defined('FS_NF0_ART') ? (int) FS_NF0_ART : 2;
         $this->initImportExportPermissions();
-        // Per-list prices are offered only while no tariff is active (PriceListAvailability).
-        $this->multi_tariff = (new \FSFramework\Plugins\catalogo_core\Services\PriceListAvailability())->listUiEnabled();
     }
 
     public function getPageData(): array

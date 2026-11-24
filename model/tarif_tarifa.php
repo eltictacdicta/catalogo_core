@@ -18,6 +18,8 @@
  */
 namespace FSFramework\model;
 
+require_once __DIR__ . '/tarif_tarifa_idioma.php';
+
 /**
  * Tarifas del plugin tarifario.
  * Permite crear tarifas nombradas (ej: "Tarifa 2025", "Tarifa 2026")
@@ -187,7 +189,11 @@ class tarif_tarifa extends \fs_model
                     . $this->var2str($this->coddivisa) . ");";
             }
 
-            return $this->db->exec($sql);
+            if (!$this->db->exec($sql)) {
+                return FALSE;
+            }
+
+            return $this->saveListMirror();
         }
         return FALSE;
     }
@@ -198,11 +204,207 @@ class tarif_tarifa extends \fs_model
             $this->new_error_msg("No se puede eliminar la tarifa por defecto.");
             return FALSE;
         }
-        
+
         // Eliminar también los precios de artículos asociados a esta tarifa
         $this->db->exec("DELETE FROM tarif_articulo_precios WHERE codtarifa = " . $this->var2str($this->codtarifa) . ";");
-        
-        return $this->db->exec("DELETE FROM " . $this->table_name . " WHERE codtarifa = " . $this->var2str($this->codtarifa) . ";");
+
+        // Idiomas de la tarifa: la FK es en cascada, pero en MySQL sin InnoDB
+        // o con la tabla creada antes de la FK el borrado explícito es la garantía.
+        if ($this->db->table_exists(tarif_tarifa_idioma::TABLE)) {
+            $this->db->exec("DELETE FROM " . tarif_tarifa_idioma::TABLE . " WHERE codtarifa = " . $this->var2str($this->codtarifa) . ";");
+        }
+
+        if (!$this->db->exec("DELETE FROM " . $this->table_name . " WHERE codtarifa = " . $this->var2str($this->codtarifa) . ";")) {
+            return FALSE;
+        }
+
+        return $this->deleteListMirror();
+    }
+
+    /**
+     * Tablas cuya FK a `catalogo_listas_precio.codlista` es ON DELETE CASCADE.
+     * Borrar un espejo referenciado arrastraría precios de opcionales, acceso
+     * por grupo y estructura de familias (R-MT-007).
+     */
+    private const LIST_DEPENDENTS = [
+        'catalogo_articulo_precios',
+        'catalogo_opcional_precios',
+        'catalogo_grupo_tarifas',
+        'catalogo_familia_estructura',
+        'catalogo_articulo_familia_estructura',
+    ];
+
+    private const LIST_TABLE = 'catalogo_listas_precio';
+
+    /**
+     * Upsert del espejo en `catalogo_listas_precio` (R-MT-007): mismo código,
+     * nombre, flags y moneda. Los lectores canónicos de precio leen la lista,
+     * no la tarifa. Sin la tabla de listas la tarifa se guarda igual.
+     */
+    private function saveListMirror(): bool
+    {
+        if (!$this->db->table_exists(self::LIST_TABLE)) {
+            return TRUE;
+        }
+
+        $cod = $this->var2str($this->codtarifa);
+
+        if ($this->por_defecto
+            && !$this->db->exec("UPDATE " . self::LIST_TABLE . " SET por_defecto = FALSE WHERE codlista != " . $cod . ";")) {
+            return FALSE;
+        }
+
+        $exists = $this->db->select("SELECT codlista FROM " . self::LIST_TABLE . " WHERE codlista = " . $cod . ";");
+        if ($exists) {
+            $sql = "UPDATE " . self::LIST_TABLE . " SET "
+                . "nombre = " . $this->var2str($this->nombre)
+                . ", activa = " . $this->var2str($this->activa)
+                . ", por_defecto = " . $this->var2str($this->por_defecto)
+                . ", coddivisa = " . $this->var2str($this->coddivisa)
+                . " WHERE codlista = " . $cod . ";";
+        } else {
+            $sql = "INSERT INTO " . self::LIST_TABLE . " (codlista, nombre, activa, por_defecto, coddivisa) VALUES ("
+                . $cod . ","
+                . $this->var2str($this->nombre) . ","
+                . $this->var2str($this->activa) . ","
+                . $this->var2str($this->por_defecto) . ","
+                . $this->var2str($this->coddivisa) . ");";
+        }
+
+        return (bool) $this->db->exec($sql);
+    }
+
+    /**
+     * Borra el espejo, o lo desactiva si alguna tabla dependiente lo
+     * referencia: sus FK son en cascada y el borrado sería silencioso.
+     */
+    private function deleteListMirror(): bool
+    {
+        if (!$this->db->table_exists(self::LIST_TABLE)) {
+            return TRUE;
+        }
+
+        $cod = $this->var2str($this->codtarifa);
+
+        foreach (self::LIST_DEPENDENTS as $table) {
+            if ($this->db->table_exists($table)
+                && $this->db->select("SELECT 1 FROM " . $table . " WHERE codlista = " . $cod . " LIMIT 1;")) {
+                return (bool) $this->db->exec(
+                    "UPDATE " . self::LIST_TABLE . " SET activa = FALSE, por_defecto = FALSE WHERE codlista = " . $cod . ";"
+                );
+            }
+        }
+
+        return (bool) $this->db->exec("DELETE FROM " . self::LIST_TABLE . " WHERE codlista = " . $cod . ";");
+    }
+
+    /**
+     * Idiomas configurados en la tarifa: codidioma => por_defecto. Vacío si la
+     * tarifa no tiene configuración propia (usa todos los idiomas activos).
+     *
+     * @return array<string, bool>
+     */
+    public function idiomas_config(): array
+    {
+        if ($this->codtarifa === NULL || $this->codtarifa === '') {
+            return [];
+        }
+
+        return $this->tarifa_idioma_model()->config_from_tarifa($this->codtarifa);
+    }
+
+    /**
+     * Idiomas efectivos de la tarifa (R-TAR-IDI-002): por defecto primero y
+     * el resto por código. Ver tarif_tarifa_idioma::resolve().
+     *
+     * @return array{codes: string[], default: string}
+     */
+    public function idiomas_efectivos(): array
+    {
+        $registry = $this->idioma_registry();
+        $active = [];
+        foreach ((array) $registry->all_activos() as $idioma) {
+            $active[] = (string) $idioma->codidioma;
+        }
+
+        return tarif_tarifa_idioma::resolve(
+            $active,
+            $this->idiomas_config(),
+            (string) $registry->get_effective_default_code()
+        );
+    }
+
+    /**
+     * Códigos de los idiomas en los que va la tarifa, el de por defecto primero.
+     *
+     * @return string[]
+     */
+    public function idiomas_codes(): array
+    {
+        return $this->idiomas_efectivos()['codes'];
+    }
+
+    /**
+     * Idioma por defecto de la tarifa.
+     */
+    public function codidioma_defecto(): string
+    {
+        return $this->idiomas_efectivos()['default'];
+    }
+
+    /**
+     * Idiomas (catalogo_idioma) en los que va la tarifa, en el orden de
+     * idiomas_codes().
+     *
+     * @return catalogo_idioma[]
+     */
+    public function idiomas(): array
+    {
+        $byCode = [];
+        foreach ((array) $this->idioma_registry()->all_activos() as $idioma) {
+            $byCode[(string) $idioma->codidioma] = $idioma;
+        }
+
+        $list = [];
+        foreach ($this->idiomas_codes() as $code) {
+            if (isset($byCode[$code])) {
+                $list[] = $byCode[$code];
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Guarda los idiomas de la tarifa. `$codes` vacío borra la configuración.
+     *
+     * @param string[] $codes
+     */
+    public function save_idiomas(array $codes, string $default): bool
+    {
+        if ($this->codtarifa === NULL || $this->codtarifa === '') {
+            return FALSE;
+        }
+
+        return $this->tarifa_idioma_model()->save_config($this->codtarifa, $codes, $default);
+    }
+
+    /**
+     * Seam: registro de idiomas.
+     * @return catalogo_idioma
+     */
+    protected function idioma_registry()
+    {
+        return new catalogo_idioma();
+    }
+
+    /**
+     * Seam: persistencia de los idiomas por tarifa.
+     * @return tarif_tarifa_idioma
+     */
+    protected function tarifa_idioma_model()
+    {
+        return new tarif_tarifa_idioma();
     }
 
     /**

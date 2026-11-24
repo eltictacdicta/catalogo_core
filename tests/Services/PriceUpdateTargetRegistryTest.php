@@ -100,12 +100,12 @@ final class PriceUpdateTargetRegistryTest extends TestCase
         $this->assertNotNull(PriceUpdateTargetRegistry::resolve('off'), 'resolve() is a lookup; availability is checked by the caller');
     }
 
-    public function testDefaultCodePrefersLista(): void
+    public function testDefaultCodePrefersTarifa(): void
     {
         PriceUpdateTargetRegistry::register($this->fakeTarget('otro'));
-        PriceUpdateTargetRegistry::register($this->fakeTarget('lista'));
+        PriceUpdateTargetRegistry::register($this->fakeTarget('tarifa'));
 
-        $this->assertSame('lista', PriceUpdateTargetRegistry::defaultCode());
+        $this->assertSame('tarifa', PriceUpdateTargetRegistry::defaultCode());
     }
 
     public function testDefaultCodeFallsBackToFirstAvailableThenEmpty(): void
@@ -123,13 +123,15 @@ final class PriceUpdateTargetRegistryTest extends TestCase
     public function testRegisterDefaultsIsIdempotent(): void
     {
         PriceUpdateTargetRegistry::registerDefaults();
-        $first = PriceUpdateTargetRegistry::resolve('lista');
+        $first = PriceUpdateTargetRegistry::resolve('tarifa');
 
         PriceUpdateTargetRegistry::registerDefaults();
         PriceUpdateTargetRegistry::registerDefaults();
 
-        $this->assertNotNull($first, 'registerDefaults() must register the base "lista" target');
-        $this->assertSame($first, PriceUpdateTargetRegistry::resolve('lista'));
+        $this->assertNotNull($first, 'registerDefaults() must register the base "tarifa" target');
+        $this->assertSame($first, PriceUpdateTargetRegistry::resolve('tarifa'));
+        $this->assertNull(PriceUpdateTargetRegistry::resolve('lista'), 'the list target is retired (R-MT-011)');
+        $this->assertInstanceOf(\FSFramework\Plugins\catalogo_core\Services\TarifaPriceUpdateTarget::class, $first);
     }
 
     public function testInitRegistersTheBaseTargetsOnce(): void

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Document   : tarif_tarifa_idiomas.xml
+    Description:
+        Idiomas en los que va cada tarifa y cual es su idioma por defecto.
+        Una tarifa sin filas usa todos los idiomas activos de catalogo_idiomas
+        y el idioma por defecto global. Sin clave foranea sobre codidioma,
+        como el resto de tablas multiidioma: catalogo_idioma::delete() limpia
+        las filas del idioma borrado.
+-->
+<tabla>
+    <columna>
+        <nombre>codtarifa</nombre>
+        <tipo>character varying(20)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>codidioma</nombre>
+        <tipo>character varying(5)</tipo>
+        <nulo>NO</nulo>
+    </columna>
+    <columna>
+        <nombre>por_defecto</nombre>
+        <tipo>boolean</tipo>
+        <nulo>NO</nulo>
+        <defecto>false</defecto>
+    </columna>
+    <restriccion>
+        <nombre>tarif_tarifa_idiomas_pkey</nombre>
+        <consulta>PRIMARY KEY (codtarifa, codidioma)</consulta>
+    </restriccion>
+    <restriccion>
+        <nombre>ca_tarif_tarifa_idiomas_tarifa</nombre>
+        <consulta>FOREIGN KEY (codtarifa)
+            REFERENCES tarif_tarifas (codtarifa)
+            ON DELETE CASCADE ON UPDATE CASCADE</consulta>
+    </restriccion>
+</tabla>

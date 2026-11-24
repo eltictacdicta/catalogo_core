@@ -95,38 +95,33 @@ final class CatalogoExcelSettingsPageTest extends TestCase
         );
     }
 
-    public function testSettingsControllerUsesAdminGateConstructorArgs(): void
+    public function testSettingsControllerIsAdminOnly(): void
     {
         $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
         $this->assertNotFalse($source);
 
         $this->assertMatchesRegularExpression(
-            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'admin',\s*TRUE,\s*TRUE\)/",
+            "/#\[\\\\FSFramework\\\\Attribute\\\\AdminOnly\]\s*class\s+opciones_catalogo\b/",
             $source,
-            'Constructor must pass folder=admin + admin=TRUE + shmenu=TRUE (framework-level admin gate, scenario 10)'
+            "#[AdminOnly] is the administrator gate; the obsolete 4th constructor argument never was"
         );
         $this->assertMatchesRegularExpression(
             "/class\s+opciones_catalogo\s+extends\s+fs_controller\b/",
             $source,
-            'The class declaration must extend the legacy fs_controller, NOT PageController '
-            . '(its admin || have_access_to gate is the tautology removed)'
+            "The class declaration must extend the legacy fs_controller, NOT PageController "
+            . "(its admin || have_access_to gate is the tautology removed)"
         );
     }
 
-    public function testSettingsControllerRegistersInAdminMenu(): void
+    public function testSettingsControllerRegistersInCatalogoMenu(): void
     {
         $source = file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
         $this->assertNotFalse($source);
 
         $this->assertMatchesRegularExpression(
-            "/parent::__construct\(__CLASS__/",
+            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'catalogo',/",
             $source,
-            'Page name must be __CLASS__ (page catalogo_excel_settings registers in the admin menu)'
-        );
-        $this->assertMatchesRegularExpression(
-            "/'admin'/",
-            $source,
-            'Page must live in the admin menu folder'
+            "The options page lives in the catalogo menu"
         );
     }
 
@@ -221,9 +216,9 @@ final class CatalogoExcelSettingsPageTest extends TestCase
             'POST must read the whitelisted catalogo_excel_roles field'
         );
         $this->assertSame(
-            3,
+            2,
             preg_match_all("/\\\$_POST\[/", $source),
-            'Only the three option fields may be read (input whitelist: multi_tariff, groups_enabled, catalogo_excel_roles)'
+            'Only the two option fields may be read (input whitelist: groups_enabled, catalogo_excel_roles)'
         );
     }
 

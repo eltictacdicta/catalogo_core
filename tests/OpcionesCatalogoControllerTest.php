@@ -29,7 +29,7 @@ use PHPUnit\Framework\TestCase;
  * General options page (multitarifa task 3.4, R-CO-004).
  *
  * Admin-only opciones_catalogo page editing ALL store-managed options in one
- * form: multi-tariff flag, role-groups master flag and the Excel granted
+ * form: role-groups master flag and the Excel granted
  * roles (via the shared CatalogoRoleListNormalizer). POST is CSRF-checked
  * and input-whitelisted; persistence goes through CatalogoOptions (sole
  * writer of the catalogo_core.* keys).
@@ -52,14 +52,14 @@ final class OpcionesCatalogoControllerTest extends TestCase
         require_once FS_FOLDER . '/model/fs_rol_user.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoRoleListNormalizer.php';
-        foreach ([CatalogoOptions::KEY_MULTI_TARIFF, CatalogoOptions::KEY_GROUPS_ENABLED, CatalogoOptions::KEY_EXCEL_ROLES] as $key) {
+        foreach ([CatalogoOptions::KEY_GROUPS_ENABLED, CatalogoOptions::KEY_EXCEL_ROLES] as $key) {
             unset($GLOBALS['config2'][$key]);
         }
     }
 
     protected function tearDown(): void
     {
-        foreach ([CatalogoOptions::KEY_MULTI_TARIFF, CatalogoOptions::KEY_GROUPS_ENABLED, CatalogoOptions::KEY_EXCEL_ROLES] as $key) {
+        foreach ([CatalogoOptions::KEY_GROUPS_ENABLED, CatalogoOptions::KEY_EXCEL_ROLES] as $key) {
             unset($GLOBALS['config2'][$key]);
         }
         parent::tearDown();
@@ -82,9 +82,19 @@ final class OpcionesCatalogoControllerTest extends TestCase
 
         $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
         $this->assertMatchesRegularExpression(
-            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'admin',\s*TRUE,\s*TRUE\)/",
+            "/parent::__construct\(__CLASS__,\s*'[^']*',\s*'catalogo',\s*FALSE,\s*TRUE\)/",
             $source,
-            'Constructor must gate the page to admins in the admin folder'
+            'The page lives in the catalogo menu (the 4th argument is obsolete, never a gate)'
+        );
+
+        $attributes = array_map(
+            static fn (\ReflectionAttribute $a): string => $a->getName(),
+            $reflection->getAttributes()
+        );
+        $this->assertContains(
+            'FSFramework\\Attribute\\AdminOnly',
+            $attributes,
+            'Options (Excel roles, languages) are administrator-only: #[AdminOnly] is the real gate'
         );
     }
 
@@ -94,11 +104,12 @@ final class OpcionesCatalogoControllerTest extends TestCase
     {
         $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
 
-        foreach (["\$_POST['multi_tariff']", "\$_POST['groups_enabled']", "\$_POST['catalogo_excel_roles']"] as $field) {
+        foreach (["\$_POST['groups_enabled']", "\$_POST['catalogo_excel_roles']"] as $field) {
             $this->assertStringContainsString($field, $source, "POST must read $field");
         }
+        $this->assertStringNotContainsString("multi_tariff", $source, "the retired multi-tariff option is not read (R-MT-009)");
         $this->assertSame(
-            3,
+            2,
             preg_match_all("/\\\$_POST\[/", $source),
             'No other POST field may be read (input whitelist, R-CO-004)'
         );
@@ -121,11 +132,11 @@ final class OpcionesCatalogoControllerTest extends TestCase
         $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
 
         $guardPos = strpos($source, 'if ($saved)');
-        $statePos = strpos($source, '$this->multi_tariff = $multiTariff');
+        $statePos = strpos($source, '$this->groups_enabled = $groupsEnabled');
         $messagePos = strpos($source, 'Configuración guardada.');
 
         $this->assertNotFalse($guardPos, 'The controller must branch on the saveAll() result');
-        $this->assertNotFalse($statePos, 'The view must show the saved multi-tariff state');
+        $this->assertNotFalse($statePos, 'The view must show the saved groups state');
         $this->assertNotFalse($messagePos, 'The success message must exist');
 
         $this->assertGreaterThan(
@@ -161,12 +172,10 @@ final class OpcionesCatalogoControllerTest extends TestCase
     public function test_options_roundtrip_persists_all_fields(): void
     {
         $options = new CatalogoOptions();
-        $options->setMultiTariff(true);
         $options->setGroupsEnabled(true);
         $options->setExcelRoles('A,B');
 
         $fresh = new CatalogoOptions();
-        $this->assertTrue($fresh->multiTariffEnabled());
         $this->assertTrue($fresh->groupsEnabled());
         $this->assertSame('A,B', $fresh->excelRoles());
     }
@@ -185,7 +194,7 @@ final class OpcionesCatalogoControllerTest extends TestCase
     {
         $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
 
-        $this->assertStringContainsString('name="multi_tariff"', $content);
+        $this->assertStringNotContainsString('multi_tariff', $content, 'the multi-tariff block is retired (R-MT-009)');
         $this->assertStringContainsString('name="groups_enabled"', $content);
         $this->assertStringContainsString('name="catalogo_excel_roles[]"', $content);
     }

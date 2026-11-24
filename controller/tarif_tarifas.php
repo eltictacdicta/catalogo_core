@@ -31,6 +31,7 @@ require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_articulo.
 require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_familia.php';
 require_once 'plugins/catalogo_core/model/core/catalogo_caracteristica_global.php';
 require_once 'plugins/catalogo_core/model/core/divisa.php';
+require_once 'plugins/catalogo_core/model/core/catalogo_idioma.php';
 
 use FSFramework\model\tarif_tarifa;
 use FSFramework\model\catalogo_caracteristica_articulo;
@@ -100,9 +101,21 @@ class tarif_tarifas extends fbase_controller
      */
     public $coddivisa_defecto = 'EUR';
 
+    /**
+     * Idiomas activos: el conjunto entre el que cada tarifa elige.
+     * @var array
+     */
+    public $idiomas = [];
+
+    /**
+     * Idioma por defecto global, preseleccionado en una tarifa nueva.
+     * @var string
+     */
+    public $codidioma_global = '';
+
     public function __construct()
     {
-        parent::__construct(__CLASS__, 'Tarifas', 'tarifario');
+        parent::__construct(__CLASS__, 'Tarifas', 'catalogo');
     }
 
     protected function private_core()
@@ -115,6 +128,10 @@ class tarif_tarifas extends fbase_controller
 
         $this->divisas = $this->loadDivisas();
         $this->coddivisa_defecto = $this->resolveDefaultDivisa();
+
+        $idiomaRegistry = $this->idioma_registry();
+        $this->idiomas = (array) $idiomaRegistry->all_activos();
+        $this->codidioma_global = (string) $idiomaRegistry->get_effective_default_code();
 
         $this->grupo_tarifa_model = $this->loadTarifarioModel('FSFramework\\model\\tarif_grupo_tarifa');
         $this->grupo_rol_model = $this->loadTarifarioModel('FSFramework\\model\\tarif_grupo_rol');
@@ -242,6 +259,104 @@ class tarif_tarifas extends fbase_controller
     }
 
     /**
+     * Seam: registro de idiomas.
+     * @return \FSFramework\model\catalogo_idioma
+     */
+    protected function idioma_registry()
+    {
+        return new \FSFramework\model\catalogo_idioma();
+    }
+
+    /**
+     * Códigos de los idiomas activos.
+     * @return list<string>
+     */
+    public function idiomas_activos_codes(): array
+    {
+        $codes = [];
+        foreach ($this->idiomas as $idioma) {
+            $codes[] = (string) $idioma->codidioma;
+        }
+
+        return $codes;
+    }
+
+    /**
+     * Lee los idiomas del formulario de tarifa.
+     *
+     * - null: el formulario no trae el bloque de idiomas (no se tocan).
+     * - string: mensaje de error de validación.
+     * - array: lo que hay que guardar. `codes` vacío significa "sin
+     *   configuración propia": se guarda así cuando la selección es
+     *   exactamente todos los idiomas activos con el por defecto global, para
+     *   que la tarifa siga incorporando los idiomas que se den de alta luego.
+     *
+     * @param array<string, mixed> $post
+     * @return array{codes: list<string>, default: string}|string|null
+     */
+    public function idiomas_formulario(array $post)
+    {
+        if (empty($post['idiomas_enviados'])) {
+            return null;
+        }
+
+        $activos = $this->idiomas_activos_codes();
+        $elegidos = [];
+        foreach ((array) ($post['idiomas'] ?? []) as $code) {
+            $code = \FSFramework\model\catalogo_idioma::normalize_code($code);
+            if (!in_array($code, $activos, true)) {
+                return 'Idioma no válido: ' . $this->no_html($code) . '.';
+            }
+            if (!in_array($code, $elegidos, true)) {
+                $elegidos[] = $code;
+            }
+        }
+
+        if ($elegidos === []) {
+            return 'Selecciona al menos un idioma para la tarifa.';
+        }
+
+        $default = \FSFramework\model\catalogo_idioma::normalize_code($post['codidioma_defecto'] ?? '');
+        if (!in_array($default, $elegidos, true)) {
+            return 'El idioma por defecto tiene que ser uno de los idiomas de la tarifa.';
+        }
+
+        $todos = array_diff($activos, $elegidos) === [];
+        if ($todos && $default === $this->codidioma_global) {
+            return ['codes' => [], 'default' => ''];
+        }
+
+        return ['codes' => $elegidos, 'default' => $default];
+    }
+
+    /**
+     * Configuración de idiomas de una tarifa para el listado y el modal.
+     *
+     * @return array{codes: string[], default: string, configurada: bool}
+     */
+    public function idiomas_tarifa($tarifa): array
+    {
+        $efectivos = $tarifa->idiomas_efectivos();
+        $efectivos['configurada'] = $tarifa->idiomas_config() !== [];
+
+        return $efectivos;
+    }
+
+    /**
+     * Nombre de un idioma activo por su código (el código si no está).
+     */
+    public function nombre_idioma(string $code): string
+    {
+        foreach ($this->idiomas as $idioma) {
+            if ((string) $idioma->codidioma === $code) {
+                return (string) $idioma->nombre;
+            }
+        }
+
+        return $code;
+    }
+
+    /**
      * Resolves a tarifario model through a soft seam.
      *
      * The groups/RBAC tables belong to the optional tarifario plugin, so
@@ -313,7 +428,19 @@ class tarif_tarifas extends fbase_controller
         }
         $tarifa->coddivisa = $coddivisa;
 
+        // Idiomas de la tarifa (R-TAR-IDI-003). Se valida antes de guardar
+        // nada para que un formulario inválido no deje la tarifa a medias.
+        $idiomas = $this->idiomas_formulario($_POST);
+        if (is_string($idiomas)) {
+            $this->new_error_msg($idiomas);
+            return;
+        }
+
         if ($tarifa->save()) {
+            if ($idiomas !== null && !$tarifa->save_idiomas($idiomas['codes'], $idiomas['default'])) {
+                $this->new_error_msg('La tarifa se guardó, pero no sus idiomas.');
+            }
+
             if ($is_new) {
                 // Si es nueva y se quiere heredar de otra
                 if (!empty($heredar_de)) {

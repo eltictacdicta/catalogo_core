@@ -162,6 +162,59 @@ final class CatalogMigrationFakeDb extends \fs_db2
             return [];
         }
 
+        // R-MT-010: lists without tariff (pre-check and full load share the join).
+        if (preg_match('/FROM\s+catalogo_listas_precio\s+l\s+LEFT JOIN\s+tarif_tarifas\s+t\s+ON\s+t\.codtarifa\s*=\s*l\.codlista/si', $sql)) {
+            $tariffs = array_map('strval', array_column($this->tables['tarif_tarifas'] ?? [], 'codtarifa'));
+            $orphans = [];
+            foreach ($this->tables['catalogo_listas_precio'] ?? [] as $row) {
+                if (!in_array((string) $row['codlista'], $tariffs, true)) {
+                    $orphans[] = $row;
+                }
+            }
+
+            return $orphans;
+        }
+
+        // R-MT-008 pre-check A: a tariff without mirror or with a diverging one.
+        if (preg_match('/FROM\s+tarif_tarifas\s+t\s+LEFT JOIN\s+catalogo_listas_precio\s+l\s+ON\s+l\.codlista\s*=\s*t\.codtarifa/si', $sql)) {
+            $lists = [];
+            foreach ($this->tables['catalogo_listas_precio'] ?? [] as $row) {
+                $lists[(string) $row['codlista']] = $row;
+            }
+            foreach ($this->tables['tarif_tarifas'] ?? [] as $row) {
+                $mirror = $lists[(string) $row['codtarifa']] ?? null;
+                if ($mirror === null || !self::sameMirror($row, $mirror)) {
+                    return [['codtarifa' => $row['codtarifa']]];
+                }
+            }
+
+            return [];
+        }
+
+        // R-MT-008 pre-check B: a list is the default while another tariff is.
+        if (preg_match('/FROM\s+catalogo_listas_precio\s+l\s+WHERE\s+l\.por_defecto\s*=\s*TRUE/si', $sql)) {
+            foreach ($this->tables['catalogo_listas_precio'] ?? [] as $list) {
+                if (empty($list['por_defecto'])) {
+                    continue;
+                }
+                foreach ($this->tables['tarif_tarifas'] ?? [] as $tariff) {
+                    if (!empty($tariff['por_defecto']) && (string) $tariff['codtarifa'] !== (string) $list['codlista']) {
+                        return [['codlista' => $list['codlista']]];
+                    }
+                }
+            }
+
+            return [];
+        }
+
+        // R-MT-008 full loads used only when a pre-check found work.
+        if (preg_match('/FROM\s+tarif_tarifas\s+ORDER BY\s+codtarifa/si', $sql)) {
+            return $this->tables['tarif_tarifas'] ?? [];
+        }
+        if (preg_match('/FROM\s+catalogo_listas_precio\s+ORDER BY\s+codlista/si', $sql)) {
+            return $this->tables['catalogo_listas_precio'] ?? [];
+        }
+
         if (stripos($sql, 'FROM tarif_tarifas') !== false
             && stripos($sql, 'por_defecto') !== false) {
             foreach ($this->tables['tarif_tarifas'] ?? [] as $row) {
@@ -324,7 +377,60 @@ final class CatalogMigrationFakeDb extends \fs_db2
             return true;
         }
 
+        // R-MT-010 write: a list without tariff becomes a tariff.
+        if (stripos($sql, 'INSERT INTO tarif_tarifas') === 0
+            && preg_match('/\((.*?)\)\s*VALUES\s*\((.*)\)/is', $sql, $m)) {
+            $cols = array_map('trim', explode(',', $m[1]));
+            $vals = array_map(static fn ($v) => match (strtoupper(trim($v))) {
+                'TRUE' => '1',
+                'FALSE' => '0',
+                default => trim(trim($v), "'"),
+            }, explode(',', $m[2]));
+            $this->tables['tarif_tarifas'][] = array_combine($cols, $vals);
+
+            return true;
+        }
+
+        // R-MT-008 writes: `SET a = v, ... WHERE codlista = 'X'` and the
+        // default demotion `WHERE por_defecto = TRUE AND codlista <> 'X'`.
+        if (preg_match('/^UPDATE catalogo_listas_precio SET (.+?) WHERE (.+?);?$/is', $sql, $m)) {
+            $set = [];
+            foreach (array_map('trim', explode(',', $m[1])) as $assignment) {
+                [$col, $val] = array_map('trim', explode('=', $assignment, 2));
+                $set[$col] = match (strtoupper($val)) {
+                    'TRUE' => '1',
+                    'FALSE' => '0',
+                    default => trim($val, "'"),
+                };
+            }
+
+            foreach ($this->tables['catalogo_listas_precio'] ?? [] as $i => $row) {
+                $code = (string) $row['codlista'];
+                $hit = preg_match("/^codlista = '([^']*)'$/", trim($m[2]), $w)
+                    ? $code === $w[1]
+                    : (preg_match("/^por_defecto = TRUE AND codlista <> '([^']*)'$/", trim($m[2]), $w)
+                        && !empty($row['por_defecto']) && $code !== $w[1]);
+                if ($hit) {
+                    $this->tables['catalogo_listas_precio'][$i] = array_merge($row, $set);
+                }
+            }
+
+            return true;
+        }
+
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $tariff
+     * @param array<string, mixed> $list
+     */
+    public static function sameMirror(array $tariff, array $list): bool
+    {
+        return (string) ($tariff['nombre'] ?? '') === (string) ($list['nombre'] ?? '')
+            && (bool) ($tariff['activa'] ?? false) === (bool) ($list['activa'] ?? false)
+            && (bool) ($tariff['por_defecto'] ?? false) === (bool) ($list['por_defecto'] ?? false)
+            && (string) ($tariff['coddivisa'] ?? 'EUR') === (string) ($list['coddivisa'] ?? 'EUR');
     }
 
     /**
@@ -563,6 +669,167 @@ final class CatalogLegacyTableMigrationTest extends TestCase
 
         $sqls = $this->executedContaining($db, 'catalogo_listas_precio');
         $this->assertNotEmpty($sqls, 'the migration must ensure the referenced price lists exist');
+    }
+
+    public function test_stale_mirror_is_realigned_with_its_tariff(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_tarifas'][] = ['codtarifa' => 'EXP', 'nombre' => 'Exportación', 'activa' => 1, 'por_defecto' => 0, 'coddivisa' => 'USD'];
+        $tables['catalogo_listas_precio'][] = ['codlista' => 'EXP', 'nombre' => 'EXP', 'activa' => 0, 'por_defecto' => 0, 'coddivisa' => 'EUR'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $mirror = $this->listRow($db, 'EXP');
+        $this->assertSame('USD', $mirror['coddivisa']);
+        $this->assertSame('Exportación', $mirror['nombre']);
+        $this->assertTrue((bool) $mirror['activa']);
+    }
+
+    public function test_tariff_without_option_prices_gets_its_mirror(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_tarifas'][] = ['codtarifa' => 'NUEVA', 'nombre' => 'Nueva', 'activa' => 1, 'por_defecto' => 0, 'coddivisa' => 'MXN'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $mirror = $this->listRow($db, 'NUEVA');
+        $this->assertSame('MXN', $mirror['coddivisa']);
+        $this->assertSame('Nueva', $mirror['nombre']);
+    }
+
+    public function test_default_is_realigned_across_both_tables(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_tarifas'][0]['por_defecto'] = 0;
+        $tables['tarif_tarifas'][] = ['codtarifa' => 'B', 'nombre' => 'B', 'activa' => 1, 'por_defecto' => 1, 'coddivisa' => 'EUR'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $defaults = array_values(array_map(
+            static fn (array $row): string => (string) $row['codlista'],
+            array_filter($db->tables['catalogo_listas_precio'], static fn (array $row): bool => (bool) $row['por_defecto'])
+        ));
+        $this->assertSame(['B'], $defaults);
+    }
+
+    public function test_aligned_mirrors_cost_no_write_on_the_list_table(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_tarifas'][] = ['codtarifa' => 'EXP', 'nombre' => 'Exportación', 'activa' => 1, 'por_defecto' => 0, 'coddivisa' => 'USD'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+        $db->executed = [];
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame([], $this->executedContaining($db, 'catalogo_listas_precio'));
+    }
+
+    public function test_mirror_backfill_skips_when_the_tariff_table_is_missing(): void
+    {
+        $tables = $this->baseTables();
+        unset($tables['tarif_tarifas']);
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame(
+            [],
+            array_values(array_filter(
+                $db->executed,
+                static fn (string $sql): bool => (bool) preg_match('/^UPDATE catalogo_listas_precio\b/i', $sql)
+            ))
+        );
+    }
+
+    public function test_list_without_tariff_is_promoted_to_a_tariff(): void
+    {
+        $tables = $this->baseTables();
+        $tables['catalogo_listas_precio'][] = ['codlista' => 'MAY', 'nombre' => 'Mayoristas', 'activa' => 0, 'por_defecto' => 0, 'coddivisa' => 'USD'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $tariff = $this->tariffRow($db, 'MAY');
+        $this->assertSame('Mayoristas', $tariff['nombre']);
+        $this->assertSame('USD', $tariff['coddivisa']);
+        $this->assertFalse((bool) $tariff['activa'], 'an inactive list becomes an inactive tariff');
+        $this->assertFalse((bool) $tariff['por_defecto']);
+    }
+
+    public function test_promoted_list_never_steals_the_tariff_default(): void
+    {
+        $tables = $this->baseTables();
+        $tables['catalogo_listas_precio'][] = ['codlista' => 'OLD', 'nombre' => 'Antigua', 'activa' => 1, 'por_defecto' => 1, 'coddivisa' => 'EUR'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertFalse((bool) $this->tariffRow($db, 'OLD')['por_defecto'], 'DEF stays the default tariff');
+        $this->assertFalse((bool) $this->listRow($db, 'OLD')['por_defecto'], 'and the mirror follows its tariff');
+        $this->assertTrue((bool) $this->tariffRow($db, 'DEF')['por_defecto']);
+    }
+
+    public function test_promoted_default_list_becomes_the_default_tariff_when_none_is(): void
+    {
+        $tables = $this->baseTables();
+        $tables['tarif_tarifas'][0]['por_defecto'] = 0;
+        $tables['catalogo_listas_precio'][0]['por_defecto'] = 0;
+        $tables['catalogo_listas_precio'][] = ['codlista' => 'L', 'nombre' => 'L', 'activa' => 1, 'por_defecto' => 1, 'coddivisa' => 'EUR'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertTrue((bool) $this->tariffRow($db, 'L')['por_defecto']);
+    }
+
+    public function test_list_promotion_runs_once(): void
+    {
+        $tables = $this->baseTables();
+        $tables['catalogo_listas_precio'][] = ['codlista' => 'MAY', 'nombre' => 'Mayoristas', 'activa' => 1, 'por_defecto' => 0, 'coddivisa' => 'EUR'];
+        $db = new CatalogMigrationFakeDb($tables, $this->baseColumns());
+
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+        $db->executed = [];
+        CatalogLegacyTableMigration::migrateIfNeeded($db);
+
+        $this->assertSame([], $this->executedContaining($db, 'INSERT INTO tarif_tarifas'));
+        $this->assertCount(1, array_filter(
+            $db->tables['tarif_tarifas'],
+            static fn (array $row): bool => (string) $row['codtarifa'] === 'MAY'
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tariffRow(CatalogMigrationFakeDb $db, string $codtarifa): array
+    {
+        foreach ($db->tables['tarif_tarifas'] ?? [] as $row) {
+            if ((string) $row['codtarifa'] === $codtarifa) {
+                return $row;
+            }
+        }
+
+        $this->fail('tarif_tarifas has no row ' . $codtarifa);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function listRow(CatalogMigrationFakeDb $db, string $codlista): array
+    {
+        foreach ($db->tables['catalogo_listas_precio'] ?? [] as $row) {
+            if ((string) $row['codlista'] === $codlista) {
+                return $row;
+            }
+        }
+
+        $this->fail('catalogo_listas_precio has no row ' . $codlista);
     }
 
     public function test_orphan_descriptions_are_purged_once(): void

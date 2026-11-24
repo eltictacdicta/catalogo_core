@@ -223,18 +223,18 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         }
     }
 
-    public function test_view_hides_flow_when_multi_tariff_off(): void
+    /** Only tariffs exist (R-MT-011): the page no longer depends on the list UI rule. */
+    public function test_page_no_longer_depends_on_the_list_ui_rule(): void
     {
         $content = (string) file_get_contents(FS_FOLDER . self::VIEW_FILE);
-
-        $this->assertStringContainsString('multi_tariff', $content, 'Multi-tariff flag must gate the UI (R-CO-003)');
-    }
-
-    public function test_controller_reads_multi_tariff_flag(): void
-    {
         $source = (string) file_get_contents(FS_FOLDER . self::CONTROLLER_FILE);
 
-        $this->assertStringContainsString('multiTariffEnabled', $source);
+        foreach (['multi_tariff', 'tariffs_active'] as $needle) {
+            $this->assertStringNotContainsString($needle, $content);
+            $this->assertStringNotContainsString($needle, $source);
+        }
+        $this->assertStringNotContainsString('PriceListAvailability', $source);
+        $this->assertStringContainsString('index.php?page=tarif_tarifas', $content, 'without targets the notice points at the tariffs page');
     }
 
     // ---- Form flag decoding (regression: fatal on undefined method) ----
@@ -465,8 +465,6 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         $twig->addFunction(new \Twig\TwigFunction('render_hook', static fn (): string => '', ['is_safe' => ['html']]));
 
         $fsc = new class {
-            public bool $tariffs_active = false;
-            public bool $multi_tariff = true;
             public array $targets = ['lista' => 'Lista de precio', 'otro' => 'Otro'];
             public array $scopes = ['articulos' => 'Artículos'];
             public string $selected_target = 'otro';
@@ -513,8 +511,6 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
         $twig->addFunction(new \Twig\TwigFunction('csrf_field', static fn (): string => '', ['is_safe' => ['html']]));
         $twig->addFunction(new \Twig\TwigFunction('render_hook', static fn (): string => '', ['is_safe' => ['html']]));
         $fsc = new class {
-            public bool $tariffs_active = true;
-            public bool $multi_tariff = false;
             public array $targets = [];
         };
 
@@ -613,8 +609,6 @@ final class CatalogoActualizarPreciosControllerTest extends TestCase
             ['is_safe' => ['html']]
         ));
         $fsc = new class {
-            public bool $tariffs_active = false;
-            public bool $multi_tariff = true;
             public array $targets = ['lista' => 'Lista'];
             public array $scopes = ['articulos' => 'Artículos'];
             public string $selected_target = 'lista';

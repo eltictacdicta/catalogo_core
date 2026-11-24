@@ -40,15 +40,21 @@ final class CatalogoOptionsTest extends TestCase
         unset($GLOBALS['config2']);
     }
 
-    public function test_flag_round_trip(): void
+    /** Only tariffs exist (R-MT-009): the multi-tariff option governed nothing and is gone. */
+    public function test_multi_tariff_option_is_retired(): void
     {
-        $options = new CatalogoOptions();
-        $this->assertFalse($options->multiTariffEnabled());
+        $this->assertFalse(defined(CatalogoOptions::class . '::KEY_MULTI_TARIFF'));
+        $this->assertFalse(method_exists(CatalogoOptions::class, 'multiTariffEnabled'));
+        $this->assertFalse(method_exists(CatalogoOptions::class, 'setMultiTariff'));
+    }
 
-        $options->setMultiTariff(true);
+    public function test_save_all_drops_the_retired_multi_tariff_key(): void
+    {
+        $GLOBALS['config2']['catalogo_core.multi_tariff'] = 'true';
+        $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => true);
 
-        $fresh = new CatalogoOptions();
-        $this->assertTrue($fresh->multiTariffEnabled());
+        $this->assertTrue($options->saveAll(false, ''));
+        $this->assertArrayNotHasKey('catalogo_core.multi_tariff', $GLOBALS['config2']);
     }
 
     public function test_groups_flag_round_trip(): void
@@ -66,7 +72,6 @@ final class CatalogoOptionsTest extends TestCase
     {
         $options = new CatalogoOptions();
 
-        $this->assertFalse($options->multiTariffEnabled());
         $this->assertFalse($options->groupsEnabled());
         $this->assertNull($options->excelRoles());
     }
@@ -102,21 +107,19 @@ final class CatalogoOptionsTest extends TestCase
     public function test_uses_namespaced_keys(): void
     {
         $options = new CatalogoOptions();
-        $options->setMultiTariff(true);
         $options->setGroupsEnabled(true);
         $options->setExcelRoles('a');
 
-        $this->assertArrayHasKey('catalogo_core.multi_tariff', $GLOBALS['config2']);
         $this->assertArrayHasKey('catalogo_core.groups_enabled', $GLOBALS['config2']);
         $this->assertArrayHasKey('catalogo_core.excel_roles', $GLOBALS['config2']);
     }
 
     public function test_raw_override_short_circuits_fs_settings(): void
     {
-        $override = new CatalogoOptions(['catalogo_core.multi_tariff' => 'true']);
+        $override = new CatalogoOptions(['catalogo_core.groups_enabled' => 'true']);
 
-        $this->assertTrue($override->multiTariffEnabled());
-        $this->assertArrayNotHasKey('catalogo_core.multi_tariff', $GLOBALS['config2']);
+        $this->assertTrue($override->groupsEnabled());
+        $this->assertArrayNotHasKey('catalogo_core.groups_enabled', $GLOBALS['config2']);
     }
 
     /**
@@ -168,14 +171,14 @@ final class CatalogoOptionsTest extends TestCase
     {
         $persisted = [];
         $persister = static function (\fs_settings $settings) use (&$persisted): bool {
-            $persisted[] = $settings->get(CatalogoOptions::KEY_MULTI_TARIFF);
+            $persisted[] = $settings->get(CatalogoOptions::KEY_GROUPS_ENABLED);
 
             return true;
         };
 
         $options = new CatalogoOptions(null, $persister);
 
-        $this->assertTrue($options->setMultiTariff(true));
+        $this->assertTrue($options->setGroupsEnabled(true));
         $this->assertSame(['true'], $persisted, 'set() must reach fs_settings::save()');
     }
 
@@ -219,7 +222,6 @@ final class CatalogoOptionsTest extends TestCase
         $calls = [];
         $persister = static function (\fs_settings $settings) use (&$calls): bool {
             $calls[] = [
-                'multi' => $settings->get(CatalogoOptions::KEY_MULTI_TARIFF),
                 'groups' => $settings->get(CatalogoOptions::KEY_GROUPS_ENABLED),
                 'roles' => $settings->get(CatalogoOptions::KEY_EXCEL_ROLES),
             ];
@@ -229,9 +231,9 @@ final class CatalogoOptionsTest extends TestCase
 
         $options = new CatalogoOptions(null, $persister);
 
-        $this->assertTrue($options->saveAll(true, false, 'A,B'));
+        $this->assertTrue($options->saveAll(false, 'A,B'));
         $this->assertSame(
-            [['multi' => 'true', 'groups' => 'false', 'roles' => 'A,B']],
+            [['groups' => 'false', 'roles' => 'A,B']],
             $calls,
             'saveAll() must write every key and persist exactly once'
         );
@@ -241,17 +243,17 @@ final class CatalogoOptionsTest extends TestCase
     {
         $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
 
-        $this->assertFalse($options->saveAll(false, true, ''));
+        $this->assertFalse($options->saveAll(true, ''));
     }
 
     public function test_failed_persistence_restores_the_previous_value(): void
     {
-        $GLOBALS['config2']['catalogo_core.multi_tariff'] = 'true';
+        $GLOBALS['config2']['catalogo_core.groups_enabled'] = 'true';
         $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
 
-        $this->assertFalse($options->setMultiTariff(false));
+        $this->assertFalse($options->setGroupsEnabled(false));
         $this->assertTrue(
-            $options->multiTariffEnabled(),
+            $options->groupsEnabled(),
             'A failed save must not leak the unsaved value into readers'
         );
     }
@@ -269,9 +271,8 @@ final class CatalogoOptionsTest extends TestCase
         $GLOBALS['config2']['catalogo_core.excel_roles'] = 'OLD';
         $options = new CatalogoOptions(null, static fn (\fs_settings $settings): bool => false);
 
-        $this->assertFalse($options->saveAll(true, true, 'NEW'));
+        $this->assertFalse($options->saveAll(true, 'NEW'));
 
-        $this->assertFalse($options->multiTariffEnabled());
         $this->assertFalse($options->groupsEnabled());
         $this->assertSame('OLD', $options->excelRoles());
     }

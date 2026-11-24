@@ -74,6 +74,56 @@ final class PriceUnificationFakeDb extends \fs_db2
             return [];
         }
 
+        // R-MT-010: lists without tariff (pre-check and full load).
+        if (preg_match('/FROM\s+catalogo_listas_precio\s+l\s+LEFT JOIN\s+tarif_tarifas\s+t/si', $sql)) {
+            $tariffs = array_map('strval', array_column($this->tables['tarif_tarifas'] ?? [], 'codtarifa'));
+
+            return array_values(array_filter(
+                $this->tables['catalogo_listas_precio'] ?? [],
+                static fn (array $row): bool => !in_array((string) $row['codlista'], $tariffs, true)
+            ));
+        }
+
+        // R-MT-008 mirror backfill: pre-checks and full loads. Modelled here
+        // because the generic `FROM tarif_tarifas` branch below would answer
+        // them with the default tariff row.
+        if (preg_match('/FROM\s+tarif_tarifas\s+t\s+LEFT JOIN\s+catalogo_listas_precio\s+l/si', $sql)) {
+            $lists = array_column($this->tables['catalogo_listas_precio'] ?? [], null, 'codlista');
+            foreach ($this->tables['tarif_tarifas'] ?? [] as $row) {
+                $mirror = $lists[(string) $row['codtarifa']] ?? null;
+                if ($mirror === null
+                    || (string) $mirror['nombre'] !== (string) $row['nombre']
+                    || (bool) $mirror['activa'] !== (bool) $row['activa']
+                    || (bool) $mirror['por_defecto'] !== (bool) $row['por_defecto']
+                    || (string) ($mirror['coddivisa'] ?? 'EUR') !== (string) ($row['coddivisa'] ?? 'EUR')) {
+                    return [['codtarifa' => $row['codtarifa']]];
+                }
+            }
+
+            return [];
+        }
+
+        if (preg_match('/FROM\s+catalogo_listas_precio\s+l\s+WHERE\s+l\.por_defecto\s*=\s*TRUE/si', $sql)) {
+            foreach ($this->tables['catalogo_listas_precio'] ?? [] as $list) {
+                foreach ($this->tables['tarif_tarifas'] ?? [] as $tariff) {
+                    if (!empty($list['por_defecto']) && !empty($tariff['por_defecto'])
+                        && (string) $tariff['codtarifa'] !== (string) $list['codlista']) {
+                        return [['codlista' => $list['codlista']]];
+                    }
+                }
+            }
+
+            return [];
+        }
+
+        if (preg_match('/FROM\s+tarif_tarifas\s+ORDER BY\s+codtarifa/si', $sql)) {
+            return $this->tables['tarif_tarifas'] ?? [];
+        }
+
+        if (preg_match('/FROM\s+catalogo_listas_precio\s+ORDER BY\s+codlista/si', $sql)) {
+            return $this->tables['catalogo_listas_precio'] ?? [];
+        }
+
         if (stripos($sql, 'FROM tarif_tarifas') !== false) {
             foreach ($this->tables['tarif_tarifas'] ?? [] as $row) {
                 if (!empty($row['por_defecto'])) {

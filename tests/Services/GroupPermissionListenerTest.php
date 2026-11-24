@@ -49,16 +49,14 @@ final class GroupPermissionListenerTest extends TestCase
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo_usuario.php';
         require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_grupo_articulo.php';
         unset(
-            $GLOBALS['config2'][CatalogoOptions::KEY_GROUPS_ENABLED],
-            $GLOBALS['config2'][CatalogoOptions::KEY_MULTI_TARIFF]
+            $GLOBALS['config2'][CatalogoOptions::KEY_GROUPS_ENABLED]
         );
     }
 
     protected function tearDown(): void
     {
         unset(
-            $GLOBALS['config2'][CatalogoOptions::KEY_GROUPS_ENABLED],
-            $GLOBALS['config2'][CatalogoOptions::KEY_MULTI_TARIFF]
+            $GLOBALS['config2'][CatalogoOptions::KEY_GROUPS_ENABLED]
         );
         parent::tearDown();
     }

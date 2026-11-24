@@ -64,6 +64,8 @@ final class CatalogLegacyTableMigration
 
         self::migrateOptionalPrices($db);
         self::syncDefaultPriceListFromTarifario($db);
+        self::promoteListsWithoutTariff($db);
+        self::syncTariffListMirrors($db);
         self::syncOptionalPricingColumns($db);
         self::syncOptionalGroupColumns($db);
         self::syncArticuloOpcionalGrupoTable($db);
@@ -891,6 +893,147 @@ final class CatalogLegacyTableMigration
             . $db->var2str($row['por_defecto']) . ','
             . $db->var2str($row['coddivisa'] ?? 'EUR') . ');'
         );
+    }
+
+    /**
+     * Only tariffs exist as a concept (R-MT-010): every price list without a
+     * tariff becomes a tariff with the same code, name, flags and currency.
+     * The list then is that tariff's mirror. A promoted list never takes the
+     * default from an existing default tariff. Steady state: one LIMIT 1 read.
+     */
+    private static function promoteListsWithoutTariff(\fs_db2 $db): void
+    {
+        if (!self::tableExists($db, 'catalogo_listas_precio')
+            || !self::tableExists($db, 'tarif_tarifas')) {
+            return;
+        }
+
+        $join = 'FROM catalogo_listas_precio l '
+            . 'LEFT JOIN tarif_tarifas t ON t.codtarifa = l.codlista '
+            . 'WHERE t.codtarifa IS NULL';
+
+        if (!$db->select('SELECT l.codlista ' . $join . ' LIMIT 1;')) {
+            return;
+        }
+
+        $defaultTaken = (bool) $db->select('SELECT codtarifa FROM tarif_tarifas WHERE por_defecto = TRUE LIMIT 1;');
+
+        foreach ($db->select('SELECT l.codlista, l.nombre, l.activa, l.por_defecto, l.coddivisa ' . $join . ' ORDER BY l.codlista;') ?: [] as $lista) {
+            $cod = (string) $lista['codlista'];
+            $nombre = trim((string) ($lista['nombre'] ?? ''));
+            $porDefecto = !$defaultTaken && self::truthy($lista['por_defecto'] ?? false);
+            if ($porDefecto) {
+                $defaultTaken = true;
+            }
+
+            $db->exec(
+                'INSERT INTO tarif_tarifas (codtarifa, nombre, activa, por_defecto, coddivisa) VALUES ('
+                . $db->var2str($cod) . ','
+                . $db->var2str($nombre !== '' ? mb_substr($nombre, 0, 50) : $cod) . ','
+                . (self::truthy($lista['activa'] ?? false) ? 'TRUE' : 'FALSE') . ','
+                . ($porDefecto ? 'TRUE' : 'FALSE') . ','
+                . $db->var2str(($lista['coddivisa'] ?? '') !== '' ? strtoupper((string) $lista['coddivisa']) : 'EUR') . ');'
+            );
+        }
+    }
+
+    /**
+     * Realigns every `catalogo_listas_precio` mirror with its tariff
+     * (R-MT-008): inserts missing mirrors, rewrites diverging ones and keeps a
+     * single default across both tables. Runs on every boot, so steady state
+     * is two LIMIT 1 pre-checks and no write.
+     */
+    private static function syncTariffListMirrors(\fs_db2 $db): void
+    {
+        if (!self::tableExists($db, 'catalogo_listas_precio')
+            || !self::tableExists($db, 'tarif_tarifas')) {
+            return;
+        }
+
+        $diverging = $db->select(
+            'SELECT t.codtarifa FROM tarif_tarifas t '
+            . 'LEFT JOIN catalogo_listas_precio l ON l.codlista = t.codtarifa '
+            . 'WHERE l.codlista IS NULL '
+            . "OR COALESCE(l.nombre, '') <> COALESCE(t.nombre, '') "
+            . 'OR COALESCE(l.activa, FALSE) <> COALESCE(t.activa, FALSE) '
+            . 'OR COALESCE(l.por_defecto, FALSE) <> COALESCE(t.por_defecto, FALSE) '
+            . "OR COALESCE(l.coddivisa, 'EUR') <> COALESCE(NULLIF(t.coddivisa, ''), 'EUR') "
+            . 'LIMIT 1;'
+        );
+        $foreignDefault = $db->select(
+            'SELECT l.codlista FROM catalogo_listas_precio l WHERE l.por_defecto = TRUE '
+            . 'AND EXISTS (SELECT 1 FROM tarif_tarifas t WHERE t.por_defecto = TRUE AND t.codtarifa <> l.codlista) '
+            . 'LIMIT 1;'
+        );
+
+        if (!$diverging && !$foreignDefault) {
+            return;
+        }
+
+        $lists = [];
+        foreach ($db->select('SELECT codlista, nombre, activa, por_defecto, coddivisa FROM catalogo_listas_precio ORDER BY codlista;') ?: [] as $row) {
+            $lists[(string) $row['codlista']] = $row;
+        }
+
+        $defaultTariff = null;
+        foreach ($db->select('SELECT codtarifa, nombre, activa, por_defecto, coddivisa FROM tarif_tarifas ORDER BY codtarifa;') ?: [] as $tariff) {
+            $cod = (string) $tariff['codtarifa'];
+            $wanted = [
+                'nombre' => (string) ($tariff['nombre'] ?? ''),
+                'activa' => self::truthy($tariff['activa'] ?? false),
+                'por_defecto' => self::truthy($tariff['por_defecto'] ?? false),
+                'coddivisa' => ($tariff['coddivisa'] ?? '') !== '' ? (string) $tariff['coddivisa'] : 'EUR',
+            ];
+            if ($wanted['por_defecto'] && $defaultTariff === null) {
+                $defaultTariff = $cod;
+            }
+
+            $current = $lists[$cod] ?? null;
+            if ($current === null) {
+                $db->exec(
+                    'INSERT INTO catalogo_listas_precio (codlista, nombre, activa, por_defecto, coddivisa) VALUES ('
+                    . $db->var2str($cod) . ','
+                    . $db->var2str($wanted['nombre']) . ','
+                    . $db->var2str($wanted['activa']) . ','
+                    . $db->var2str($wanted['por_defecto']) . ','
+                    . $db->var2str($wanted['coddivisa']) . ');'
+                );
+                continue;
+            }
+
+            if ((string) ($current['nombre'] ?? '') === $wanted['nombre']
+                && self::truthy($current['activa'] ?? false) === $wanted['activa']
+                && self::truthy($current['por_defecto'] ?? false) === $wanted['por_defecto']
+                && (string) ($current['coddivisa'] ?? 'EUR') === $wanted['coddivisa']) {
+                continue;
+            }
+
+            $db->exec(
+                'UPDATE catalogo_listas_precio SET '
+                . 'nombre = ' . $db->var2str($wanted['nombre'])
+                . ', activa = ' . ($wanted['activa'] ? 'TRUE' : 'FALSE')
+                . ', por_defecto = ' . ($wanted['por_defecto'] ? 'TRUE' : 'FALSE')
+                . ', coddivisa = ' . $db->var2str($wanted['coddivisa'])
+                . ' WHERE codlista = ' . $db->var2str($cod) . ';'
+            );
+        }
+
+        if ($defaultTariff !== null) {
+            $db->exec(
+                'UPDATE catalogo_listas_precio SET por_defecto = FALSE '
+                . 'WHERE por_defecto = TRUE AND codlista <> ' . $db->var2str($defaultTariff) . ';'
+            );
+        }
+    }
+
+    /** Boolean read from either engine: MySQL 1/0, PostgreSQL t/f. */
+    private static function truthy(mixed $value): bool
+    {
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 't', 'true', 'yes', 'on'], true);
+        }
+
+        return (bool) $value;
     }
 
     private static function tableExists(\fs_db2 $db, string $table): bool

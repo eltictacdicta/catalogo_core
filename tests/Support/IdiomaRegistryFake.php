@@ -38,6 +38,18 @@ final class IdiomaRegistryFake
     public bool $failNextExec = false;
 
     /**
+     * `tarif_tarifa_idiomas` rows; null means the table does not exist.
+     *
+     * @var list<array{codtarifa: string, codidioma: string}>|null
+     */
+    public ?array $tarifaIdiomas = null;
+
+    public function table_exists($name, $list = false): bool
+    {
+        return $name === 'tarif_tarifa_idiomas' ? $this->tarifaIdiomas !== null : true;
+    }
+
+    /**
      * @param list<array{codidioma: string, nombre?: string, activo?: bool, por_defecto?: bool}> $idiomas
      * @param list<array{id?: int, referencia: string, codidioma: string, descripcion?: string, descripcion_larga?: ?string}> $descripciones
      */
@@ -274,6 +286,15 @@ final class IdiomaRegistryFake
             $this->descripciones = array_values(array_filter(
                 $this->descripciones,
                 fn (array $row): bool => isset($this->idiomas[$row['codidioma']])
+            ));
+
+            return true;
+        }
+
+        if (preg_match('/^DELETE FROM tarif_tarifa_idiomas WHERE codidioma = \'([^\']*)\';?$/i', $sql, $m)) {
+            $this->tarifaIdiomas = array_values(array_filter(
+                (array) $this->tarifaIdiomas,
+                static fn (array $row): bool => $row['codidioma'] !== $m[1]
             ));
 
             return true;

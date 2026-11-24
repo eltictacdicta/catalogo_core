@@ -300,6 +300,14 @@ class catalogo_idioma extends \fs_model
             'DELETE FROM ' . $this->table_name . ' WHERE codidioma = ' . $this->var2str($this->codidioma) . ';'
         );
 
+        // Una tarifa que iba en este idioma deja de ir en él (R-TAR-IDI-005).
+        // Sin FK sobre codidioma, la limpieza es de la aplicación (D12).
+        if ($ok && $this->db->table_exists('tarif_tarifa_idiomas')) {
+            $ok = (bool) $this->db->exec(
+                'DELETE FROM tarif_tarifa_idiomas WHERE codidioma = ' . $this->var2str($this->codidioma) . ';'
+            );
+        }
+
         if (!$ok) {
             $this->db->rollback();
             return false;

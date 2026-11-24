@@ -118,6 +118,8 @@
                      <tr>
                         <th>Código</th>
                         <th>Nombre</th>
+                        <th title="Moneda en la que se expresan los precios de la tarifa">Moneda</th>
+                        <th title="Idiomas en los que va la tarifa; en negrita, el idioma por defecto">Idiomas</th>
                         <th class="text-center">Activa</th>
                         <th class="text-center">Por defecto</th>
                         {% if fsc.tarifario_activo %}
@@ -135,12 +137,22 @@
                   <tbody>
                      {% for tarifa in fsc.resultados %}
                      {% set grupos_tarifa = fsc.get_grupos_tarifa(tarifa.codtarifa) %}
+                     {% set idiomas_tarifa = fsc.idiomas_tarifa(tarifa) %}
                      <tr class="tarifa-row">
                         <td><b>{{ tarifa.codtarifa }}</b></td>
                         <td>
                            <a href="index.php?page=tarif_familias&codtarifa={{ tarifa.codtarifa }}" title="Ver familias de esta tarifa">
                               {{ tarifa.nombre }}
                            </a>
+                        </td>
+                        <td>{{ tarifa.coddivisa|default('EUR') }}</td>
+                        <td>
+                           {% for cod in idiomas_tarifa.codes %}
+                           <span class="label {{ cod == idiomas_tarifa.default ? 'label-primary' : 'label-default' }}" title="{{ fsc.nombre_idioma(cod) }}{{ cod == idiomas_tarifa.default ? ' (por defecto)' : '' }}">{% if cod == idiomas_tarifa.default %}<b>{{ cod }}</b>{% else %}{{ cod }}{% endif %}</span>
+                           {% endfor %}
+                           {% if not idiomas_tarifa.configurada %}
+                           <small class="text-muted" title="Sin configuración propia: usa todos los idiomas activos y el idioma por defecto general">(todos)</small>
+                           {% endif %}
                         </td>
                         <td class="text-center">
                            {% if tarifa.activa %}
@@ -212,7 +224,7 @@
                               <button type="button" class="btn btn-default" onclick="copiar_estructura({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }})" title="Copiar estructura a otra tarifa">
                                  <i class="fa fa-copy"></i>
                               </button>
-                              <button type="button" class="btn btn-default" onclick="editar_tarifa({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }}, {{ tarifa.activa ? 'true' : 'false' }}, {{ tarifa.por_defecto ? 'true' : 'false' }}, {{ tarifa.coddivisa|default('EUR')|json_encode|e('html_attr') }})" title="Editar">
+                              <button type="button" class="btn btn-default" onclick="editar_tarifa({{ tarifa.codtarifa|json_encode|e('html_attr') }}, {{ tarifa.nombre|json_encode|e('html_attr') }}, {{ tarifa.activa ? 'true' : 'false' }}, {{ tarifa.por_defecto ? 'true' : 'false' }}, {{ tarifa.coddivisa|default('EUR')|json_encode|e('html_attr') }}, {{ {'codes': idiomas_tarifa.codes, 'default': idiomas_tarifa.default}|json_encode|e('html_attr') }})" title="Editar">
                                  <span class="glyphicon glyphicon-edit"></span>
                               </button>
                               {% if fsc.allow_delete and not tarifa.por_defecto %}
@@ -311,6 +323,35 @@
                   </select>
                   <p class="help-block">Las monedas disponibles son las configuradas en <a href="index.php?page=admin_divisas">Divisas</a>. La moneda de la tarifa determina el símbolo que se muestra en los precios. No se aplica conversión automática de divisas; los precios numéricos se interpretan en la moneda seleccionada.</p>
                </div>
+               {% if fsc.idiomas|length > 0 %}
+               <div class="form-group" id="modal_idiomas" data-default="{{ fsc.codidioma_global }}">
+                  <label>Idiomas <span class="text-danger">*</span></label>
+                  <input type="hidden" name="idiomas_enviados" value="1"/>
+                  <table class="table table-condensed" style="margin-bottom: 5px;">
+                     <thead>
+                        <tr>
+                           <th>Idioma</th>
+                           <th class="text-center" width="90">Incluir</th>
+                           <th class="text-center" width="110">Por defecto</th>
+                        </tr>
+                     </thead>
+                     <tbody>
+                        {% for idioma in fsc.idiomas %}
+                        <tr>
+                           <td>{{ idioma.nombre }} <small class="text-muted">{{ idioma.codidioma }}</small></td>
+                           <td class="text-center">
+                              <input type="checkbox" name="idiomas[]" value="{{ idioma.codidioma }}" class="modal-idioma-check" aria-label="Incluir {{ idioma.nombre }}"/>
+                           </td>
+                           <td class="text-center">
+                              <input type="radio" name="codidioma_defecto" value="{{ idioma.codidioma }}" class="modal-idioma-default" aria-label="{{ idioma.nombre }} por defecto"/>
+                           </td>
+                        </tr>
+                        {% endfor %}
+                     </tbody>
+                  </table>
+                  <p class="help-block">Idiomas en los que va la tarifa (vista del tarifario y exportaciones Excel). Con todos los idiomas marcados y el idioma por defecto general, la tarifa incorpora automáticamente los idiomas que se den de alta más adelante en <a href="index.php?page=opciones_catalogo#idiomas">Opciones del catálogo</a>.</p>
+               </div>
+               {% endif %}
             </div>
             <div class="modal-footer">
                <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
@@ -453,7 +494,63 @@
       $sel.val(valor);
    }
 
-   function editar_tarifa(cod, nombre, activa, por_defecto, coddivisa)
+   /**
+    * Marca los idiomas de la tarifa en el modal. Sin configuración (tarifa
+    * nueva) marca todos y el idioma por defecto general.
+    */
+   function seleccionar_idiomas(cfg)
+   {
+      var $grupo = $('#modal_idiomas');
+      if (!$grupo.length) {
+         return;
+      }
+      var codes = (cfg && cfg.codes) ? cfg.codes : null;
+      var defecto = (cfg && cfg.default) ? cfg.default : String($grupo.data('default') || '');
+      $grupo.find('.modal-idioma-check').each(function () {
+         $(this).prop('checked', codes === null || codes.indexOf(this.value) !== -1);
+      });
+      $grupo.find('.modal-idioma-default').each(function () {
+         $(this).prop('checked', this.value === defecto);
+      });
+      sincronizar_idiomas();
+   }
+
+   /**
+    * El idioma por defecto tiene que estar incluido: un radio de un idioma no
+    * incluido se desactiva y, si se quita el por defecto, pasa al primero
+    * incluido.
+    */
+   function sincronizar_idiomas()
+   {
+      var $grupo = $('#modal_idiomas');
+      var primero = null;
+      $grupo.find('tbody tr').each(function () {
+         var $check = $(this).find('.modal-idioma-check');
+         var $radio = $(this).find('.modal-idioma-default');
+         var incluido = $check.prop('checked');
+         $radio.prop('disabled', !incluido);
+         if (!incluido) {
+            $radio.prop('checked', false);
+         } else if (primero === null) {
+            primero = $radio;
+         }
+      });
+      if (primero !== null && !$grupo.find('.modal-idioma-default:checked').length) {
+         primero.prop('checked', true);
+      }
+   }
+
+   $(document).on('change', '#modal_idiomas .modal-idioma-check', sincronizar_idiomas);
+
+   $(document).on('submit', '#modal_tarifa form', function (e) {
+      var $grupo = $('#modal_idiomas');
+      if ($grupo.length && !$grupo.find('.modal-idioma-check:checked').length) {
+         e.preventDefault();
+         alert('Selecciona al menos un idioma para la tarifa.');
+      }
+   });
+
+   function editar_tarifa(cod, nombre, activa, por_defecto, coddivisa, idiomas)
    {
       $('#modal_codtarifa').val(cod);
       $('#modal_codtarifa').prop('readonly', true);
@@ -461,6 +558,7 @@
       $('#modal_activa').prop('checked', activa);
       $('#modal_por_defecto').prop('checked', por_defecto);
       seleccionar_coddivisa(coddivisa);
+      seleccionar_idiomas(idiomas);
       $('#modal_title').text('Editar tarifa');
       $('#heredar_group').hide();
       // Ocultar grupo en edición (se gestiona desde el botón de la tabla)
@@ -478,6 +576,7 @@
       $('#modal_heredar_de').val('');
       $('#modal_codgrupo').val('');
       seleccionar_coddivisa('');
+      seleccionar_idiomas(null);
       $('#modal_title').text('Nueva tarifa');
       $('#heredar_group').show();
       $('#modal_codgrupo').closest('.form-group').show();

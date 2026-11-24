@@ -55,7 +55,6 @@ class PriceSurfaceOwnershipTest extends TestCase
         '/Services/PriceUpdateTargetRegistry.php',
         '/Services/PriceUpdateScopes.php',
         '/Services/CanonicalPriceBooks.php',
-        '/Services/ListaPriceUpdateTarget.php',
         '/Services/PriceUpdateFilterRegistry.php',
         '/Event/PriceUpdatePersistedEvent.php',
     ];

@@ -29,8 +29,8 @@ use PHPUnit\Framework\TestCase;
  * Inert-when-off guarantee (multitarifa task 3.6; R-CO-003, R-RG-005,
  * R-MT-001 inactive-list exclusion).
  *
- * With the multi-tariff flag off: zero tariff UI is offered (per-article tab,
- * list CRUD UI and list selectors are gated on the flag) and with the
+ * The price-list UI is retired (R-MT-009): no per-article list prices, no
+ * list page entry, no list section. With the
  * role-groups master off the listener allows every dispatch without any
  * model read. Flags default off on a fresh install.
  */
@@ -40,7 +40,6 @@ final class MultiTariffFlagInertTest extends TestCase
     {
         parent::setUp();
         unset(
-            $GLOBALS['config2'][CatalogoOptions::KEY_MULTI_TARIFF],
             $GLOBALS['config2'][CatalogoOptions::KEY_GROUPS_ENABLED]
         );
     }
@@ -48,7 +47,6 @@ final class MultiTariffFlagInertTest extends TestCase
     protected function tearDown(): void
     {
         unset(
-            $GLOBALS['config2'][CatalogoOptions::KEY_MULTI_TARIFF],
             $GLOBALS['config2'][CatalogoOptions::KEY_GROUPS_ENABLED]
         );
         parent::tearDown();
@@ -56,11 +54,10 @@ final class MultiTariffFlagInertTest extends TestCase
 
     // ---- Flag defaults (safe default per R-CO-003) ----
 
-    public function test_flags_default_off_on_fresh_install(): void
+    public function test_groups_flag_defaults_off_on_fresh_install(): void
     {
         $options = new CatalogoOptions();
 
-        $this->assertFalse($options->multiTariffEnabled(), 'multi-tariff defaults OFF');
         $this->assertFalse($options->groupsEnabled(), 'role-groups master defaults OFF');
     }
 
@@ -78,64 +75,51 @@ final class MultiTariffFlagInertTest extends TestCase
         }
     }
 
-    // ---- UI gating: multi-tariff flag off hides the tariff UI entirely ----
+    // ---- Price-list UI retired (R-MT-009): only tariffs exist as a concept ----
 
-    /** The per-article tab markup must live inside the multi_tariff guard. */
-    public function test_article_tab_gated_on_multi_tariff_flag(): void
+    /** The article editor no longer offers per-list prices. */
+    public function test_article_editor_has_no_per_list_prices(): void
+    {
+        $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulo.html.twig');
+        $controller = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php');
+
+        foreach (['precios_listas', 'form_precios_lista', 'precios_por_lista', 'listas_activas'] as $needle) {
+            $this->assertStringNotContainsString($needle, $view, 'the per-list prices section is retired');
+        }
+        foreach (['guardar_precios_lista', 'loadPreciosPorLista', 'guardarPreciosPorLista', 'PriceListAvailability'] as $needle) {
+            $this->assertStringNotContainsString($needle, $controller);
+        }
+    }
+
+    /** The articles list has no entry to a price-list page. */
+    public function test_articulos_list_has_no_price_list_entry(): void
+    {
+        $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulos.html.twig');
+        $controller = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulos.php');
+
+        $this->assertStringNotContainsString('Listas de precio', $view);
+        $this->assertStringNotContainsString('ventas_listas_precio', $view);
+        $this->assertStringNotContainsString('PriceListAvailability', $controller);
+    }
+
+    /** The tariffs page manages tariffs only: no list section. */
+    public function test_tariffs_page_has_no_list_section(): void
+    {
+        $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/tarif_tarifas.html.twig');
+
+        $this->assertStringNotContainsString('listas-sin-tarifa', $view);
+        $this->assertStringNotContainsString('lista_crear', $view);
+
+        $controller = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/controller/tarif_tarifas.php');
+        $this->assertStringContainsString("parent::__construct(__CLASS__, 'Tarifas', 'catalogo')", $controller);
+    }
+
+    /** The family-structure selector speaks of tariffs, not price lists. */
+    public function test_family_assignment_selector_is_labelled_tarifa(): void
     {
         $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulo.html.twig');
 
-        $this->assertStringContainsString('{% if fsc.multi_tariff %}', $view);
-        $this->assertLessThan(
-            mb_strpos($view, 'precios_listas'),
-            mb_strpos($view, '{% if fsc.multi_tariff %}'),
-            'The precios por lista tab must be inside the multi_tariff guard (hidden entirely when off)'
-        );
-    }
-
-    /** The list CRUD page hides its forms when the flag is off. */
-    public function test_listas_page_ui_gated_on_multi_tariff_flag(): void
-    {
-        $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/view/ventas_listas_precio.html.twig');
-
-        $this->assertLessThan(
-            mb_strpos($view, 'value="create"'),
-            mb_strpos($view, '{% if fsc.multi_tariff %}'),
-            'List CRUD UI must be inside the multi_tariff guard'
-        );
-    }
-
-    /** The articles-list entry button is gated on the flag. */
-    public function test_articulos_entry_gated_on_multi_tariff_flag(): void
-    {
-        $view = (string) file_get_contents(FS_FOLDER . '/plugins/catalogo_core/View/ventas_articulos.html.twig');
-
-        $this->assertLessThan(
-            mb_strpos($view, 'ventas_listas_precio'),
-            mb_strpos($view, '{% if fsc.multi_tariff %}'),
-            'The price-list entry button must be inside the multi_tariff guard'
-        );
-    }
-
-    /** With the flag off the controller loads ZERO lists (selectors hidden). */
-    public function test_controller_loads_zero_lists_when_flag_off(): void
-    {
-        require_once FS_FOLDER . '/base/fs_functions.php';
-        require_once FS_FOLDER . '/base/fs_model.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_lista_precio.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/model/core/catalogo_articulo_precio.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/Services/CatalogoOptions.php';
-        require_once FS_FOLDER . '/plugins/catalogo_core/Controller/VentasArticulo.php';
-
-        $controller = (new \ReflectionClass(\FSFramework\Plugins\catalogo_core\Controller\VentasArticulo::class))
-            ->newInstanceWithoutConstructor();
-
-        $ref = new \ReflectionMethod(\FSFramework\Plugins\catalogo_core\Controller\VentasArticulo::class, 'loadPreciosPorLista');
-        $ref->setAccessible(true);
-        $ref->invoke($controller);
-
-        $this->assertFalse($controller->multi_tariff);
-        $this->assertSame([], $controller->listas_activas, 'flag off ⇒ zero lists offered (selectors hidden)');
-        $this->assertSame([], $controller->precios_por_lista);
+        $this->assertStringContainsString('for="codlista_estructura">Tarifa:</label>', $view);
+        $this->assertStringNotContainsString('Lista de precio:', $view);
     }
 }
