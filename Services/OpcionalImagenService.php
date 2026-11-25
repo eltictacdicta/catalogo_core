@@ -44,9 +44,12 @@ class OpcionalImagenService
 
     private string $imagesDir;
 
-    public function __construct(?string $imagesDir = null)
+    private ?RemoteImageFetcher $fetcher;
+
+    public function __construct(?string $imagesDir = null, ?RemoteImageFetcher $fetcher = null)
     {
         $this->imagesDir = $imagesDir ?? self::OPCIONAL_IMAGES_DIR;
+        $this->fetcher = $fetcher;
     }
 
     /**
@@ -100,6 +103,43 @@ class OpcionalImagenService
         $mime = $this->detectMimeFromBuffer($data);
         if ($mime === null || !isset(self::ALLOWED_MIME[$mime])) {
             $error = 'Tipo de imagen no permitido: ' . (string) $mime;
+
+            return null;
+        }
+
+        $message = '';
+        $filename = $this->store($codigo, self::ALLOWED_MIME[$mime], static function (string $dest) use ($data): bool {
+            return @file_put_contents($dest, $data) !== false;
+        }, $message);
+
+        if ($filename === null) {
+            $error = $message !== '' ? $message : 'No se pudo guardar la imagen';
+        }
+
+        return $filename;
+    }
+
+    /**
+     * Descarga una imagen de un URL https y la guarda. Devuelve el nombre de
+     * fichero o null con `$error`. La descarga está blindada (ver
+     * {@see RemoteImageFetcher}) y el contenido se valida por MIME real, nunca
+     * por la extensión del URL ni por la cabecera Content-Type.
+     */
+    public function upload_from_url(string $codigo, string $url, ?string &$error = null): ?string
+    {
+        $error = null;
+
+        $fetcher = $this->fetcher ?? new RemoteImageFetcher();
+        $data = $fetcher->fetch($url, $error);
+        if ($data === null || $data === '') {
+            $error = $error ?? 'Descarga vacía';
+
+            return null;
+        }
+
+        $mime = $this->detectMimeFromBuffer($data);
+        if ($mime === null || !isset(self::ALLOWED_MIME[$mime])) {
+            $error = 'El URL no es una imagen admitida (' . (string) $mime . ')';
 
             return null;
         }

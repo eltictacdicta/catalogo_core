@@ -19,6 +19,10 @@ class catalogo_articulo_opcional extends \fs_model
     public $referencia;
     public $id_opcional;
     public $obligatorio;
+    /** Máximo de unidades del opcional por unidad de artículo (>= 1). */
+    public $cantidad_max;
+
+    public const CANTIDAD_MAX_DEFECTO = 1;
 
     public function __construct($data = false)
     {
@@ -29,11 +33,13 @@ class catalogo_articulo_opcional extends \fs_model
             $this->referencia = $data['referencia'];
             $this->id_opcional = intval($data['id_opcional']);
             $this->obligatorio = $this->str2bool($data['obligatorio'] ?? false);
+            $this->cantidad_max = max(1, intval($data['cantidad_max'] ?? self::CANTIDAD_MAX_DEFECTO));
         } else {
             $this->id = null;
             $this->referencia = null;
             $this->id_opcional = null;
             $this->obligatorio = false;
+            $this->cantidad_max = self::CANTIDAD_MAX_DEFECTO;
         }
     }
 
@@ -71,7 +77,12 @@ class catalogo_articulo_opcional extends \fs_model
         return true;
     }
 
-    public function add($referencia, $id_opcional, bool $obligatorio = false)
+    /**
+     * Asigna el opcional al artículo. Si la relación ya existe se conserva
+     * `obligatorio` salvo que se indique; `$cantidad_max` solo se toca cuando
+     * llega un valor (null = no cambiar / 1 al crear).
+     */
+    public function add($referencia, $id_opcional, bool $obligatorio = false, ?int $cantidad_max = null)
     {
         $valid = $this->validate_opcional_for_articulo((int) $id_opcional);
         if ($valid !== true) {
@@ -81,13 +92,18 @@ class catalogo_articulo_opcional extends \fs_model
         }
 
         if ($this->exists_relation($referencia, $id_opcional)) {
+            if ($cantidad_max !== null) {
+                $this->set_cantidad_max((string) $referencia, (int) $id_opcional, $cantidad_max);
+            }
+
             return $this->set_obligatorio($referencia, (int) $id_opcional, $obligatorio);
         }
 
-        $sql = 'INSERT INTO ' . $this->table_name . ' (referencia, id_opcional, obligatorio) VALUES ('
+        $sql = 'INSERT INTO ' . $this->table_name . ' (referencia, id_opcional, obligatorio, cantidad_max) VALUES ('
             . $this->var2str($referencia) . ','
             . $this->intval($id_opcional) . ','
-            . $this->var2str($obligatorio) . ');';
+            . $this->var2str($obligatorio) . ','
+            . max(1, (int) ($cantidad_max ?? self::CANTIDAD_MAX_DEFECTO)) . ');';
 
         return $this->db->exec($sql);
     }
@@ -100,6 +116,39 @@ class catalogo_articulo_opcional extends \fs_model
             . ' WHERE referencia = ' . $this->var2str($referencia)
             . ' AND id_opcional = ' . $this->intval($idOpcional) . ';'
         );
+    }
+
+    public function set_cantidad_max(string $referencia, int $idOpcional, int $cantidadMax): bool
+    {
+        if ($cantidadMax < 1) {
+            return false;
+        }
+
+        return (bool) $this->db->exec(
+            'UPDATE ' . $this->table_name
+            . ' SET cantidad_max = ' . $cantidadMax
+            . ' WHERE referencia = ' . $this->var2str($referencia)
+            . ' AND id_opcional = ' . $this->intval($idOpcional) . ';'
+        );
+    }
+
+    /**
+     * Máximo por artículo de cada opcional asignado: [id_opcional => max].
+     *
+     * @return array<int, int>
+     */
+    public function get_cantidades_max_from_articulo(string $referencia): array
+    {
+        $map = [];
+        $data = $this->db->select(
+            'SELECT id_opcional, cantidad_max FROM ' . $this->table_name . ' WHERE referencia = ?;',
+            [$referencia]
+        );
+        foreach ($data ?: [] as $d) {
+            $map[(int) $d['id_opcional']] = max(1, (int) $d['cantidad_max']);
+        }
+
+        return $map;
     }
 
     public function remove($referencia, $id_opcional)
@@ -258,12 +307,14 @@ class catalogo_articulo_opcional extends \fs_model
                 . 'referencia = ' . $this->var2str($this->referencia)
                 . ', id_opcional = ' . $this->intval($this->id_opcional)
                 . ', obligatorio = ' . $this->var2str($this->obligatorio)
+                . ', cantidad_max = ' . max(1, (int) $this->cantidad_max)
                 . ' WHERE id = ' . $this->intval($this->id) . ';';
         } else {
-            $sql = 'INSERT INTO ' . $this->table_name . ' (referencia, id_opcional, obligatorio) VALUES ('
+            $sql = 'INSERT INTO ' . $this->table_name . ' (referencia, id_opcional, obligatorio, cantidad_max) VALUES ('
                 . $this->var2str($this->referencia) . ','
                 . $this->intval($this->id_opcional) . ','
-                . $this->var2str($this->obligatorio) . ');';
+                . $this->var2str($this->obligatorio) . ','
+                . max(1, (int) $this->cantidad_max) . ');';
         }
 
         if ($this->db->exec($sql)) {

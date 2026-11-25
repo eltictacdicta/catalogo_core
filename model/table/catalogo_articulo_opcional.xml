@@ -24,6 +24,13 @@
         <nulo>NO</nulo>
         <defecto>false</defecto>
     </columna>
+    <columna>
+        <!-- Máximo de unidades de este opcional por unidad del artículo. -->
+        <nombre>cantidad_max</nombre>
+        <tipo>integer</tipo>
+        <nulo>NO</nulo>
+        <defecto>1</defecto>
+    </columna>
     <restriccion>
         <nombre>catalogo_articulo_opcional_pkey</nombre>
         <consulta>PRIMARY KEY (id)</consulta>
