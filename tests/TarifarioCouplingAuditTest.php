@@ -93,6 +93,9 @@ final class TarifarioCouplingAuditTest extends TestCase
         '/Services/CaracteristicaBackfillMigration.php',
         '/Services/CaracteristicaColumnDropMigration.php',
         '/Services/CaracteristicaValorStore.php',
+        // "Eliminar todos los opcionales" empties the legacy dependent table
+        // tarif_tarifa_articulo_opcional (DELETE only, never a read).
+        '/model/core/catalogo_opcional.php',
     ];
 
     #[Test]

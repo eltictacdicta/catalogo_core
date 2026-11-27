@@ -1024,6 +1024,45 @@ trait VentasOpcionalesListTrait
         $this->new_error_msg('No se pudo eliminar el opcional.');
     }
 
+    /** Texto que hay que escribir para confirmar "Eliminar todos". */
+    public const DELETE_ALL_CONFIRMATION = 'ELIMINAR';
+
+    /**
+     * Borra todos los opcionales. Solo administradores, POST + CSRF y la
+     * confirmación escrita; se comprueba aquí aunque la vista no muestre el
+     * botón a nadie más.
+     */
+    protected function delete_all_opcionales(): void
+    {
+        if (!$this->guard_mutating_action()) {
+            $this->new_error_msg('Token de seguridad inválido o método no permitido.');
+
+            return;
+        }
+
+        if (empty($this->user->admin)) {
+            $this->new_error_msg('Solo un administrador puede eliminar todos los opcionales.');
+
+            return;
+        }
+
+        $confirmacion = trim((string) $this->request->request->get('confirmacion', ''));
+        if ($confirmacion !== self::DELETE_ALL_CONFIRMATION) {
+            $this->new_error_msg('Escribe ' . self::DELETE_ALL_CONFIRMATION . ' para confirmar el borrado de todos los opcionales.');
+
+            return;
+        }
+
+        $borrados = $this->opcional_model()->delete_all();
+        if ($borrados === false) {
+            $this->new_error_msg('No se pudieron eliminar los opcionales. No se ha borrado nada.');
+
+            return;
+        }
+
+        $this->new_message($borrados . ' opcionales eliminados, con sus relaciones y precios. Los grupos de opcionales se conservan.');
+    }
+
     // =====================================================================
     // Native pagination (mirrors Controller/VentasArticulos.php)
     // =====================================================================

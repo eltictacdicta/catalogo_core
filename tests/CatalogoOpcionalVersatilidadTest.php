@@ -153,6 +153,20 @@ final class CatalogoOpcionalVersatilidadTest extends TestCase
         $this->assertSame(0, $opcional->cantidad_min);
     }
 
+    public function test_negative_fixed_price_is_a_discount_and_is_accepted(): void
+    {
+        $opcional = $this->makeOpcional(['precio' => -252.0, 'tipo_precio' => catalogo_opcional::TIPO_PRECIO_FIJO]);
+
+        $this->assertTrue($opcional->test(), implode(', ', $opcional->errors));
+    }
+
+    public function test_negative_percentage_is_still_rejected(): void
+    {
+        $opcional = $this->makeOpcional(['tipo_precio' => catalogo_opcional::TIPO_PRECIO_PORCENTAJE, 'porcentaje' => -3.0]);
+
+        $this->assertFalse($opcional->test());
+    }
+
     public function test_valid_quantity_range_is_preserved(): void
     {
         $opcional = $this->makeOpcional(['cantidad_min' => 2, 'cantidad_max' => 5]);

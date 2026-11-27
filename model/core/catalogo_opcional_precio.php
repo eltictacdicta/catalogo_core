@@ -85,10 +85,8 @@ class catalogo_opcional_precio extends \fs_model
             return false;
         }
 
-        if ($this->precio < 0) {
-            $this->new_error_msg('El precio no puede ser negativo.');
-            return false;
-        }
+        // A fixed price may be negative (an opcional that discounts); only the
+        // percentage must stay >= 0.
 
         if ($this->porcentaje !== null && $this->porcentaje < 0) {
             $this->new_error_msg('El porcentaje no puede ser negativo.');

@@ -778,10 +778,9 @@ class catalogo_opcional extends \fs_model
                 $this->new_error_msg('El porcentaje del opcional no es válido.');
                 return false;
             }
-        } elseif ($this->precio < 0) {
-            $this->new_error_msg('El precio del opcional no puede ser negativo.');
-            return false;
         }
+        // A fixed price may be negative: an opcional can discount the base
+        // price ("Sin puerta", "Descontar kit"). Only the percentage stays >= 0.
 
         if ($this->cantidad_min === null || $this->cantidad_min === '' || !is_numeric($this->cantidad_min)) {
             $this->cantidad_min = 1;
@@ -874,6 +873,72 @@ class catalogo_opcional extends \fs_model
         $this->deleteFlujoSubjectReferences();
 
         return true;
+    }
+
+    /**
+     * Tablas que dependen de un opcional por `id_opcional`. La mayoría tienen
+     * FK con ON DELETE CASCADE, pero se vacían explícitamente para no dejar
+     * filas huérfanas si alguna FK no llegó a crearse.
+     */
+    public const DEPENDENT_TABLES = [
+        'catalogo_opcional_grupo_rel',
+        'tarif_opcional_precio_historial',
+        'catalogo_articulo_opcional',
+        'catalogo_opcional_precios',
+        'catalogo_opcional_familias',
+        'tarif_opcional_ext',
+        'tarif_tarifa_opcional',
+        'tarif_tarifa_opcional_familia',
+        'tarif_tarifa_opcional_etiqueta',
+        'tarif_tarifa_articulo_opcional',
+    ];
+
+    public function count_all(): int
+    {
+        $data = $this->db->select('SELECT COUNT(*) AS total FROM ' . $this->table_name . ';');
+
+        return $data ? (int) $data[0]['total'] : 0;
+    }
+
+    /**
+     * Borra TODOS los opcionales y todo lo que cuelga de ellos: relaciones con
+     * artículos, familias y grupos, precios por tarifa, idiomas, historial de
+     * precios y referencias de flujos. Los grupos de opcionales se conservan.
+     * Todo o nada: una sentencia fallida deshace el borrado.
+     *
+     * @return int|false opcionales borrados, o false si no se pudo
+     */
+    public function delete_all()
+    {
+        $total = $this->count_all();
+
+        $sql = [];
+        foreach (self::DEPENDENT_TABLES as $table) {
+            if ($this->db->table_exists($table)) {
+                $sql[] = 'DELETE FROM ' . $table . ';';
+            }
+        }
+        if ($this->db->table_exists('catalogo_opcional_idiomas')) {
+            $sql[] = 'DELETE FROM catalogo_opcional_idiomas;';
+        }
+        foreach (['catalogo_flujo_condiciones', 'catalogo_flujo_acciones'] as $table) {
+            if ($this->db->table_exists($table)) {
+                $sql[] = 'DELETE FROM ' . $table . " WHERE sujeto_tipo = 'opcional';";
+            }
+        }
+        $sql[] = 'DELETE FROM ' . $this->table_name . ';';
+
+        $this->db->begin_transaction();
+        foreach ($sql as $statement) {
+            if (!$this->db->exec($statement)) {
+                $this->db->rollback();
+
+                return false;
+            }
+        }
+        $this->db->commit();
+
+        return $total;
     }
 
     public function all($offset = 0, $limit = FS_ITEM_LIMIT)

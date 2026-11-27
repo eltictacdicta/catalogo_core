@@ -47,11 +47,18 @@ class VentasOpcionales extends PageController
 
     public bool $allow_delete = false;
 
+    /** Solo un administrador puede vaciar los opcionales de golpe. */
+    public bool $allow_delete_all = false;
+
+    /** Opcionales que borraría "Eliminar todos". */
+    public int $total_opcionales = 0;
+
     public function __construct()
     {
         parent::__construct('VentasOpcionales');
         $this->setTemplate('ventas_opcionales');
         $this->allow_delete = $this->user->admin || $this->user->allow_delete_on($this->getPageData()['name']);
+        $this->allow_delete_all = (bool) $this->user->admin;
         $this->loadExtensions();
     }
 
@@ -87,8 +94,13 @@ class VentasOpcionales extends PageController
             return;
         }
 
-        if ($this->request->request->has('delete')) {
+        $mutated = false;
+        if ($this->request->request->has('delete_all_opcionales')) {
+            $this->delete_all_opcionales();
+            $mutated = true;
+        } elseif ($this->request->request->has('delete')) {
             $this->delete_opcional();
+            $mutated = true;
         }
 
         if (
@@ -96,11 +108,23 @@ class VentasOpcionales extends PageController
             && ($this->request->request->has('nombre') || $this->request->request->has('idioma_nombre'))
         ) {
             $this->new_opcional();
+            $mutated = true;
+        }
+
+        // The list was searched before the mutation (it needs the tarifa
+        // context): search again so the page shows what is stored now.
+        if ($mutated) {
+            $this->search_opcionales();
+            $this->load_grupos_cache();
         }
 
         $this->load_opcionales_state_cache();
         $this->load_opcionales_visibility_cache();
         $this->load_precios_cache();
+
+        if ($this->allow_delete_all) {
+            $this->total_opcionales = $this->opcional_model()->count_all();
+        }
     }
 
     private function loadExtensions(): void

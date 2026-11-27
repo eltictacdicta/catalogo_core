@@ -207,8 +207,9 @@ class OpcionalCsvImportService
         }
 
         $valor = OpcionalCsvFormat::parseDecimal($row['precio'] === '' ? '0' : $row['precio']);
-        if ($valor === null || $valor < 0) {
-            $fail('precio no es un número válido (>= 0).');
+        // Only a fixed price may be negative (an opcional that discounts).
+        if ($valor === null || ($valor < 0 && $tipo !== OpcionalCsvFormat::TIPO_FIXED)) {
+            $fail('precio no es un número válido (>= 0 salvo en fixed).');
 
             return;
         }

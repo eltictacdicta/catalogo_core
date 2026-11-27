@@ -188,6 +188,15 @@ final class OpcionalCsvImportServiceTest extends TestCase
         $this->assertArrayNotHasKey('X1', $gw->opcionales);
     }
 
+    public function testNegativeFixedPriceIsADiscountButNegativePercentIsRejected(): void
+    {
+        $gw = new FakeOpcionalCsvGateway();
+        $r = $this->importar($gw, "SKU1,PUE17ISN,Puerta,Door,Porte,fixed,-252.0,1,\nSKU1,P2,Volt,Volt,Volt,percent,-3,1,\n");
+
+        $this->assertContains('precio:100:T1:fix:-252', $gw->writes());
+        $this->assertSame([3], array_column($r->errores, 'linea'));
+    }
+
     public function testInvalidRowsAreReportedWithLineNumbers(): void
     {
         $gw = new FakeOpcionalCsvGateway();
